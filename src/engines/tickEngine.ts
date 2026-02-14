@@ -7,12 +7,13 @@ import type { MarketEvent, Sector } from '../types'
 let worker: Worker | null = null
 let intervalId: ReturnType<typeof setInterval> | null = null
 let unsubscribeSpeed: (() => void) | null = null
+let autoSaveCounter = 0
 
-const BASE_TICK_MS = 500 // 1x speed = 500ms per tick
-const EVENT_CHANCE_PER_TICK = 0.01 // 1% chance per tick
+const BASE_TICK_MS = 500
+const AUTO_SAVE_INTERVAL = 300 // Auto-save every 300 ticks (~2.5 min at 1x)
 
 export function initTickEngine() {
-  if (worker) return // guard against double-init
+  if (worker) return
 
   worker = new Worker(new URL('../workers/priceEngine.worker.ts', import.meta.url), {
     type: 'module',
@@ -35,14 +36,20 @@ export function startTickLoop() {
     // Advance game time
     state.advanceTick()
 
+    // Monthly processing (salary, stamina) on day 1
+    const currentState = useGameStore.getState()
+    if (currentState.time.day === 1 && currentState.time.tick === 0) {
+      currentState.processMonthly()
+    }
+
     // Send companies data to worker for GBM price calculation
-    // Worker needs sector info to apply sector-scoped events
+    const volatilityMul = state.difficultyConfig.volatilityMultiplier
     const companyData = state.companies.map((c) => ({
       id: c.id,
       sector: c.sector,
       price: c.price,
       drift: c.drift,
-      volatility: c.volatility,
+      volatility: c.volatility * volatilityMul,
     }))
 
     const eventModifiers = state.events
@@ -54,8 +61,6 @@ export function startTickLoop() {
         affectedSectors: evt.affectedSectors,
       }))
 
-    // dt = 1 tick = 1/300 of a month (30 days * 10 ticks)
-    // = 1/3600 of a year
     const dt = 1 / 3600
 
     worker.postMessage({
@@ -72,13 +77,20 @@ export function startTickLoop() {
         .filter((evt) => evt.remainingTicks > 0),
     }))
 
-    // Random event generation from the full 50-event pool
-    if (Math.random() < EVENT_CHANCE_PER_TICK) {
+    // Random event generation using difficulty-specific chance
+    const eventChance = state.difficultyConfig.eventChance
+    if (Math.random() < eventChance) {
       generateRandomEvent()
+    }
+
+    // Auto-save periodically
+    autoSaveCounter++
+    if (autoSaveCounter >= AUTO_SAVE_INTERVAL) {
+      autoSaveCounter = 0
+      state.autoSave()
     }
   }
 
-  // Set up interval based on speed
   const updateInterval = () => {
     const speed = useGameStore.getState().time.speed
     if (intervalId) clearInterval(intervalId)
@@ -87,7 +99,6 @@ export function startTickLoop() {
 
   updateInterval()
 
-  // Subscribe to speed changes (store the unsubscribe handle!)
   unsubscribeSpeed = useGameStore.subscribe((state, prevState) => {
     if (state.time.speed !== prevState.time.speed) {
       updateInterval()
@@ -105,7 +116,6 @@ export function stopTickLoop() {
 export function destroyTickEngine() {
   stopTickLoop()
 
-  // Clean up Zustand subscription to prevent memory leak
   if (unsubscribeSpeed) {
     unsubscribeSpeed()
     unsubscribeSpeed = null
@@ -115,7 +125,7 @@ export function destroyTickEngine() {
   worker = null
 }
 
-/* ── Random Event Generator using full 50-event pool from events.ts ── */
+/* ── Random Event Generator ── */
 function generateRandomEvent() {
   const store = useGameStore.getState()
   const template = EVENT_TEMPLATES[Math.floor(Math.random() * EVENT_TEMPLATES.length)]

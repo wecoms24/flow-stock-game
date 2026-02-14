@@ -8,17 +8,18 @@ import type {
   NewsItem,
   GameConfig,
   Difficulty,
+  DifficultyConfig,
   PortfolioPosition,
   EndingScenario,
+  Employee,
+  EmployeeRole,
+  SaveData,
 } from '../types'
+import { EMPLOYEE_ROLE_CONFIG } from '../types'
 import { COMPANIES } from '../data/companies'
-
-/* ── Game Configuration by Difficulty ── */
-const DIFFICULTY_CONFIG: Record<Difficulty, Omit<GameConfig, 'difficulty'>> = {
-  easy: { startYear: 1995, endYear: 2025, initialCash: 100_000_000, maxCompanies: 100 },
-  normal: { startYear: 1995, endYear: 2025, initialCash: 50_000_000, maxCompanies: 100 },
-  hard: { startYear: 1995, endYear: 2025, initialCash: 20_000_000, maxCompanies: 100 },
-}
+import { DIFFICULTY_TABLE } from '../data/difficulty'
+import { generateEmployeeName, resetNamePool } from '../data/employees'
+import { saveGame, loadGame, deleteSave } from '../systems/saveSystem'
 
 /* ── Ending Scenarios ── */
 const ENDING_SCENARIOS: EndingScenario[] = [
@@ -63,12 +64,14 @@ const ENDING_SCENARIOS: EndingScenario[] = [
 interface GameStore {
   // Game config
   config: GameConfig
+  difficultyConfig: DifficultyConfig
   isGameStarted: boolean
   isGameOver: boolean
   endingResult: EndingScenario | null
 
   // Time
   time: GameTime
+  lastProcessedMonth: number
 
   // Player
   player: PlayerState
@@ -78,22 +81,24 @@ interface GameStore {
   events: MarketEvent[]
   news: NewsItem[]
 
-  // UI - Window Manager
+  // UI
   windows: WindowState[]
   nextZIndex: number
   windowIdCounter: number
-
-  // Flash effect
   isFlashing: boolean
+  unreadNewsCount: number
 
   // Actions - Game
   startGame: (difficulty: Difficulty) => void
+  loadSavedGame: () => Promise<boolean>
+  autoSave: () => void
   setSpeed: (speed: GameTime['speed']) => void
   togglePause: () => void
   checkEnding: () => void
 
   // Actions - Time
   advanceTick: () => void
+  processMonthly: () => void
 
   // Actions - Trading
   buyStock: (companyId: string, shares: number) => void
@@ -103,6 +108,11 @@ interface GameStore {
   updatePrices: (prices: Record<string, number>) => void
   addEvent: (event: MarketEvent) => void
   addNews: (news: NewsItem) => void
+  markNewsRead: () => void
+
+  // Actions - Employees
+  hireEmployee: (role: EmployeeRole) => void
+  fireEmployee: (id: string) => void
 
   // Actions - Windows
   openWindow: (type: WindowState['type'], props?: Record<string, unknown>) => void
@@ -116,20 +126,17 @@ interface GameStore {
   triggerFlash: () => void
 }
 
+let employeeIdCounter = 0
+
 export const useGameStore = create<GameStore>((set, get) => ({
-  config: { difficulty: 'normal', ...DIFFICULTY_CONFIG.normal },
+  config: { difficulty: 'normal', startYear: 1995, endYear: 2025, initialCash: 50_000_000, maxCompanies: 100 },
+  difficultyConfig: DIFFICULTY_TABLE.normal,
   isGameStarted: false,
   isGameOver: false,
   endingResult: null,
 
-  time: {
-    year: 1995,
-    month: 1,
-    day: 1,
-    tick: 0,
-    speed: 1,
-    isPaused: true,
-  },
+  time: { year: 1995, month: 1, day: 1, tick: 0, speed: 1, isPaused: true },
+  lastProcessedMonth: 0,
 
   player: {
     cash: 50_000_000,
@@ -146,51 +153,129 @@ export const useGameStore = create<GameStore>((set, get) => ({
   windows: [],
   nextZIndex: 1,
   windowIdCounter: 0,
-
   isFlashing: false,
+  unreadNewsCount: 0,
 
   /* ── Game Actions ── */
   startGame: (difficulty) => {
-    const cfg = DIFFICULTY_CONFIG[difficulty]
+    const dcfg = DIFFICULTY_TABLE[difficulty]
     const companies = COMPANIES.map((c) => ({
       ...c,
       priceHistory: [c.price],
     }))
 
+    resetNamePool()
+    employeeIdCounter = 0
+
+    const cfg: GameConfig = {
+      difficulty,
+      startYear: dcfg.startYear,
+      endYear: dcfg.endYear,
+      initialCash: dcfg.initialCash,
+      maxCompanies: dcfg.maxCompanies,
+    }
+
     set({
-      config: { difficulty, ...cfg },
+      config: cfg,
+      difficultyConfig: dcfg,
       isGameStarted: true,
       isGameOver: false,
       endingResult: null,
-      time: { year: cfg.startYear, month: 1, day: 1, tick: 0, speed: 1, isPaused: false },
+      time: { year: dcfg.startYear, month: 1, day: 1, tick: 0, speed: 1, isPaused: false },
+      lastProcessedMonth: 0,
       player: {
-        cash: cfg.initialCash,
-        totalAssetValue: cfg.initialCash,
+        cash: dcfg.initialCash,
+        totalAssetValue: dcfg.initialCash,
         portfolio: {},
         monthlyExpenses: 0,
         employees: [],
       },
       companies,
       events: [],
-      news: [
-        {
-          id: 'welcome',
-          timestamp: { year: cfg.startYear, month: 1, day: 1, tick: 0, speed: 1, isPaused: false },
-          headline: `${cfg.startYear}년, 당신의 투자 여정이 시작됩니다`,
-          body: '초기 자본금으로 현명한 투자를 시작하세요. 시장은 기회와 위험으로 가득합니다.',
-          isBreaking: true,
-        },
-      ],
+      news: [{
+        id: 'welcome',
+        timestamp: { year: dcfg.startYear, month: 1, day: 1, tick: 0, speed: 1, isPaused: false },
+        headline: `${dcfg.startYear}년, 당신의 투자 여정이 시작됩니다`,
+        body: '초기 자본금으로 현명한 투자를 시작하세요. 시장은 기회와 위험으로 가득합니다.',
+        isBreaking: true,
+      }],
       windows: [],
       nextZIndex: 1,
-      windowIdCounter: 0, // Reset on new game
+      windowIdCounter: 0,
+      unreadNewsCount: 1,
     })
 
-    // Open default windows
+    deleteSave()
+
     const store = get()
     store.openWindow('portfolio')
     store.openWindow('chart')
     store.openWindow('news')
+  },
+
+  loadSavedGame: async () => {
+    const data = await loadGame()
+    if (!data) return false
+
+    // Reconstruct companies from save + base data
+    const companies = COMPANIES.map((base) => {
+      const saved = data.companies.find((s) => s.id === base.id)
+      if (!saved) return { ...base, priceHistory: [base.price] }
+      return {
+        ...base,
+        price: saved.price,
+        previousPrice: saved.previousPrice,
+        priceHistory: saved.priceHistory,
+        marketCap: saved.price * 1_000_000,
+      }
+    })
+
+    const dcfg = DIFFICULTY_TABLE[data.config.difficulty]
+
+    set({
+      config: data.config,
+      difficultyConfig: dcfg,
+      isGameStarted: true,
+      isGameOver: false,
+      endingResult: null,
+      time: data.time,
+      player: data.player,
+      companies,
+      events: data.events,
+      news: data.news,
+      windows: [],
+      nextZIndex: 1,
+      windowIdCounter: 0,
+      unreadNewsCount: 0,
+    })
+
+    const store = get()
+    store.openWindow('portfolio')
+    store.openWindow('chart')
+    store.openWindow('news')
+    return true
+  },
+
+  autoSave: () => {
+    const s = get()
+    if (!s.isGameStarted || s.isGameOver) return
+
+    const data: SaveData = {
+      version: 1,
+      timestamp: Date.now(),
+      config: s.config,
+      time: s.time,
+      player: s.player,
+      companies: s.companies.map((c) => ({
+        id: c.id,
+        price: c.price,
+        previousPrice: c.previousPrice,
+        priceHistory: c.priceHistory,
+      })),
+      events: s.events,
+      news: s.news.slice(0, 50), // Save only recent news
+    }
+    saveGame(data)
   },
 
   setSpeed: (speed) => set((s) => ({ time: { ...s.time, speed } })),
@@ -233,10 +318,57 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return { time: { ...s.time, year, month, day, tick } }
     }),
 
+  /* ── Monthly Processing: salary deduction + stamina drain ── */
+  processMonthly: () => {
+    const state = get()
+    const monthNum = (state.time.year - state.config.startYear) * 12 + state.time.month
+
+    if (monthNum <= state.lastProcessedMonth) return
+
+    const dcfg = state.difficultyConfig
+
+    set((s) => {
+      // Calculate total salary
+      const totalSalary = s.player.employees.reduce((sum, emp) => sum + emp.salary, 0)
+
+      // Process employee stamina
+      const employees = s.player.employees.map((emp) => {
+        const drain = 10 * dcfg.staminaDrainMultiplier
+        const newStamina = Math.max(0, emp.stamina - drain)
+        const sprite = newStamina <= 20 ? 'exhausted' as const
+          : newStamina <= 60 ? 'typing' as const
+          : 'idle' as const
+
+        return { ...emp, stamina: newStamina, sprite }
+      })
+
+      // Recover stamina at month start for non-exhausted
+      const recoveredEmployees = employees.map((emp) => {
+        if (emp.stamina > 0) {
+          return { ...emp, stamina: Math.min(emp.maxStamina, emp.stamina + emp.bonus.staminaRecovery) }
+        }
+        return emp
+      })
+
+      const newCash = s.player.cash - totalSalary
+
+      return {
+        lastProcessedMonth: monthNum,
+        player: {
+          ...s.player,
+          cash: newCash,
+          employees: recoveredEmployees,
+          monthlyExpenses: totalSalary,
+          totalAssetValue: newCash + calcPortfolioValue(s.player.portfolio, s.companies),
+        },
+      }
+    })
+  },
+
   /* ── Trading ── */
   buyStock: (companyId, shares) =>
     set((s) => {
-      if (shares <= 0) return s // Validate: positive shares only
+      if (shares <= 0) return s
       const company = s.companies.find((c) => c.id === companyId)
       if (!company) return s
       const cost = company.price * shares
@@ -268,7 +400,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   sellStock: (companyId, shares) =>
     set((s) => {
-      if (shares <= 0) return s // Validate: positive shares only
+      if (shares <= 0) return s
       const company = s.companies.find((c) => c.id === companyId)
       const position = s.player.portfolio[companyId]
       if (!company || !position || position.shares < shares) return s
@@ -310,7 +442,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       })
 
-      // Recalculate total asset value with updated prices
       const portfolioValue = calcPortfolioValue(s.player.portfolio, newCompanies)
 
       return {
@@ -324,7 +455,54 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   addEvent: (event) => set((s) => ({ events: [...s.events, event] })),
 
-  addNews: (news) => set((s) => ({ news: [news, ...s.news].slice(0, 100) })),
+  addNews: (news) => set((s) => ({
+    news: [news, ...s.news].slice(0, 100),
+    unreadNewsCount: s.unreadNewsCount + 1,
+  })),
+
+  markNewsRead: () => set({ unreadNewsCount: 0 }),
+
+  /* ── Employees ── */
+  hireEmployee: (role) =>
+    set((s) => {
+      const roleConfig = EMPLOYEE_ROLE_CONFIG[role]
+      const salary = Math.round(roleConfig.baseSalary * s.difficultyConfig.employeeSalaryMultiplier)
+
+      if (s.player.cash < salary * 3) return s // Must afford 3 months upfront
+
+      const employee: Employee = {
+        id: `emp-${++employeeIdCounter}`,
+        name: generateEmployeeName(),
+        role,
+        salary,
+        stamina: roleConfig.maxStamina,
+        maxStamina: roleConfig.maxStamina,
+        sprite: 'idle',
+        hiredMonth: (s.time.year - s.config.startYear) * 12 + s.time.month,
+        bonus: { ...roleConfig.bonus },
+      }
+
+      return {
+        player: {
+          ...s.player,
+          employees: [...s.player.employees, employee],
+          monthlyExpenses: s.player.monthlyExpenses + salary,
+        },
+      }
+    }),
+
+  fireEmployee: (id) =>
+    set((s) => {
+      const emp = s.player.employees.find((e) => e.id === id)
+      if (!emp) return s
+      return {
+        player: {
+          ...s.player,
+          employees: s.player.employees.filter((e) => e.id !== id),
+          monthlyExpenses: Math.max(0, s.player.monthlyExpenses - emp.salary),
+        },
+      }
+    }),
 
   /* ── Windows ── */
   openWindow: (type, props) =>
@@ -358,8 +536,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         title: titles[type],
         x: 50 + offset,
         y: 50 + offset,
-        width: type === 'chart' ? 500 : 380,
-        height: type === 'chart' ? 350 : 300,
+        width: type === 'chart' ? 500 : type === 'office' ? 420 : 380,
+        height: type === 'chart' ? 350 : type === 'office' ? 400 : 300,
         isMinimized: false,
         isMaximized: false,
         zIndex: s.nextZIndex,
@@ -373,10 +551,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     }),
 
-  closeWindow: (id) =>
-    set((s) => ({
-      windows: s.windows.filter((w) => w.id !== id),
-    })),
+  closeWindow: (id) => set((s) => ({ windows: s.windows.filter((w) => w.id !== id) })),
 
   minimizeWindow: (id) =>
     set((s) => ({
@@ -406,7 +581,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 }))
 
-/* ── Helper: calculate total portfolio market value ── */
+/* ── Helper ── */
 function calcPortfolioValue(
   portfolio: Record<string, PortfolioPosition>,
   companies: Company[],
