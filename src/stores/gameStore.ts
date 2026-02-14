@@ -331,23 +331,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // Calculate total salary
       const totalSalary = s.player.employees.reduce((sum, emp) => sum + emp.salary, 0)
 
-      // Process employee stamina
-      const employees = s.player.employees.map((emp) => {
+      // Process employee stamina:
+      // - Drain stamina from work this month
+      // - Exhausted employees (stamina=0) do NOT recover → must be fired/rested
+      // - Non-exhausted employees recover a small amount
+      const updatedEmployees = s.player.employees.map((emp) => {
         const drain = 10 * dcfg.staminaDrainMultiplier
-        const newStamina = Math.max(0, emp.stamina - drain)
+        let newStamina = emp.stamina - drain
+
+        // Recovery only if employee still has some stamina after drain
+        if (newStamina > 0) {
+          newStamina = Math.min(emp.maxStamina, newStamina + emp.bonus.staminaRecovery)
+        } else {
+          newStamina = 0 // Fully exhausted — no recovery until rest
+        }
+
         const sprite = newStamina <= 20 ? 'exhausted' as const
           : newStamina <= 60 ? 'typing' as const
           : 'idle' as const
 
         return { ...emp, stamina: newStamina, sprite }
-      })
-
-      // Recover stamina at month start for non-exhausted
-      const recoveredEmployees = employees.map((emp) => {
-        if (emp.stamina > 0) {
-          return { ...emp, stamina: Math.min(emp.maxStamina, emp.stamina + emp.bonus.staminaRecovery) }
-        }
-        return emp
       })
 
       const newCash = s.player.cash - totalSalary
@@ -357,7 +360,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         player: {
           ...s.player,
           cash: newCash,
-          employees: recoveredEmployees,
+          employees: updatedEmployees,
           monthlyExpenses: totalSalary,
           totalAssetValue: newCash + calcPortfolioValue(s.player.portfolio, s.companies),
         },
@@ -482,11 +485,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
         bonus: { ...roleConfig.bonus },
       }
 
+      // Deduct 3-month upfront signing bonus
+      const newCash = s.player.cash - salary * 3
+
       return {
         player: {
           ...s.player,
+          cash: newCash,
           employees: [...s.player.employees, employee],
           monthlyExpenses: s.player.monthlyExpenses + salary,
+          totalAssetValue: newCash + calcPortfolioValue(s.player.portfolio, s.companies),
         },
       }
     }),

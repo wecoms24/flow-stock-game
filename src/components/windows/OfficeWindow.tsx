@@ -12,10 +12,10 @@ const SPRITE_MAP: Record<string, string> = {
 }
 
 export function OfficeWindow() {
-  const { player, time, hireEmployee, fireEmployee, difficultyConfig } = useGameStore()
+  const { player, time, companies, hireEmployee, fireEmployee, difficultyConfig } = useGameStore()
 
   const totalStockValue = Object.values(player.portfolio).reduce((sum, pos) => {
-    const company = useGameStore.getState().companies.find((c) => c.id === pos.companyId)
+    const company = companies.find((c) => c.id === pos.companyId)
     return sum + (company ? company.price * pos.shares : 0)
   }, 0)
 
