@@ -33,6 +33,7 @@ import {
   processAITrading,
   getPriceHistory,
 } from '../engines/competitorEngine'
+import { PANIC_SELL_CONFIG, PERFORMANCE_CONFIG } from '../config/aiConfig'
 import { xpForLevel, titleForLevel, badgeForLevel, SKILL_UNLOCKS, XP_AMOUNTS } from '../systems/growthSystem'
 import { soundManager } from '../systems/soundManager'
 import { updateOfficeSystem } from '../engines/officeSystem'
@@ -319,6 +320,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       companies,
       events: data.events,
       news: data.news,
+      competitors: data.competitors ?? [],
+      competitorCount: data.competitorCount ?? 0,
+      competitorActions: [],
+      taunts: [],
       windows: [],
       nextZIndex: 1,
       windowIdCounter: 0,
@@ -1061,11 +1066,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const { competitors, companies, time } = get()
     if (competitors.length === 0) return
 
-    // Decrease panic sell cooldowns for all competitors
+    // Decrease panic sell cooldowns (compensate for TICK_DISTRIBUTION interval)
     set((state) => ({
       competitors: state.competitors.map((c) => ({
         ...c,
-        panicSellCooldown: Math.max(0, c.panicSellCooldown - 1),
+        panicSellCooldown: Math.max(0, c.panicSellCooldown - PERFORMANCE_CONFIG.TICK_DISTRIBUTION),
       })),
     }))
 
@@ -1146,7 +1151,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
           // Add taunt for panic sell and set cooldown
           if (action.action === 'panic_sell') {
-            competitor.panicSellCooldown = 300 // 300 tick cooldown after panic sell
+            competitor.panicSellCooldown = PANIC_SELL_CONFIG.COOLDOWN_TICKS
 
             newTaunts.push({
               competitorId: competitor.id,

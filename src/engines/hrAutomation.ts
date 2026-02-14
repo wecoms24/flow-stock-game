@@ -69,12 +69,13 @@ export function processHRAutomation(
       .forEach((emp) => {
         const trainingCost = 100_000
         if (remainingCash >= trainingCost) {
-          const skills = emp.skills as EmployeeSkills
+          const newSkills = { ...emp.skills } as EmployeeSkills
           const skillKeys: (keyof EmployeeSkills)[] = ['analysis', 'trading', 'research']
           const targetSkill = skillKeys[Math.floor(Math.random() * skillKeys.length)]
           const gain = Math.floor(Math.random() * 4) + 2
 
-          skills[targetSkill] = Math.min(100, skills[targetSkill] + gain)
+          newSkills[targetSkill] = Math.min(100, (newSkills[targetSkill] || 0) + gain)
+          emp.skills = newSkills
           remainingCash -= trainingCost
           totalSpent += trainingCost
 
