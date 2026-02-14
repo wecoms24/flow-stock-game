@@ -8,6 +8,7 @@ let worker: Worker | null = null
 let intervalId: ReturnType<typeof setInterval> | null = null
 let unsubscribeSpeed: (() => void) | null = null
 let autoSaveCounter = 0
+let previousRankings: Record<string, number> = {} // Track previous rankings for change detection
 
 const BASE_TICK_MS = 200
 const AUTO_SAVE_INTERVAL = 300 // Auto-save every 300 ticks (~2.5 min at 1x)
@@ -83,6 +84,28 @@ export function startTickLoop() {
       generateRandomEvent()
     }
 
+    // Employee System Processing (every 10 ticks)
+    if (currentState.time.tick % 10 === 0 && state.player.employees.length > 0) {
+      state.processEmployeeTick()
+    }
+
+    // AI Competitor Processing (every 5 ticks)
+    if (state.competitorCount > 0) {
+      // Update competitor assets every tick for accurate ROI
+      state.updateCompetitorAssets()
+
+      // Process AI trading every 5 ticks
+      if (currentState.time.tick % 5 === 0) {
+        state.processCompetitorTick()
+      }
+
+      // Update rankings every 10 ticks
+      if (currentState.time.tick % 10 === 0) {
+        const rankings = state.calculateRankings()
+        checkRankChanges(rankings)
+      }
+    }
+
     // Auto-save periodically
     autoSaveCounter++
     if (autoSaveCounter >= AUTO_SAVE_INTERVAL) {
@@ -130,6 +153,33 @@ function generateRandomEvent() {
   const store = useGameStore.getState()
   const template = pickWeightedEvent(EVENT_TEMPLATES)
 
+  // Identify affected companies
+  const affectedCompanyIds = store.companies
+    .filter((c) => {
+      if (template.affectedSectors) {
+        return template.affectedSectors.includes(c.sector)
+      }
+      return true // Global events affect all companies
+    })
+    .map((c) => c.id)
+
+  // Create price snapshot for affected companies
+  const priceSnapshot: Record<
+    string,
+    { priceBefore: number; peakChange: number; currentChange: number }
+  > = {}
+
+  affectedCompanyIds.forEach((id) => {
+    const company = store.companies.find((c) => c.id === id)
+    if (company) {
+      priceSnapshot[id] = {
+        priceBefore: company.price,
+        peakChange: 0,
+        currentChange: 0,
+      }
+    }
+  })
+
   const event: MarketEvent = {
     id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     title: template.title,
@@ -139,17 +189,26 @@ function generateRandomEvent() {
     duration: template.duration,
     remainingTicks: template.duration,
     affectedSectors: template.affectedSectors as Sector[] | undefined,
-    affectedCompanies: undefined,
+    affectedCompanies: affectedCompanyIds,
+    startTimestamp: { ...store.time },
+    priceImpactSnapshot: priceSnapshot,
   }
 
-  const isBreaking =
-    template.impact.severity === 'high' || template.impact.severity === 'critical'
+  const isBreaking = template.impact.severity === 'high' || template.impact.severity === 'critical'
 
   // Derive sentiment from drift direction
   const sentiment: NewsSentiment =
-    template.impact.driftModifier > 0.01 ? 'positive'
-    : template.impact.driftModifier < -0.01 ? 'negative'
-    : 'neutral'
+    template.impact.driftModifier > 0.01
+      ? 'positive'
+      : template.impact.driftModifier < -0.01
+        ? 'negative'
+        : 'neutral'
+
+  // Generate impact summary
+  const impactSummary =
+    affectedCompanyIds.length > 0
+      ? `${affectedCompanyIds.length}개 기업 영향 예상`
+      : '전체 시장 영향'
 
   store.addEvent(event)
   store.addNews({
@@ -160,9 +219,81 @@ function generateRandomEvent() {
     eventId: event.id,
     isBreaking,
     sentiment,
+    relatedCompanies: affectedCompanyIds,
+    impactSummary,
   })
 
   if (isBreaking) {
     store.triggerFlash()
   }
+}
+
+/* ── Rank Change Detection ── */
+function checkRankChanges(rankings: Array<{ name: string; rank: number; isPlayer: boolean }>) {
+  const store = useGameStore.getState()
+
+  rankings.forEach((entry) => {
+    const prevRank = previousRankings[entry.name]
+
+    if (prevRank && prevRank !== entry.rank) {
+      // Rank changed - trigger notification
+      if (entry.isPlayer) {
+        // Player rank changed - dispatch event for UI
+        window.dispatchEvent(
+          new CustomEvent('rankChange', {
+            detail: { oldRank: prevRank, newRank: entry.rank },
+          }),
+        )
+      } else {
+        // AI competitor rank changed
+        if (entry.rank === 1 && prevRank !== 1) {
+          // Became champion
+          store.addTaunt({
+            competitorId: entry.name,
+            competitorName: entry.name,
+            message: `${entry.name}: "나야말로 전설! 🏆👑"`,
+            type: 'champion',
+            timestamp: Date.now(),
+          })
+        } else if (entry.rank < prevRank) {
+          // Rank up
+          store.addTaunt({
+            competitorId: entry.name,
+            competitorName: entry.name,
+            message: `${entry.name}: "올라간다! 올라가! 🚀"`,
+            type: 'rank_up',
+            timestamp: Date.now(),
+          })
+        }
+
+        // Check if overtook player
+        const playerEntry = rankings.find((r) => r.isPlayer)
+        const prevPlayerRank = previousRankings['You']
+
+        if (
+          playerEntry &&
+          prevPlayerRank &&
+          entry.rank < playerEntry.rank &&
+          prevRank > prevPlayerRank
+        ) {
+          store.addTaunt({
+            competitorId: entry.name,
+            competitorName: entry.name,
+            message: `${entry.name}: "어? 내가 플레이어 넘었네? 😏"`,
+            type: 'overtake_player',
+            timestamp: Date.now(),
+          })
+        }
+      }
+    }
+  })
+
+  // Update tracking
+  previousRankings = rankings.reduce(
+    (acc, entry) => {
+      acc[entry.name] = entry.rank
+      return acc
+    },
+    {} as Record<string, number>,
+  )
 }

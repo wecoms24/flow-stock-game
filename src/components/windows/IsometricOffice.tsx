@@ -71,7 +71,9 @@ function EmployeeSprite({ emp, x, y }: { emp: Employee; x: number; y: number }) 
       )}
       {/* Status */}
       {statusEmoji && (
-        <text x="22" y="6" fontSize="6" fill="#808080">{statusEmoji}</text>
+        <text x="22" y="6" fontSize="6" fill="#808080">
+          {statusEmoji}
+        </text>
       )}
       {/* Name tag */}
       <text x="16" y="30" textAnchor="middle" fontSize="5" fill="#333">
@@ -131,11 +133,7 @@ export function IsometricOffice({ employees }: IsometricOfficeProps) {
   }, [])
 
   return (
-    <svg
-      viewBox="0 0 340 200"
-      className="w-full h-full"
-      style={{ imageRendering: 'pixelated' }}
-    >
+    <svg viewBox="0 0 340 200" className="w-full h-full" style={{ imageRendering: 'pixelated' }}>
       {/* Floor tiles */}
       {Array.from({ length: GRID_SIZE }, (_, row) =>
         Array.from({ length: GRID_SIZE }, (_, col) => (

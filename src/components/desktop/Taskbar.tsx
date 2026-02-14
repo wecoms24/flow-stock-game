@@ -1,7 +1,8 @@
+import { useState } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { PixelIcon } from '../ui/PixelIcon'
-import type { WindowType } from '../../types'
+import type { WindowType, WindowLayoutPreset } from '../../types'
 
 const TASKBAR_ITEMS: { type: WindowType; icon: string; label: string }[] = [
   { type: 'portfolio', icon: 'portfolio', label: '포트폴리오' },
@@ -13,13 +14,35 @@ const TASKBAR_ITEMS: { type: WindowType; icon: string; label: string }[] = [
   { type: 'settings', icon: 'settings', label: '설정' },
 ]
 
+const LAYOUT_PRESETS: { preset: WindowLayoutPreset; label: string; icon: string }[] = [
+  { preset: 'trading', label: '트레이딩', icon: '📊' },
+  { preset: 'analysis', label: '분석', icon: '📈' },
+  { preset: 'dashboard', label: '대시보드', icon: '🎛️' },
+]
+
 export function Taskbar() {
-  const { time, openWindow, windows, minimizeWindow, setSpeed, togglePause, unreadNewsCount, markNewsRead } =
-    useGameStore()
+  const {
+    time,
+    openWindow,
+    windows,
+    minimizeWindow,
+    setSpeed,
+    togglePause,
+    unreadNewsCount,
+    markNewsRead,
+    applyWindowLayout,
+  } = useGameStore()
+
+  const [showLayoutMenu, setShowLayoutMenu] = useState(false)
 
   const handleOpenWindow = (type: WindowType) => {
     openWindow(type)
     if (type === 'news') markNewsRead()
+  }
+
+  const handleApplyLayout = (preset: WindowLayoutPreset) => {
+    applyWindowLayout(preset)
+    setShowLayoutMenu(false)
   }
 
   return (
@@ -67,6 +90,40 @@ export function Taskbar() {
             {win.title}
           </RetroButton>
         ))}
+      </div>
+
+      <div className="w-px h-5 bg-win-shadow mx-0.5" />
+
+      {/* Layout Presets */}
+      <div className="relative shrink-0">
+        <RetroButton
+          size="sm"
+          onClick={() => setShowLayoutMenu(!showLayoutMenu)}
+          title="레이아웃 선택"
+          className="text-[10px]"
+        >
+          <span className="flex items-center gap-1">
+            🪟 레이아웃
+          </span>
+        </RetroButton>
+
+        {/* Dropdown Menu */}
+        {showLayoutMenu && (
+          <div className="absolute bottom-full left-0 mb-1 win-outset bg-win-face p-1 space-y-0.5 min-w-[100px] z-50">
+            {LAYOUT_PRESETS.map(({ preset, label, icon }) => (
+              <RetroButton
+                key={preset}
+                size="sm"
+                onClick={() => handleApplyLayout(preset)}
+                className="text-[10px] w-full justify-start"
+              >
+                <span className="flex items-center gap-1">
+                  {icon} {label}
+                </span>
+              </RetroButton>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Speed controls */}

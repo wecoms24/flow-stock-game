@@ -8,7 +8,9 @@ interface RetroPanelProps {
 
 export function RetroPanel({ children, variant = 'outset', className = '' }: RetroPanelProps) {
   return (
-    <div className={`bg-win-face ${variant === 'outset' ? 'win-outset' : 'win-inset'} ${className}`}>
+    <div
+      className={`bg-win-face ${variant === 'outset' ? 'win-outset' : 'win-inset'} ${className}`}
+    >
       {children}
     </div>
   )

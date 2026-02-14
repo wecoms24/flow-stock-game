@@ -28,11 +28,21 @@ const BOOT_LINES = [
   'Starting Stock-OS 95...',
 ]
 
+interface CompetitorSetup {
+  enabled: boolean
+  count: number
+}
+
 export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
   const startGame = useGameStore((s) => s.startGame)
+  const initializeCompetitors = useGameStore((s) => s.initializeCompetitors)
   const loadSavedGame = useGameStore((s) => s.loadSavedGame)
   const [bootPhase, setBootPhase] = useState<'booting' | 'ready'>('booting')
   const [bootLineIdx, setBootLineIdx] = useState(0)
+  const [competitorSetup, setCompetitorSetup] = useState<CompetitorSetup>({
+    enabled: false,
+    count: 3,
+  })
 
   // Boot animation: reveal lines one by one
   useEffect(() => {
@@ -65,6 +75,34 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
     { key: 'hard', label: 'Hard', cash: '2천만원', desc: '높은 변동성, 빠른 스태미너 소모' },
   ]
 
+  const handleStartGame = (difficulty: Difficulty) => {
+    if (competitorSetup.enabled) {
+      // Get initial cash for the difficulty
+      const difficultyConfig = {
+        easy: 100_000_000,
+        normal: 50_000_000,
+        hard: 20_000_000,
+      }
+      const startingCash = difficultyConfig[difficulty]
+
+      // Initialize competitors first
+      initializeCompetitors(competitorSetup.count, startingCash)
+    }
+
+    // Start the game
+    startGame(difficulty)
+  }
+
+  const competitorNames = [
+    { name: 'Warren Buffoon', icon: '🔥' },
+    { name: 'Elon Musk-rat', icon: '🐢' },
+    { name: 'Peter Lynch Pin', icon: '🌊' },
+    { name: 'Ray Dalio-ma', icon: '🐻' },
+    { name: 'George Soros-t', icon: '⚡' },
+  ]
+
+  const competitorStyles = ['Aggressive', 'Conservative', 'Trend Follower', 'Contrarian']
+
   // ── Boot Phase ──
   if (bootPhase === 'booting') {
     return (
@@ -79,9 +117,7 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
           {BOOT_LINES.slice(0, bootLineIdx).map((line, i) => (
             <div key={i}>{line || '\u00A0'}</div>
           ))}
-          {bootLineIdx < BOOT_LINES.length && (
-            <span className="animate-pulse">_</span>
-          )}
+          {bootLineIdx < BOOT_LINES.length && <span className="animate-pulse">_</span>}
         </div>
         <div className="absolute bottom-4 right-4 text-retro-gray text-[10px]">
           클릭하여 건너뛰기
@@ -100,9 +136,7 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
 
         <div className="p-4 space-y-4">
           <div className="text-center space-y-2">
-            <div className="text-2xl font-bold text-retro-darkblue">
-              Retro Stock-OS 95
-            </div>
+            <div className="text-2xl font-bold text-retro-darkblue">Retro Stock-OS 95</div>
             <div className="text-xs text-retro-gray">
               1995년부터 2025년까지, 30년간의 주식 투자 시뮬레이션
             </div>
@@ -111,17 +145,74 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
           {/* Continue button */}
           {hasSave && (
             <>
-              <RetroButton
-                variant="primary"
-                size="lg"
-                className="w-full"
-                onClick={handleContinue}
-              >
+              <RetroButton variant="primary" size="lg" className="w-full" onClick={handleContinue}>
                 이어하기 (자동 저장)
               </RetroButton>
               <hr className="border-win-shadow" />
             </>
           )}
+
+          {/* Investment Battle Mode Setup */}
+          <RetroPanel variant="inset" className="p-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="battle-mode"
+                className="w-4 h-4 accent-win-highlight"
+                checked={competitorSetup.enabled}
+                onChange={(e) =>
+                  setCompetitorSetup({ ...competitorSetup, enabled: e.target.checked })
+                }
+              />
+              <label htmlFor="battle-mode" className="text-sm font-bold cursor-pointer">
+                🥊 Investment Battle Mode
+              </label>
+            </div>
+
+            {competitorSetup.enabled && (
+              <div className="space-y-3 pl-2 border-l-2 border-win-shadow">
+                {/* Competitor Count Slider */}
+                <div>
+                  <label className="block text-xs mb-1">
+                    Number of Rivals: <strong>{competitorSetup.count}</strong>
+                  </label>
+                  <input
+                    type="range"
+                    min={1}
+                    max={5}
+                    value={competitorSetup.count}
+                    onChange={(e) =>
+                      setCompetitorSetup({ ...competitorSetup, count: Number(e.target.value) })
+                    }
+                    className="w-full h-1 bg-win-shadow rounded appearance-none cursor-pointer accent-win-highlight"
+                  />
+                  <div className="flex justify-between text-[10px] text-retro-gray mt-1">
+                    <span>Easy (1)</span>
+                    <span>Hard (5)</span>
+                  </div>
+                </div>
+
+                {/* Rival Preview */}
+                <div>
+                  <div className="text-[10px] font-bold mb-1">Your Rivals:</div>
+                  <div className="grid grid-cols-2 gap-1">
+                    {competitorNames.slice(0, competitorSetup.count).map((rival, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-1 p-1 bg-win-face rounded text-[10px]"
+                      >
+                        <span className="text-sm">{rival.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="truncate font-semibold">{rival.name}</div>
+                          <div className="text-retro-gray">{competitorStyles[i % 4]}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </RetroPanel>
 
           <div className="space-y-2">
             <div className="text-sm font-bold">새 게임 시작:</div>
@@ -135,8 +226,8 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
                       초기자본: <span className="text-retro-darkblue font-bold">{d.cash}</span>
                     </div>
                   </div>
-                  <RetroButton variant="primary" onClick={() => startGame(d.key)}>
-                    시작
+                  <RetroButton variant="primary" onClick={() => handleStartGame(d.key)}>
+                    {competitorSetup.enabled ? '⚔️ Battle!' : '시작'}
                   </RetroButton>
                 </div>
               </RetroPanel>

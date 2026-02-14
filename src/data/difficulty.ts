@@ -12,17 +12,17 @@ export const DIFFICULTY_TABLE: Record<Difficulty, DifficultyConfig> = {
     endYear: 2025,
     initialCash: 100_000_000,
     maxCompanies: 100,
-    eventChance: 0.005,       // 0.5% per tick → fewer surprises
+    eventChance: 0.005, // 0.5% per tick → fewer surprises
     volatilityMultiplier: 0.7, // 30% less volatile
     employeeSalaryMultiplier: 0.8, // cheaper employees
-    staminaDrainMultiplier: 0.6,   // slow fatigue
+    staminaDrainMultiplier: 0.6, // slow fatigue
   },
   normal: {
     startYear: 1995,
     endYear: 2025,
     initialCash: 50_000_000,
     maxCompanies: 100,
-    eventChance: 0.01,        // 1% per tick (baseline)
+    eventChance: 0.01, // 1% per tick (baseline)
     volatilityMultiplier: 1.0,
     employeeSalaryMultiplier: 1.0,
     staminaDrainMultiplier: 1.0,
@@ -32,9 +32,9 @@ export const DIFFICULTY_TABLE: Record<Difficulty, DifficultyConfig> = {
     endYear: 2025,
     initialCash: 20_000_000,
     maxCompanies: 100,
-    eventChance: 0.02,        // 2% per tick → chaotic markets
+    eventChance: 0.02, // 2% per tick → chaotic markets
     volatilityMultiplier: 1.4, // 40% more volatile
     employeeSalaryMultiplier: 1.3, // expensive employees
-    staminaDrainMultiplier: 1.5,   // fast fatigue
+    staminaDrainMultiplier: 1.5, // fast fatigue
   },
 }

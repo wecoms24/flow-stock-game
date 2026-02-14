@@ -8,6 +8,13 @@ import { WindowManager } from './components/windows/WindowManager'
 import { EndingScreen } from './components/windows/EndingScreen'
 import { CRTOverlay } from './components/effects/CRTOverlay'
 import { StockParticles } from './components/effects/StockParticles'
+import {
+  RankChangeNotification,
+  useRankChangeNotification,
+} from './components/effects/RankChangeNotification'
+import { ErrorBoundary } from './components/ErrorBoundary'
+import { LevelUpOverlay } from './components/effects/LevelUpOverlay'
+import { FloatingTextContainer } from './components/effects/FloatingText'
 import { hasSaveData } from './systems/saveSystem'
 
 export default function App() {
@@ -16,6 +23,7 @@ export default function App() {
   const time = useGameStore((s) => s.time)
   const checkEnding = useGameStore((s) => s.checkEnding)
   const [hasSave, setHasSave] = useState(false)
+  const rankChange = useRankChangeNotification()
 
   // Check for existing save on mount
   useEffect(() => {
@@ -36,25 +44,38 @@ export default function App() {
   }, [isGameStarted, isGameOver, time.year, time.month, time.day, time.tick, checkEnding])
 
   if (!isGameStarted) {
-    return <StartScreen hasSave={hasSave} onSaveLoaded={() => setHasSave(false)} />
+    return (
+      <ErrorBoundary>
+        <StartScreen hasSave={hasSave} onSaveLoaded={() => setHasSave(false)} />
+      </ErrorBoundary>
+    )
   }
 
   return (
-    <div className="w-screen h-screen bg-win-bg overflow-hidden">
-      <StockTicker />
+    <ErrorBoundary>
+      <div className="w-screen h-screen bg-win-bg overflow-hidden">
+        <StockTicker />
 
-      <div className="absolute top-5 left-0 right-0 bottom-8">
-        <WindowManager />
+        <div className="absolute top-5 left-0 right-0 bottom-8">
+          <WindowManager />
+        </div>
+
+        <Taskbar />
+
+        {/* Visual effects */}
+        <StockParticles />
+        <FloatingTextContainer />
+        <LevelUpOverlay />
+
+        {isGameOver && <EndingScreen />}
+
+        {/* Rank change notification */}
+        {rankChange && (
+          <RankChangeNotification oldRank={rankChange.oldRank} newRank={rankChange.newRank} />
+        )}
+
+        <CRTOverlay />
       </div>
-
-      <Taskbar />
-
-      {/* Visual effects */}
-      <StockParticles />
-
-      {isGameOver && <EndingScreen />}
-
-      <CRTOverlay />
-    </div>
+    </ErrorBoundary>
   )
 }

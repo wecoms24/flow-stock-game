@@ -7,9 +7,10 @@ export function EndingScreen() {
 
   if (!endingResult) return null
 
-  const returnRate = config.initialCash > 0
-    ? ((player.totalAssetValue - config.initialCash) / config.initialCash) * 100
-    : 0
+  const returnRate =
+    config.initialCash > 0
+      ? ((player.totalAssetValue - config.initialCash) / config.initialCash) * 100
+      : 0
 
   const icons: Record<string, string> = {
     billionaire: '💰',
@@ -51,8 +52,11 @@ export function EndingScreen() {
             </div>
             <div className="flex justify-between">
               <span className="text-retro-gray">총 수익률:</span>
-              <span className={`font-bold ${returnRate >= 0 ? 'text-stock-up' : 'text-stock-down'}`}>
-                {returnRate >= 0 ? '+' : ''}{returnRate.toFixed(1)}%
+              <span
+                className={`font-bold ${returnRate >= 0 ? 'text-stock-up' : 'text-stock-down'}`}
+              >
+                {returnRate >= 0 ? '+' : ''}
+                {returnRate.toFixed(1)}%
               </span>
             </div>
             <div className="flex justify-between">
@@ -67,7 +71,9 @@ export function EndingScreen() {
             </RetroButton>
             <RetroButton onClick={() => startGame('easy')}>Easy</RetroButton>
             <RetroButton onClick={() => startGame('normal')}>Normal</RetroButton>
-            <RetroButton variant="danger" onClick={() => startGame('hard')}>Hard</RetroButton>
+            <RetroButton variant="danger" onClick={() => startGame('hard')}>
+              Hard
+            </RetroButton>
           </div>
         </div>
       </RetroPanel>

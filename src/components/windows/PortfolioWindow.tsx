@@ -15,13 +15,9 @@ export function PortfolioWindow() {
       {/* Summary */}
       <div className="grid grid-cols-2 gap-x-2 gap-y-1">
         <span className="text-retro-gray">보유 현금:</span>
-        <span className="text-right font-bold">
-          {player.cash.toLocaleString()}원
-        </span>
+        <span className="text-right font-bold">{player.cash.toLocaleString()}원</span>
         <span className="text-retro-gray">주식 평가:</span>
-        <span className="text-right font-bold">
-          {totalStockValue.toLocaleString()}원
-        </span>
+        <span className="text-right font-bold">{totalStockValue.toLocaleString()}원</span>
         <span className="text-retro-gray">총 자산:</span>
         <span className="text-right font-bold text-retro-darkblue">
           {totalAssets.toLocaleString()}원
@@ -59,7 +55,9 @@ export function PortfolioWindow() {
                   </td>
                   <td className="text-right">{pos.shares}</td>
                   <td className="text-right">{company.price.toLocaleString()}</td>
-                  <td className={`text-right font-bold ${isUp ? 'text-stock-up' : 'text-stock-down'}`}>
+                  <td
+                    className={`text-right font-bold ${isUp ? 'text-stock-up' : 'text-stock-down'}`}
+                  >
                     {isUp ? '+' : ''}
                     {pnlPercent.toFixed(1)}%
                   </td>

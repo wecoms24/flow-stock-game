@@ -73,6 +73,25 @@ interface GameStore {
 - Use selectors for performance: `useGameStore((s) => s.specificValue)`
 - Store handles all business logic (trading validation, price updates, event generation)
 
+**Player State**:
+```typescript
+interface PlayerState {
+  cash: number
+  totalAssetValue: number
+  portfolio: Record<string, PortfolioPosition>
+  monthlyExpenses: number
+  employees: Employee[]
+  officeLevel: number // 1-3, affects max employees and stamina recovery
+}
+```
+
+**Key Actions**:
+- `buyStock()`, `sellStock()`: Trading with validation
+- `hireEmployee()`, `fireEmployee()`: Employee management
+- `upgradeOffice()`: Office upgrade (levels 1-3, costs 10M/30M, resets stamina)
+- `advanceTick()`: Time progression and monthly processing
+- `checkEnding()`: Evaluate ending scenarios
+
 ### Game Engine (`src/engines/tickEngine.ts`)
 
 The tick engine is the game's heartbeat, managing time progression and coordinating systems:
@@ -129,10 +148,11 @@ src/components/
 ├── effects/          # Visual effects
 │   ├── CRTOverlay    # Retro CRT scanline effect
 │   └── StockParticles # Floating price change particles
-└── ui/               # Reusable UI primitives
-    ├── Button
-    ├── Panel
-    └── ProgressBar
+├── ui/               # Reusable UI primitives
+│   ├── Button
+│   ├── Panel
+│   └── ProgressBar
+└── ErrorBoundary.tsx # Error boundary for graceful error handling
 ```
 
 **Window System Pattern**:
@@ -219,8 +239,10 @@ Currently no automated tests. When adding tests:
 2. **Worker messages**: Prices update asynchronously; don't rely on immediate state changes
 3. **Portfolio calculations**: Total asset value recalculates on every price update (performance sensitive)
 4. **Z-index management**: Always use store's `nextZIndex` counter, never hardcode
-5. **Save data migration**: When changing `SaveData` type, handle legacy save format
+5. **Save data migration**: When changing `SaveData` type, handle legacy save format (e.g., `officeLevel ?? 1`)
 6. **Employee stamina**: Drains monthly; zero stamina blocks hiring until office upgrade
+7. **Error handling**: App wrapped in ErrorBoundary for graceful error recovery
+8. **Console tampering**: Production mode freezes state from `getState()` to prevent cheating
 
 ## Future Architecture Considerations
 
@@ -229,3 +251,10 @@ Currently no automated tests. When adding tests:
 - **Lazy loading**: Code-split windows with React.lazy() for faster initial load
 - **Service workers**: Add offline support and background auto-save
 - **Audio system**: Background music + sound effects for events/trades
+
+## Active Technologies
+- TypeScript 5.x + React 19 + React 19, Zustand (state), TailwindCSS v4 (styling), Chart.js + react-chartjs-2 (charts), Vite (build) (001-retro-stock-sim)
+- IndexedDB (browser local storage for game save data) (001-retro-stock-sim)
+
+## Recent Changes
+- 001-retro-stock-sim: Added TypeScript 5.x + React 19 + React 19, Zustand (state), TailwindCSS v4 (styling), Chart.js + react-chartjs-2 (charts), Vite (build)

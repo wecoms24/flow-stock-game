@@ -147,3 +147,112 @@ body {
 .ticker-scroll {
   animation: ticker-scroll 30s linear infinite;
 }
+
+/* ── Investment Battle Mode Animations ── */
+
+/* Rank change notification bounce-in */
+@keyframes bounce-in {
+  0% {
+    transform: scale(0) rotate(-180deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2) rotate(10deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.animate-bounce-in {
+  animation: bounce-in 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+/* Arcade text glow effect */
+.arcade-text {
+  text-shadow:
+    0 0 10px currentColor,
+    0 0 20px currentColor,
+    0 0 30px currentColor;
+}
+
+.glow {
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+}
+
+/* ── Employee Growth System Animations ── */
+
+/* Floating XP text: rise + fade */
+@keyframes floating-text {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-40px);
+    opacity: 0;
+  }
+}
+
+.floating-text-anim {
+  animation: floating-text 1.2s ease-out forwards;
+}
+
+/* Level up text pulse */
+@keyframes levelup-pulse {
+  0%, 100% {
+    transform: scale(1);
+    text-shadow: 0 0 5px currentColor;
+  }
+  50% {
+    transform: scale(1.08);
+    text-shadow: 0 0 15px currentColor, 0 0 25px currentColor;
+  }
+}
+
+.levelup-text {
+  animation: levelup-pulse 1s ease-in-out infinite;
+}
+
+/* Stars twinkle */
+@keyframes star-twinkle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.levelup-stars {
+  animation: star-twinkle 0.8s ease-in-out infinite alternate;
+  color: #FFD700;
+}
+
+/* XP bar smooth fill */
+.xp-bar-fill {
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Praise heart particles */
+@keyframes heart-float {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-30px) scale(0.5);
+    opacity: 0;
+  }
+}
+
+.heart-particle {
+  animation: heart-float 1s ease-out forwards;
+}
+
+/* Mood indicator glow */
+@keyframes mood-glow {
+  0%, 100% { box-shadow: none; }
+  50% { box-shadow: 0 0 4px currentColor; }
+}
+
+.mood-indicator {
+  animation: mood-glow 2s ease-in-out infinite;
+}

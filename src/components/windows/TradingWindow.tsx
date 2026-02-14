@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
+import type { Company } from '../../types'
 
 interface TradingWindowProps {
   companyId?: string
@@ -11,6 +12,22 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
   const [selectedId, setSelectedId] = useState(companyId ?? companies[0]?.id ?? '')
   const [shares, setShares] = useState(1)
   const [mode, setMode] = useState<'buy' | 'sell'>('buy')
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [companiesSnapshot, setCompaniesSnapshot] = useState<Company[]>(companies)
+
+  // 드롭다운 열릴 때 가격 스냅샷 저장
+  const handleDropdownOpen = () => {
+    setIsDropdownOpen(true)
+    setCompaniesSnapshot(companies)
+  }
+
+  // 드롭다운 닫힐 때 최신 가격으로 전환
+  const handleDropdownClose = () => {
+    setIsDropdownOpen(false)
+  }
+
+  // 선택 중일 때는 스냅샷, 아닐 때는 실시간 가격
+  const displayCompanies = isDropdownOpen ? companiesSnapshot : companies
 
   const company = companies.find((c) => c.id === selectedId)
   const position = player.portfolio[selectedId]
@@ -36,12 +53,15 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
       <select
         className="w-full win-inset bg-white px-1 py-0.5"
         value={selectedId}
+        onFocus={handleDropdownOpen}
+        onBlur={handleDropdownClose}
         onChange={(e) => {
           setSelectedId(e.target.value)
           setShares(1)
+          handleDropdownClose()
         }}
       >
-        {companies.map((c) => (
+        {displayCompanies.map((c) => (
           <option key={c.id} value={c.id}>
             [{c.ticker}] {c.name} - {c.price.toLocaleString()}원
           </option>
@@ -89,10 +109,7 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
           onChange={(e) => setShares(Math.max(1, parseInt(e.target.value) || 1))}
           className="win-inset bg-white px-1 py-0.5 w-16 text-right"
         />
-        <RetroButton
-          size="sm"
-          onClick={() => setShares(mode === 'buy' ? maxBuyable : maxSellable)}
-        >
+        <RetroButton size="sm" onClick={() => setShares(mode === 'buy' ? maxBuyable : maxSellable)}>
           최대
         </RetroButton>
       </div>
@@ -112,7 +129,9 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
         className="w-full"
         onClick={handleTrade}
         disabled={
-          mode === 'buy' ? totalCost > player.cash || shares <= 0 : shares > maxSellable || shares <= 0
+          mode === 'buy'
+            ? totalCost > player.cash || shares <= 0
+            : shares > maxSellable || shares <= 0
         }
       >
         {mode === 'buy' ? `${shares}주 매수` : `${shares}주 매도`}
