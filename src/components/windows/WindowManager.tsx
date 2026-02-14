@@ -4,6 +4,9 @@ import { PortfolioWindow } from './PortfolioWindow'
 import { ChartWindow } from './ChartWindow'
 import { TradingWindow } from './TradingWindow'
 import { NewsWindow } from './NewsWindow'
+import { OfficeWindow } from './OfficeWindow'
+import { RankingWindow } from './RankingWindow'
+import { SettingsWindow } from './SettingsWindow'
 import type { WindowType } from '../../types'
 
 const WINDOW_COMPONENTS: Record<WindowType, React.ComponentType<Record<string, unknown>>> = {
@@ -11,15 +14,9 @@ const WINDOW_COMPONENTS: Record<WindowType, React.ComponentType<Record<string, u
   chart: ChartWindow as React.ComponentType<Record<string, unknown>>,
   trading: TradingWindow as React.ComponentType<Record<string, unknown>>,
   news: NewsWindow as React.ComponentType<Record<string, unknown>>,
-  office: () => (
-    <div className="text-xs text-retro-gray text-center py-8">사무실 뷰 (준비 중)</div>
-  ),
-  ranking: () => (
-    <div className="text-xs text-retro-gray text-center py-8">랭킹 보드 (준비 중)</div>
-  ),
-  settings: () => (
-    <div className="text-xs text-retro-gray text-center py-8">설정 (준비 중)</div>
-  ),
+  office: OfficeWindow as React.ComponentType<Record<string, unknown>>,
+  ranking: RankingWindow as React.ComponentType<Record<string, unknown>>,
+  settings: SettingsWindow as React.ComponentType<Record<string, unknown>>,
 }
 
 export function WindowManager() {

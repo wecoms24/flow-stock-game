@@ -67,7 +67,7 @@ export const COMPANIES: Company[] = [
   // ── Healthcare (10) ──
   makeCompany('hc-01', '바이오젠텍', 'BGT', 'healthcare', 72000, 0.35, 0.10, '항암제 신약 개발'),
   makeCompany('hc-02', '메디코어', 'MDC', 'healthcare', 54000, 0.25, 0.07, '의료기기 제조'),
-  makeCompany('hc-03', '진랩사이언스', 'GLS', 'healthcare', 38000, 0.40, 0.12, '유전체 분석'),
+  makeCompany('hc-03', '진랩사이언스', 'GNL', 'healthcare', 38000, 0.40, 0.12, '유전체 분석'),
   makeCompany('hc-04', '헬스플러스', 'HPL', 'healthcare', 29000, 0.22, 0.06, '디지털 헬스케어'),
   makeCompany('hc-05', '뉴로사이언', 'NRS', 'healthcare', 85000, 0.45, 0.14, '뇌과학 신약 R&D'),
   makeCompany('hc-06', '파마로직', 'PML', 'healthcare', 46000, 0.30, 0.08, '제네릭 의약품'),

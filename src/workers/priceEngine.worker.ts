@@ -3,6 +3,7 @@
 
 interface CompanyData {
   id: string
+  sector: string
   price: number
   drift: number // mu: expected return
   volatility: number // sigma: price volatility
@@ -47,6 +48,31 @@ function computeGBM(price: number, mu: number, sigma: number, dt: number): numbe
   return Math.max(100, Math.round(newPrice))
 }
 
+/**
+ * Determine whether an event affects a specific company.
+ *
+ * Rules:
+ *  1. If both affectedCompanies and affectedSectors are empty/undefined → global event → affects ALL
+ *  2. If affectedCompanies is specified and non-empty → only those companies
+ *  3. If affectedSectors is specified and non-empty → all companies in those sectors
+ *  4. Both specified → company must match EITHER list (union)
+ */
+function doesEventAffect(evt: EventModifier, company: CompanyData): boolean {
+  const hasCompanyFilter = evt.affectedCompanies && evt.affectedCompanies.length > 0
+  const hasSectorFilter = evt.affectedSectors && evt.affectedSectors.length > 0
+
+  // Global event: no filters → affects everyone
+  if (!hasCompanyFilter && !hasSectorFilter) return true
+
+  // Check company-level targeting
+  if (hasCompanyFilter && evt.affectedCompanies!.includes(company.id)) return true
+
+  // Check sector-level targeting
+  if (hasSectorFilter && evt.affectedSectors!.includes(company.sector)) return true
+
+  return false
+}
+
 self.onmessage = (e: MessageEvent<TickMessage>) => {
   if (e.data.type !== 'tick') return
 
@@ -57,18 +83,16 @@ self.onmessage = (e: MessageEvent<TickMessage>) => {
     let mu = company.drift
     let sigma = company.volatility
 
-    // Apply active event modifiers
+    // Apply active event modifiers with proper sector/company filtering
     for (const evt of events) {
-      const affectsThisCompany =
-        !evt.affectedCompanies ||
-        evt.affectedCompanies.length === 0 ||
-        evt.affectedCompanies.includes(company.id)
-
-      if (affectsThisCompany) {
+      if (doesEventAffect(evt, company)) {
         mu += evt.driftModifier
         sigma *= 1 + evt.volatilityModifier
       }
     }
+
+    // Clamp sigma to prevent negative volatility from extreme events
+    sigma = Math.max(0.01, sigma)
 
     prices[company.id] = computeGBM(company.price, mu, sigma, dt)
   }

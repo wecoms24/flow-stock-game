@@ -1,14 +1,19 @@
 import { useGameStore } from '../stores/gameStore'
+import { EVENT_TEMPLATES } from '../data/events'
 import type { MarketEvent, Sector } from '../types'
 
 /* ── Tick Engine: 1-tick time control system ── */
 
 let worker: Worker | null = null
 let intervalId: ReturnType<typeof setInterval> | null = null
+let unsubscribeSpeed: (() => void) | null = null
 
 const BASE_TICK_MS = 500 // 1x speed = 500ms per tick
+const EVENT_CHANCE_PER_TICK = 0.01 // 1% chance per tick
 
 export function initTickEngine() {
+  if (worker) return // guard against double-init
+
   worker = new Worker(new URL('../workers/priceEngine.worker.ts', import.meta.url), {
     type: 'module',
   })
@@ -31,8 +36,10 @@ export function startTickLoop() {
     state.advanceTick()
 
     // Send companies data to worker for GBM price calculation
+    // Worker needs sector info to apply sector-scoped events
     const companyData = state.companies.map((c) => ({
       id: c.id,
+      sector: c.sector,
       price: c.price,
       drift: c.drift,
       volatility: c.volatility,
@@ -65,8 +72,8 @@ export function startTickLoop() {
         .filter((evt) => evt.remainingTicks > 0),
     }))
 
-    // Random event generation (1% chance per tick)
-    if (Math.random() < 0.01) {
+    // Random event generation from the full 50-event pool
+    if (Math.random() < EVENT_CHANCE_PER_TICK) {
       generateRandomEvent()
     }
   }
@@ -80,8 +87,8 @@ export function startTickLoop() {
 
   updateInterval()
 
-  // Subscribe to speed changes
-  useGameStore.subscribe((state, prevState) => {
+  // Subscribe to speed changes (store the unsubscribe handle!)
+  unsubscribeSpeed = useGameStore.subscribe((state, prevState) => {
     if (state.time.speed !== prevState.time.speed) {
       updateInterval()
     }
@@ -97,80 +104,48 @@ export function stopTickLoop() {
 
 export function destroyTickEngine() {
   stopTickLoop()
+
+  // Clean up Zustand subscription to prevent memory leak
+  if (unsubscribeSpeed) {
+    unsubscribeSpeed()
+    unsubscribeSpeed = null
+  }
+
   worker?.terminate()
   worker = null
 }
 
-/* ── Random Event Generator ── */
+/* ── Random Event Generator using full 50-event pool from events.ts ── */
 function generateRandomEvent() {
   const store = useGameStore.getState()
-  const eventTemplates = [
-    {
-      title: '연준, 금리 인하 발표',
-      description: '연방준비제도가 기준금리를 0.25%p 인하했습니다.',
-      type: 'policy' as const,
-      impact: { driftModifier: 0.05, volatilityModifier: 0.1, severity: 'medium' as const },
-      duration: 100,
-    },
-    {
-      title: '기술주 폭등 조짐',
-      description: '반도체 수요 급증으로 기술 섹터가 활기를 띠고 있습니다.',
-      type: 'sector' as const,
-      impact: { driftModifier: 0.08, volatilityModifier: 0.2, severity: 'high' as const },
-      duration: 150,
-      affectedSectors: ['tech'] as const,
-    },
-    {
-      title: '글로벌 경기 침체 우려',
-      description: '주요 경제지표가 하락세를 보이며 시장 불안감이 확산됩니다.',
-      type: 'global' as const,
-      impact: { driftModifier: -0.06, volatilityModifier: 0.3, severity: 'high' as const },
-      duration: 200,
-    },
-    {
-      title: '부동산 시장 과열',
-      description: '부동산 가격이 급등하며 관련 주가도 영향을 받고 있습니다.',
-      type: 'sector' as const,
-      impact: { driftModifier: 0.04, volatilityModifier: 0.15, severity: 'medium' as const },
-      duration: 120,
-      affectedSectors: ['realestate'] as const,
-    },
-    {
-      title: '유가 급등',
-      description: '중동 지역 긴장으로 국제 유가가 급등했습니다.',
-      type: 'global' as const,
-      impact: { driftModifier: -0.03, volatilityModifier: 0.25, severity: 'medium' as const },
-      duration: 80,
-      affectedSectors: ['energy'] as const,
-    },
-  ]
+  const template = EVENT_TEMPLATES[Math.floor(Math.random() * EVENT_TEMPLATES.length)]
 
-  const template = eventTemplates[Math.floor(Math.random() * eventTemplates.length)]
   const event: MarketEvent = {
-    id: `evt-${Date.now()}`,
+    id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     title: template.title,
     description: template.description,
     type: template.type,
-    impact: template.impact,
+    impact: { ...template.impact },
     duration: template.duration,
     remainingTicks: template.duration,
+    affectedSectors: template.affectedSectors as Sector[] | undefined,
     affectedCompanies: undefined,
-    affectedSectors: (template as { affectedSectors?: Sector[] }).affectedSectors,
   }
 
-  const severity = template.impact.severity as string
+  const isBreaking =
+    template.impact.severity === 'high' || template.impact.severity === 'critical'
 
   store.addEvent(event)
   store.addNews({
-    id: `news-${Date.now()}`,
+    id: `news-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     timestamp: { ...store.time },
     headline: template.title,
     body: template.description,
     eventId: event.id,
-    isBreaking: severity === 'high' || severity === 'critical',
+    isBreaking,
   })
 
-  if (severity === 'high' || severity === 'critical') {
+  if (isBreaking) {
     store.triggerFlash()
   }
 }

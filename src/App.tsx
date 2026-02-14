@@ -5,16 +5,27 @@ import { StartScreen } from './components/desktop/StartScreen'
 import { StockTicker } from './components/desktop/StockTicker'
 import { Taskbar } from './components/desktop/Taskbar'
 import { WindowManager } from './components/windows/WindowManager'
+import { EndingScreen } from './components/windows/EndingScreen'
 import { CRTOverlay } from './components/effects/CRTOverlay'
 
 export default function App() {
   const isGameStarted = useGameStore((s) => s.isGameStarted)
+  const isGameOver = useGameStore((s) => s.isGameOver)
+  const time = useGameStore((s) => s.time)
+  const checkEnding = useGameStore((s) => s.checkEnding)
 
   useEffect(() => {
     initTickEngine()
     startTickLoop()
     return () => destroyTickEngine()
   }, [])
+
+  // Check ending conditions periodically (every new day = tick 0)
+  useEffect(() => {
+    if (isGameStarted && !isGameOver && time.tick === 0) {
+      checkEnding()
+    }
+  }, [isGameStarted, isGameOver, time.year, time.month, time.day, time.tick, checkEnding])
 
   if (!isGameStarted) {
     return <StartScreen />
@@ -32,6 +43,9 @@ export default function App() {
 
       {/* Taskbar at bottom */}
       <Taskbar />
+
+      {/* Ending overlay */}
+      {isGameOver && <EndingScreen />}
 
       {/* CRT effects on top of everything */}
       <CRTOverlay />

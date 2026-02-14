@@ -9,6 +9,7 @@ import type {
   GameConfig,
   Difficulty,
   PortfolioPosition,
+  EndingScenario,
 } from '../types'
 import { COMPANIES } from '../data/companies'
 
@@ -19,11 +20,52 @@ const DIFFICULTY_CONFIG: Record<Difficulty, Omit<GameConfig, 'difficulty'>> = {
   hard: { startYear: 1995, endYear: 2025, initialCash: 20_000_000, maxCompanies: 100 },
 }
 
+/* ── Ending Scenarios ── */
+const ENDING_SCENARIOS: EndingScenario[] = [
+  {
+    id: 'billionaire',
+    type: 'billionaire',
+    title: '억만장자의 탄생',
+    description: '당신은 전설적인 투자자가 되었습니다. 총 자산 10억 원을 돌파!',
+    condition: (player) => player.totalAssetValue >= 1_000_000_000,
+  },
+  {
+    id: 'legend',
+    type: 'legend',
+    title: '투자의 신',
+    description: '초기 자본 대비 100배 이상의 수익을 달성! 당신의 이름은 역사에 남을 것입니다.',
+    condition: (player, _time) => player.totalAssetValue >= player.cash * 100,
+  },
+  {
+    id: 'retirement',
+    type: 'retirement',
+    title: '행복한 은퇴',
+    description: '30년간의 여정을 무사히 마치고 안정적인 자산과 함께 은퇴합니다.',
+    condition: (player, time) => time.year >= 2025 && player.totalAssetValue > 0,
+  },
+  {
+    id: 'survivor',
+    type: 'survivor',
+    title: '생존자',
+    description: '험난한 시장에서 30년을 버텨냈지만, 초기 자본을 지키지 못했습니다.',
+    condition: (player, time) => time.year >= 2025 && player.totalAssetValue > 0,
+  },
+  {
+    id: 'bankrupt',
+    type: 'bankrupt',
+    title: '파산',
+    description: '자산이 바닥났습니다. 시장은 냉혹합니다.',
+    condition: (player) => player.cash <= 0 && Object.keys(player.portfolio).length === 0,
+  },
+]
+
 /* ── Store Interface ── */
 interface GameStore {
   // Game config
   config: GameConfig
   isGameStarted: boolean
+  isGameOver: boolean
+  endingResult: EndingScenario | null
 
   // Time
   time: GameTime
@@ -39,6 +81,7 @@ interface GameStore {
   // UI - Window Manager
   windows: WindowState[]
   nextZIndex: number
+  windowIdCounter: number
 
   // Flash effect
   isFlashing: boolean
@@ -47,6 +90,7 @@ interface GameStore {
   startGame: (difficulty: Difficulty) => void
   setSpeed: (speed: GameTime['speed']) => void
   togglePause: () => void
+  checkEnding: () => void
 
   // Actions - Time
   advanceTick: () => void
@@ -72,11 +116,11 @@ interface GameStore {
   triggerFlash: () => void
 }
 
-let windowIdCounter = 0
-
 export const useGameStore = create<GameStore>((set, get) => ({
   config: { difficulty: 'normal', ...DIFFICULTY_CONFIG.normal },
   isGameStarted: false,
+  isGameOver: false,
+  endingResult: null,
 
   time: {
     year: 1995,
@@ -101,6 +145,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   windows: [],
   nextZIndex: 1,
+  windowIdCounter: 0,
 
   isFlashing: false,
 
@@ -115,6 +160,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({
       config: { difficulty, ...cfg },
       isGameStarted: true,
+      isGameOver: false,
+      endingResult: null,
       time: { year: cfg.startYear, month: 1, day: 1, tick: 0, speed: 1, isPaused: false },
       player: {
         cash: cfg.initialCash,
@@ -135,6 +182,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         },
       ],
       windows: [],
+      nextZIndex: 1,
+      windowIdCounter: 0, // Reset on new game
     })
 
     // Open default windows
@@ -147,6 +196,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setSpeed: (speed) => set((s) => ({ time: { ...s.time, speed } })),
 
   togglePause: () => set((s) => ({ time: { ...s.time, isPaused: !s.time.isPaused } })),
+
+  checkEnding: () => {
+    const state = get()
+    if (state.isGameOver) return
+
+    for (const scenario of ENDING_SCENARIOS) {
+      if (scenario.condition(state.player, state.time)) {
+        set({
+          isGameOver: true,
+          endingResult: scenario,
+          time: { ...state.time, isPaused: true },
+        })
+        break
+      }
+    }
+  },
 
   /* ── Time ── */
   advanceTick: () =>
@@ -171,6 +236,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   /* ── Trading ── */
   buyStock: (companyId, shares) =>
     set((s) => {
+      if (shares <= 0) return s // Validate: positive shares only
       const company = s.companies.find((c) => c.id === companyId)
       if (!company) return s
       const cost = company.price * shares
@@ -187,17 +253,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
           }
         : { companyId, shares, avgBuyPrice: company.price }
 
+      const newCash = s.player.cash - cost
+      const newPortfolio = { ...s.player.portfolio, [companyId]: newPosition }
+
       return {
         player: {
           ...s.player,
-          cash: s.player.cash - cost,
-          portfolio: { ...s.player.portfolio, [companyId]: newPosition },
+          cash: newCash,
+          portfolio: newPortfolio,
+          totalAssetValue: newCash + calcPortfolioValue(newPortfolio, s.companies),
         },
       }
     }),
 
   sellStock: (companyId, shares) =>
     set((s) => {
+      if (shares <= 0) return s // Validate: positive shares only
       const company = s.companies.find((c) => c.id === companyId)
       const position = s.player.portfolio[companyId]
       if (!company || !position || position.shares < shares) return s
@@ -212,19 +283,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
         newPortfolio[companyId] = { ...position, shares: remaining }
       }
 
+      const newCash = s.player.cash + revenue
+
       return {
         player: {
           ...s.player,
-          cash: s.player.cash + revenue,
+          cash: newCash,
           portfolio: newPortfolio,
+          totalAssetValue: newCash + calcPortfolioValue(newPortfolio, s.companies),
         },
       }
     }),
 
   /* ── Market ── */
   updatePrices: (prices) =>
-    set((s) => ({
-      companies: s.companies.map((c) => {
+    set((s) => {
+      const newCompanies = s.companies.map((c) => {
         const newPrice = prices[c.id]
         if (newPrice === undefined) return c
         return {
@@ -234,8 +308,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
           priceHistory: [...c.priceHistory.slice(-299), newPrice],
           marketCap: newPrice * 1_000_000,
         }
-      }),
-    })),
+      })
+
+      // Recalculate total asset value with updated prices
+      const portfolioValue = calcPortfolioValue(s.player.portfolio, newCompanies)
+
+      return {
+        companies: newCompanies,
+        player: {
+          ...s.player,
+          totalAssetValue: s.player.cash + portfolioValue,
+        },
+      }
+    }),
 
   addEvent: (event) => set((s) => ({ events: [...s.events, event] })),
 
@@ -254,7 +339,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       }
 
-      const id = `win-${++windowIdCounter}`
+      const counter = s.windowIdCounter + 1
+      const id = `win-${counter}`
       const offset = (s.windows.length % 5) * 30
       const titles: Record<WindowState['type'], string> = {
         portfolio: '내 포트폴리오',
@@ -283,6 +369,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return {
         windows: [...s.windows, win],
         nextZIndex: s.nextZIndex + 1,
+        windowIdCounter: counter,
       }
     }),
 
@@ -318,3 +405,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
     setTimeout(() => set({ isFlashing: false }), 500)
   },
 }))
+
+/* ── Helper: calculate total portfolio market value ── */
+function calcPortfolioValue(
+  portfolio: Record<string, PortfolioPosition>,
+  companies: Company[],
+): number {
+  let total = 0
+  for (const pos of Object.values(portfolio)) {
+    const company = companies.find((c) => c.id === pos.companyId)
+    if (company) total += company.price * pos.shares
+  }
+  return total
+}
