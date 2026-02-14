@@ -1,0 +1,149 @@
+@import "tailwindcss";
+
+/* ── Retro Stock-OS 95 Design System ── */
+
+/* 16-color CGA/EGA inspired palette */
+@theme {
+  --color-retro-black: #0C0C0C;
+  --color-retro-darkblue: #00037A;
+  --color-retro-darkgreen: #00590B;
+  --color-retro-darkcyan: #007070;
+  --color-retro-darkred: #8B0000;
+  --color-retro-purple: #6A006A;
+  --color-retro-brown: #8B6914;
+  --color-retro-silver: #C0C0C0;
+  --color-retro-gray: #808080;
+  --color-retro-blue: #0000FF;
+  --color-retro-green: #00FF00;
+  --color-retro-cyan: #00FFFF;
+  --color-retro-red: #FF0000;
+  --color-retro-magenta: #FF00FF;
+  --color-retro-yellow: #FFFF00;
+  --color-retro-white: #FFFFFF;
+
+  /* Win95 UI colors */
+  --color-win-bg: #008080;
+  --color-win-face: #C0C0C0;
+  --color-win-highlight: #FFFFFF;
+  --color-win-shadow: #808080;
+  --color-win-dark-shadow: #000000;
+  --color-win-title-active: #000080;
+  --color-win-title-inactive: #808080;
+  --color-win-title-text: #FFFFFF;
+
+  /* Stock colors */
+  --color-stock-up: #FF0000;
+  --color-stock-down: #0000FF;
+  --color-stock-neutral: #808080;
+}
+
+/* Pixel font */
+@font-face {
+  font-family: 'DungGeunMo';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/DungGeunMo.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+* {
+  font-family: 'DungGeunMo', 'Courier New', monospace;
+  image-rendering: pixelated;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-win-bg);
+  color: var(--color-retro-black);
+  overflow: hidden;
+}
+
+/* Win95 inset border */
+.win-inset {
+  border: 2px solid;
+  border-color: var(--color-win-shadow) var(--color-win-highlight) var(--color-win-highlight) var(--color-win-shadow);
+}
+
+/* Win95 outset border */
+.win-outset {
+  border: 2px solid;
+  border-color: var(--color-win-highlight) var(--color-win-dark-shadow) var(--color-win-dark-shadow) var(--color-win-highlight);
+}
+
+/* Win95 button pressed */
+.win-pressed {
+  border: 2px solid;
+  border-color: var(--color-win-dark-shadow) var(--color-win-highlight) var(--color-win-highlight) var(--color-win-dark-shadow);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 16px;
+  height: 16px;
+}
+::-webkit-scrollbar-track {
+  background: repeating-conic-gradient(var(--color-win-face) 0% 25%, var(--color-win-highlight) 0% 50%) 50% / 2px 2px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-win-face);
+  border: 2px solid;
+  border-color: var(--color-win-highlight) var(--color-win-dark-shadow) var(--color-win-dark-shadow) var(--color-win-highlight);
+}
+
+/* CRT effects layer */
+.crt-overlay {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+}
+
+.crt-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 1px,
+    rgba(0, 0, 0, 0.05) 1px,
+    rgba(0, 0, 0, 0.05) 2px
+  );
+}
+
+.crt-overlay::after {
+  content: '';
+  position: absolute;
+  inset: -5%;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 60%,
+    rgba(0, 0, 0, 0.3) 100%
+  );
+}
+
+/* Flash effect for breaking news */
+@keyframes screen-flash {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 0.15; }
+}
+
+.flash-effect {
+  animation: screen-flash 0.15s ease-out 3;
+  background: var(--color-retro-white);
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998;
+}
+
+/* Stock ticker animation */
+@keyframes ticker-scroll {
+  from { transform: translateX(100%); }
+  to { transform: translateX(-100%); }
+}
+
+.ticker-scroll {
+  animation: ticker-scroll 30s linear infinite;
+}
