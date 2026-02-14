@@ -198,6 +198,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         headline: `${dcfg.startYear}년, 당신의 투자 여정이 시작됩니다`,
         body: '초기 자본금으로 현명한 투자를 시작하세요. 시장은 기회와 위험으로 가득합니다.',
         isBreaking: true,
+        sentiment: 'neutral' as const,
       }],
       windows: [],
       nextZIndex: 1,

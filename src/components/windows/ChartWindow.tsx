@@ -14,20 +14,31 @@ import { RetroButton } from '../ui/RetroButton'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler)
 
+const PERIOD_OPTIONS = [
+  { label: '30일', ticks: 300 },   // 30 days × 10 ticks
+  { label: '90일', ticks: 900 },
+  { label: '180일', ticks: 1800 },
+  { label: '전체', ticks: 0 },      // 0 = show all
+] as const
+
 export function ChartWindow() {
   const companies = useGameStore((s) => s.companies)
   const [selectedId, setSelectedId] = useState(companies[0]?.id ?? '')
+  const [periodTicks, setPeriodTicks] = useState(300) // default 30 days
 
   const selected = companies.find((c) => c.id === selectedId)
 
   const chartData = useMemo(() => {
     if (!selected) return null
-    const labels = selected.priceHistory.map((_, i) => `${i}`)
+    const history = periodTicks > 0
+      ? selected.priceHistory.slice(-periodTicks)
+      : selected.priceHistory
+    const labels = history.map((_, i) => `${i}`)
     return {
       labels,
       datasets: [
         {
-          data: selected.priceHistory,
+          data: history,
           borderColor: selected.price >= selected.previousPrice ? '#FF0000' : '#0000FF',
           backgroundColor:
             selected.price >= selected.previousPrice
@@ -41,7 +52,7 @@ export function ChartWindow() {
         },
       ],
     }
-  }, [selected])
+  }, [selected, periodTicks])
 
   const chartOptions = useMemo(
     () => ({
@@ -85,7 +96,7 @@ export function ChartWindow() {
 
   return (
     <div className="flex flex-col h-full text-xs">
-      {/* Ticker selector */}
+      {/* Ticker selector + period toggle */}
       <div className="flex items-center gap-1 mb-1 flex-wrap">
         <select
           className="win-inset bg-white px-1 py-0.5 text-xs"
@@ -98,6 +109,19 @@ export function ChartWindow() {
             </option>
           ))}
         </select>
+
+        {/* Period toggle buttons */}
+        {PERIOD_OPTIONS.map((opt) => (
+          <RetroButton
+            key={opt.label}
+            size="sm"
+            onClick={() => setPeriodTicks(opt.ticks)}
+            className={`text-[10px] ${periodTicks === opt.ticks ? 'win-pressed font-bold' : ''}`}
+          >
+            {opt.label}
+          </RetroButton>
+        ))}
+
         <RetroButton
           size="sm"
           onClick={() => useGameStore.getState().openWindow('trading', { companyId: selectedId })}

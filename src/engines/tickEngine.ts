@@ -1,6 +1,6 @@
 import { useGameStore } from '../stores/gameStore'
-import { EVENT_TEMPLATES } from '../data/events'
-import type { MarketEvent, Sector } from '../types'
+import { EVENT_TEMPLATES, pickWeightedEvent } from '../data/events'
+import type { MarketEvent, NewsSentiment, Sector } from '../types'
 
 /* ── Tick Engine: 1-tick time control system ── */
 
@@ -9,7 +9,7 @@ let intervalId: ReturnType<typeof setInterval> | null = null
 let unsubscribeSpeed: (() => void) | null = null
 let autoSaveCounter = 0
 
-const BASE_TICK_MS = 500
+const BASE_TICK_MS = 200
 const AUTO_SAVE_INTERVAL = 300 // Auto-save every 300 ticks (~2.5 min at 1x)
 
 export function initTickEngine() {
@@ -128,7 +128,7 @@ export function destroyTickEngine() {
 /* ── Random Event Generator ── */
 function generateRandomEvent() {
   const store = useGameStore.getState()
-  const template = EVENT_TEMPLATES[Math.floor(Math.random() * EVENT_TEMPLATES.length)]
+  const template = pickWeightedEvent(EVENT_TEMPLATES)
 
   const event: MarketEvent = {
     id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -145,6 +145,12 @@ function generateRandomEvent() {
   const isBreaking =
     template.impact.severity === 'high' || template.impact.severity === 'critical'
 
+  // Derive sentiment from drift direction
+  const sentiment: NewsSentiment =
+    template.impact.driftModifier > 0.01 ? 'positive'
+    : template.impact.driftModifier < -0.01 ? 'negative'
+    : 'neutral'
+
   store.addEvent(event)
   store.addNews({
     id: `news-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -153,6 +159,7 @@ function generateRandomEvent() {
     body: template.description,
     eventId: event.id,
     isBreaking,
+    sentiment,
   })
 
   if (isBreaking) {

@@ -1,15 +1,10 @@
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
+import { IsometricOffice } from './IsometricOffice'
 import type { EmployeeRole } from '../../types'
 import { EMPLOYEE_ROLE_CONFIG } from '../../types'
 
 const HIRE_ROLES: EmployeeRole[] = ['intern', 'analyst', 'trader', 'manager', 'ceo']
-
-const SPRITE_MAP: Record<string, string> = {
-  idle: '🧑‍💼',
-  typing: '⌨️',
-  exhausted: '😴',
-}
 
 export function OfficeWindow() {
   const { player, time, companies, hireEmployee, fireEmployee, difficultyConfig } = useGameStore()
@@ -20,13 +15,18 @@ export function OfficeWindow() {
   }, 0)
 
   return (
-    <div className="text-xs p-1 space-y-2">
+    <div className="text-xs p-1 space-y-2 overflow-y-auto h-full">
       {/* Header */}
       <div className="text-center">
         <div className="text-sm font-bold">사무실</div>
         <div className="text-retro-gray text-[10px]">
           {time.year}년 {time.month}월 | 월 지출: {player.monthlyExpenses.toLocaleString()}원
         </div>
+      </div>
+
+      {/* Isometric Office View */}
+      <div className="win-inset bg-white" style={{ height: 140 }}>
+        <IsometricOffice employees={player.employees} />
       </div>
 
       {/* Financial Summary */}
@@ -54,7 +54,6 @@ export function OfficeWindow() {
                 emp.stamina > 60 ? 'bg-retro-green' : emp.stamina > 20 ? 'bg-retro-yellow' : 'bg-retro-red'
               return (
                 <div key={emp.id} className="win-inset bg-white p-1 flex items-center gap-1">
-                  <span title={emp.sprite}>{SPRITE_MAP[emp.sprite] ?? '🧑‍💼'}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1">
                       <span className="font-bold truncate">{emp.name}</span>

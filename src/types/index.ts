@@ -153,6 +153,8 @@ export type WindowType =
   | 'ranking'
   | 'settings'
 
+export type NewsSentiment = 'positive' | 'negative' | 'neutral'
+
 export interface NewsItem {
   id: string
   timestamp: GameTime
@@ -160,6 +162,7 @@ export interface NewsItem {
   body: string
   eventId?: string
   isBreaking: boolean
+  sentiment: NewsSentiment
 }
 
 export type Difficulty = 'easy' | 'normal' | 'hard'
