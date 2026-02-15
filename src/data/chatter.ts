@@ -1,4 +1,4 @@
-import type { Employee } from '../types'
+import type { Employee, NewsSentiment } from '../types'
 
 /* ── Employee Chat Bubble System ── */
 
@@ -9,6 +9,74 @@ export interface ChatterTemplate {
   messages: string[]
   priority: number
   cooldownTicks: number
+}
+
+/* ── 양방향 대화 시스템 ── */
+
+export interface DialoguePair {
+  trigger: string
+  responses: string[]
+  mood: 'positive' | 'negative' | 'neutral'
+}
+
+export interface ContextualDialogueOptions {
+  recentSentiment?: NewsSentiment
+  marketTrend?: 'up' | 'down' | 'flat'
+  employeeStress?: number
+  recentLevelUp?: boolean
+}
+
+/* ── 컨텍스트 인식 대화 ── */
+
+const MARKET_POSITIVE_DIALOGUES = [
+  '오늘 시장 좋다!',
+  '내 분석이 맞았잖아',
+  '기술주 가즈아!',
+  '상승장 왔다!',
+  '이익 실현해야 하나?',
+]
+
+const MARKET_NEGATIVE_DIALOGUES = [
+  '시장 무섭다...',
+  '손절해야 하나',
+  '이번엔 좀 심하네',
+  '바닥은 언제야...',
+  '현금 비중 늘려야겠다',
+]
+
+const LEVEL_UP_DIALOGUES = [
+  '드디어 승진!',
+  '노력한 보람이 있네',
+  '다음 목표를 향해!',
+  '성장하고 있어!',
+]
+
+/**
+ * 컨텍스트 기반 대화 선택
+ * 시장 상황, 개인 상태를 반영한 자연스러운 대사
+ */
+export function selectContextualDialogue(
+  _employee: Employee,
+  context: ContextualDialogueOptions,
+): string | null {
+  // 시장 상황 반영 (우선순위 높음)
+  if (context.recentSentiment === 'positive' && Math.random() < 0.3) {
+    return pickRandom(MARKET_POSITIVE_DIALOGUES)
+  }
+  if (context.recentSentiment === 'negative' && Math.random() < 0.35) {
+    return pickRandom(MARKET_NEGATIVE_DIALOGUES)
+  }
+
+  // 승진 직후
+  if (context.recentLevelUp && Math.random() < 0.5) {
+    return pickRandom(LEVEL_UP_DIALOGUES)
+  }
+
+  return null // 기존 시스템으로 폴백
+}
+
+function pickRandom(arr: string[]): string {
+  return arr[Math.floor(Math.random() * arr.length)]
 }
 
 export const CHATTER_TEMPLATES: ChatterTemplate[] = [

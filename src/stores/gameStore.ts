@@ -39,6 +39,7 @@ import { soundManager } from '../systems/soundManager'
 import { updateOfficeSystem } from '../engines/officeSystem'
 import { processHRAutomation } from '../engines/hrAutomation'
 import { cleanupChatterCooldown } from '../data/chatter'
+import { cleanupInteractionCooldowns } from '../engines/employeeInteraction'
 
 /* ── Ending Scenarios ── */
 const ENDING_SCENARIOS: EndingScenario[] = [
@@ -113,6 +114,7 @@ interface GameStore {
   competitorCount: number // 0 = disabled, 1-5 = active
   competitorActions: CompetitorAction[] // Recent 100 actions
   taunts: TauntMessage[] // Recent 20 taunts
+  officeEvents: Array<{ timestamp: number; type: string; emoji: string; message: string; employeeIds: string[] }>
 
   // Actions - Game
   startGame: (difficulty: Difficulty) => void
@@ -169,9 +171,11 @@ interface GameStore {
   openWindow: (type: WindowState['type'], props?: Record<string, unknown>) => void
   closeWindow: (id: string) => void
   minimizeWindow: (id: string) => void
+  toggleMaximizeWindow: (id: string) => void
   focusWindow: (id: string) => void
   moveWindow: (id: string, x: number, y: number) => void
   resizeWindow: (id: string, width: number, height: number) => void
+  updateWindowProps: (type: WindowState['type'], props: Record<string, unknown>) => void
   applyWindowLayout: (preset: WindowLayoutPreset) => void
 
   // Flash
@@ -223,6 +227,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   competitorCount: 0,
   competitorActions: [],
   taunts: [],
+  officeEvents: [],
 
   /* ── Game Actions ── */
   startGame: (difficulty) => {
@@ -306,6 +311,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const dcfg = DIFFICULTY_TABLE[data.config.difficulty]
 
+    // 직원 데이터 마이그레이션 (Sprint 3 필드 기본값)
+    const migratedPlayer = {
+      ...data.player,
+      officeLevel: data.player.officeLevel ?? 1,
+      employees: data.player.employees.map((emp) => ({
+        ...emp,
+        stress: emp.stress ?? 0,
+        satisfaction: emp.satisfaction ?? 80,
+        skills: emp.skills ?? { analysis: 30, trading: 30, research: 30 },
+        traits: emp.traits ?? [],
+        level: emp.level ?? 1,
+        xp: emp.xp ?? 0,
+        xpToNextLevel: emp.xpToNextLevel ?? 100,
+        mood: emp.mood ?? 50,
+      })),
+    }
+
     set({
       config: data.config,
       difficultyConfig: dcfg,
@@ -313,10 +335,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       isGameOver: false,
       endingResult: null,
       time: data.time,
-      player: {
-        ...data.player,
-        officeLevel: data.player.officeLevel ?? 1, // Migration for old saves
-      },
+      player: migratedPlayer,
       companies,
       events: data.events,
       news: data.news,
@@ -324,6 +343,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       competitorCount: data.competitorCount ?? 0,
       competitorActions: [],
       taunts: [],
+      officeEvents: [],
       windows: [],
       nextZIndex: 1,
       windowIdCounter: 0,
@@ -752,6 +772,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   fireEmployee: (id) => {
     cleanupChatterCooldown(id)
+    cleanupInteractionCooldowns(id)
     set((s) => {
       const emp = s.player.employees.find((e) => e.id === id)
       if (!emp) return s
@@ -817,7 +838,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (existing) {
         return {
           windows: s.windows.map((w) =>
-            w.id === existing.id ? { ...w, zIndex: s.nextZIndex } : w,
+            w.id === existing.id
+              ? { ...w, zIndex: s.nextZIndex, props: props ? { ...w.props, ...props } : w.props }
+              : w,
           ),
           nextZIndex: s.nextZIndex + 1,
         }
@@ -833,6 +856,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         news: '뉴스',
         office: '사무실',
         ranking: '랭킹',
+        office_history: '사무실 히스토리',
         settings: '설정',
         ending: '게임 종료',
       }
@@ -843,8 +867,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         title: titles[type],
         x: 50 + offset,
         y: 50 + offset,
-        width: type === 'chart' ? 500 : type === 'office' ? 420 : 380,
-        height: type === 'chart' ? 350 : type === 'office' ? 400 : 300,
+        width: type === 'chart' ? 500 : type === 'trading' ? 380 : type === 'office' ? 420 : 380,
+        height: type === 'chart' ? 350 : type === 'trading' ? 480 : type === 'office' ? 400 : 300,
         isMinimized: false,
         isMaximized: false,
         zIndex: s.nextZIndex,
@@ -865,6 +889,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
       windows: s.windows.map((w) => (w.id === id ? { ...w, isMinimized: !w.isMinimized } : w)),
     })),
 
+  toggleMaximizeWindow: (id) =>
+    set((s) => {
+      const screenWidth = window.innerWidth
+      const screenHeight = window.innerHeight - 40
+      return {
+        windows: s.windows.map((w) => {
+          if (w.id !== id) return w
+          if (w.isMaximized) {
+            const defaultSizes: Record<string, { width: number; height: number }> = {
+              chart: { width: 500, height: 350 },
+              trading: { width: 380, height: 480 },
+              office: { width: 420, height: 400 },
+            }
+            const defaults = defaultSizes[w.type] ?? { width: 380, height: 300 }
+            const prev = w.preMaximize ?? { x: 50, y: 50, ...defaults }
+            return { ...w, isMaximized: false, x: prev.x, y: prev.y, width: prev.width, height: prev.height, preMaximize: undefined }
+          }
+          return { ...w, isMaximized: true, preMaximize: { x: w.x, y: w.y, width: w.width, height: w.height }, x: 0, y: 0, width: screenWidth, height: screenHeight }
+        }),
+      }
+    }),
+
   focusWindow: (id) =>
     set((s) => ({
       windows: s.windows.map((w) => (w.id === id ? { ...w, zIndex: s.nextZIndex } : w)),
@@ -880,6 +926,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((s) => ({
       windows: s.windows.map((w) => (w.id === id ? { ...w, width, height } : w)),
     })),
+
+  updateWindowProps: (type, props) =>
+    set((s) => {
+      let updated = false
+      return {
+        windows: s.windows.map((w) => {
+          if (!updated && w.type === type) {
+            updated = true
+            return { ...w, props: { ...w.props, ...props } }
+          }
+          return w
+        }),
+      }
+    }),
 
   /* ── Window Layout Presets ── */
   applyWindowLayout: (preset) => {
@@ -1535,9 +1595,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const state = get()
     if (state.player.employees.length === 0) return
 
-    const { updatedEmployees, resignedIds, warnings } = updateOfficeSystem(
+    const { updatedEmployees, resignedIds, warnings, officeEvents } = updateOfficeSystem(
       state.player.employees,
       state.player.officeGrid,
+      state.time,
     )
 
     // 퇴사 경고 뉴스
@@ -1558,6 +1619,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     resignedIds.forEach((id) => {
       const emp = state.player.employees.find((e) => e.id === id)
       cleanupChatterCooldown(id)
+      cleanupInteractionCooldowns(id)
       if (emp) {
         // 좌석 정리
         if (emp.seatIndex != null && state.player.officeGrid) {
@@ -1611,6 +1673,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         employees: hrResult.updatedEmployees,
         cash: Math.max(0, s.player.cash - hrResult.cashSpent),
       },
+      officeEvents: [...s.officeEvents, ...officeEvents].slice(-200), // Keep last 200
     }))
   },
 

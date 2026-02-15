@@ -56,6 +56,10 @@ export function createTestStore(overrides?: Partial<GameState>) {
   // Apply overrides
   const initialState = { ...baseState, ...overrides }
 
+  // Add missing competitor-related fields
+  initialState.competitorActions = []
+  ;(initialState as any).rankings = []
+
   // Create Zustand store
   const store = create<GameState>(() => initialState)
 
@@ -185,6 +189,61 @@ export function createTestStore(overrides?: Partial<GameState>) {
 
   ;(store as any).updateCompetitorAssets = vi.fn(() => {
     // No-op for tests
+  })
+
+  ;(store as any).initializeCompetitors = vi.fn((count: number, initialCash: number) => {
+    const competitors: Competitor[] = []
+    const styles = ['aggressive', 'conservative', 'trend-follower', 'contrarian']
+
+    for (let i = 0; i < count; i++) {
+      competitors.push({
+        id: `competitor-${i}`,
+        name: `Competitor ${i}`,
+        style: styles[i % 4] as any,
+        cash: initialCash,
+        portfolio: {},
+        totalAssets: initialCash,
+        roi: 0,
+        panicSellCooldown: 0,
+      } as any)
+    }
+
+    store.setState({
+      competitors,
+      competitorCount: count,
+    })
+  })
+
+  ;(store as any).processCompetitorTick = vi.fn((tick: number) => {
+    // Simpl e mock - just decrease panic cooldown
+    const state = store.getState()
+    const updatedCompetitors = state.competitors.map((c: any) => ({
+      ...c,
+      panicSellCooldown: Math.max(0, c.panicSellCooldown - 5),
+    }))
+    store.setState({ competitors: updatedCompetitors })
+  })
+
+  ;(store as any).calculateRankings = vi.fn(() => {
+    const state = store.getState()
+    const rankings = [...state.competitors].sort(
+      (a: any, b: any) => b.totalAssets - a.totalAssets
+    )
+    store.setState({ rankings } as any)
+  })
+
+  ;(store as any).addTaunt = vi.fn((taunt: any) => {
+    const state = store.getState()
+    const newTaunts = [...state.taunts, taunt]
+    if (newTaunts.length > 20) newTaunts.shift()
+    store.setState({ taunts: newTaunts })
+  })
+
+  ;(store as any).startGame = vi.fn((difficulty: string, options?: any) => {
+    const competitors = options?.competitorCount || 0
+    if (competitors > 0) {
+      ;(store as any).initializeCompetitors(competitors, 50_000_000)
+    }
   })
 
   return store

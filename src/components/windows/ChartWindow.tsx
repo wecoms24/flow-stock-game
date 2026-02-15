@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Line } from 'react-chartjs-2'
 import {
   Chart as ChartJS,
@@ -98,11 +98,28 @@ const PERIOD_OPTIONS = [
 type SortOption = 'name' | 'price' | 'change' | 'sector'
 type ChangeFilter = 'all' | 'up5' | 'down5' | 'stable'
 
-export function ChartWindow() {
+interface ChartWindowProps {
+  companyId?: string
+}
+
+export function ChartWindow({ companyId }: ChartWindowProps) {
   const companies = useGameStore((s) => s.companies)
   const events = useGameStore((s) => s.events)
   const currentTime = useGameStore((s) => s.time)
-  const [selectedId, setSelectedId] = useState(companies[0]?.id ?? '')
+  const updateWindowProps = useGameStore((s) => s.updateWindowProps)
+  const [selectedId, setSelectedIdLocal] = useState(companyId ?? companies[0]?.id ?? '')
+
+  // 매매 창에서 기업 변경 시 동기화
+  useEffect(() => {
+    if (companyId && companyId !== selectedId) {
+      setSelectedIdLocal(companyId)
+    }
+  }, [companyId, selectedId])
+
+  const setSelectedId = (id: string) => {
+    setSelectedIdLocal(id)
+    updateWindowProps('trading', { companyId: id })
+  }
   const [periodTicks, setPeriodTicks] = useState(300) // default 30 days
   const [showEventMarkers, setShowEventMarkers] = useState(true)
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)

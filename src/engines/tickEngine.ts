@@ -1,6 +1,20 @@
 import { useGameStore } from '../stores/gameStore'
-import { EVENT_TEMPLATES, pickWeightedEvent } from '../data/events'
-import type { MarketEvent, NewsSentiment, Sector } from '../types'
+import {
+  generateRandomEvent,
+  processNewsEngine,
+  resetNewsEngine,
+} from './newsEngine'
+import {
+  onEventOccurred,
+  tickSentiment,
+  getSentimentDriftModifier,
+  getSectorSentimentDrift,
+  getSentimentVolatilityMultiplier,
+  isSentimentActive,
+  resetSentiment,
+} from './sentimentEngine'
+import { SECTOR_CORRELATION, SPILLOVER_FACTOR } from '../data/sectorCorrelation'
+import type { Sector } from '../types'
 
 /* ── Tick Engine: 1-tick time control system ── */
 
@@ -37,15 +51,17 @@ export function startTickLoop() {
     // Advance game time
     state.advanceTick()
 
+    // Re-read state after time advancement
+    const current = useGameStore.getState()
+
     // Monthly processing (salary, stamina) on day 1
-    const currentState = useGameStore.getState()
-    if (currentState.time.day === 1 && currentState.time.tick === 0) {
-      currentState.processMonthly()
+    if (current.time.day === 1 && current.time.tick === 0) {
+      current.processMonthly()
     }
 
     // Send companies data to worker for GBM price calculation
-    const volatilityMul = state.difficultyConfig.volatilityMultiplier
-    const companyData = state.companies.map((c) => ({
+    const volatilityMul = current.difficultyConfig.volatilityMultiplier
+    const companyData = current.companies.map((c) => ({
       id: c.id,
       sector: c.sector,
       price: c.price,
@@ -53,14 +69,61 @@ export function startTickLoop() {
       volatility: c.volatility * volatilityMul,
     }))
 
-    const eventModifiers = state.events
+    // Build event modifiers with propagation delay
+    const eventModifiers = current.events
       .filter((evt) => evt.remainingTicks > 0)
-      .map((evt) => ({
-        driftModifier: evt.impact.driftModifier,
-        volatilityModifier: evt.impact.volatilityModifier,
-        affectedCompanies: evt.affectedCompanies,
-        affectedSectors: evt.affectedSectors,
-      }))
+      .flatMap((evt) => {
+        const elapsed = evt.duration - evt.remainingTicks
+        const propagation = getEventPropagation(elapsed)
+
+        // 주 이벤트
+        const main = {
+          driftModifier: evt.impact.driftModifier,
+          volatilityModifier: evt.impact.volatilityModifier,
+          affectedCompanies: evt.affectedCompanies,
+          affectedSectors: evt.affectedSectors,
+          propagation,
+        }
+
+        // 섹터 상관관계를 통한 전파 이벤트
+        const spillovers: typeof main[] = []
+        if (evt.affectedSectors && evt.affectedSectors.length > 0) {
+          for (const sector of evt.affectedSectors) {
+            const correlations = SECTOR_CORRELATION[sector]
+            if (!correlations) continue
+            for (const [otherSector, corr] of Object.entries(correlations)) {
+              if ((corr ?? 0) < 0.3) continue
+              if (evt.affectedSectors.includes(otherSector as Sector)) continue
+              spillovers.push({
+                driftModifier: evt.impact.driftModifier * (corr ?? 0) * SPILLOVER_FACTOR,
+                volatilityModifier: evt.impact.volatilityModifier * (corr ?? 0) * SPILLOVER_FACTOR,
+                affectedSectors: [otherSector as Sector],
+                affectedCompanies: undefined,
+                propagation: propagation * 0.7, // 전파된 이벤트는 더 느리게
+              })
+            }
+          }
+        }
+
+        return [main, ...spillovers]
+      })
+
+    // Build sentiment data for worker (skip if inactive for performance)
+    let sentimentData: { globalDrift: number; volatilityMultiplier: number; sectorDrifts: Record<string, number> } | null = null
+    if (isSentimentActive()) {
+      const sectorDrifts: Record<string, number> = {}
+      const allSectors: Sector[] = [
+        'tech', 'finance', 'energy', 'healthcare', 'consumer',
+        'industrial', 'telecom', 'materials', 'utilities', 'realestate',
+      ]
+      allSectors.forEach((s) => { sectorDrifts[s] = getSectorSentimentDrift(s) })
+
+      sentimentData = {
+        globalDrift: getSentimentDriftModifier(),
+        volatilityMultiplier: getSentimentVolatilityMultiplier(),
+        sectorDrifts,
+      }
+    }
 
     const dt = 1 / 3600
 
@@ -69,7 +132,32 @@ export function startTickLoop() {
       companies: companyData,
       dt,
       events: eventModifiers,
+      sentiment: sentimentData,
     })
+
+    // Tick sentiment engine (natural decay)
+    tickSentiment()
+
+    // Update event impact snapshots
+    useGameStore.setState((s) => ({
+      events: s.events.map((evt) => {
+        if (!evt.priceImpactSnapshot || !evt.affectedCompanies) return evt
+        const snapshot = { ...evt.priceImpactSnapshot }
+        for (const companyId of evt.affectedCompanies) {
+          const company = s.companies.find((c) => c.id === companyId)
+          const snap = snapshot[companyId]
+          if (company && snap) {
+            const change = (company.price - snap.priceBefore) / snap.priceBefore
+            snapshot[companyId] = {
+              ...snap,
+              currentChange: change,
+              peakChange: Math.max(snap.peakChange, Math.abs(change)),
+            }
+          }
+        }
+        return { ...evt, priceImpactSnapshot: snapshot }
+      }),
+    }))
 
     // Decay events
     useGameStore.setState((s) => ({
@@ -78,30 +166,42 @@ export function startTickLoop() {
         .filter((evt) => evt.remainingTicks > 0),
     }))
 
-    // Random event generation using difficulty-specific chance
-    const eventChance = state.difficultyConfig.eventChance
+    // News engine: historical events + chain events
+    processNewsEngine(current.time)
+
+    // Random event generation — normalize by speed so real-time frequency stays constant
+    const eventChance = current.difficultyConfig.eventChance / current.time.speed
     if (Math.random() < eventChance) {
       generateRandomEvent()
     }
 
+    // Update sentiment for newly added events
+    const latestState = useGameStore.getState()
+    latestState.events
+      .filter((evt) => evt.duration === evt.remainingTicks) // 이번 틱에 생성된 이벤트
+      .forEach((evt) => onEventOccurred(evt))
+
     // Employee System Processing (every 10 ticks)
-    if (currentState.time.tick % 10 === 0 && state.player.employees.length > 0) {
-      state.processEmployeeTick()
+    // 직원 5명 이하: 매 10틱, 6-15명: 매 20틱, 16+명: 매 30틱 (분산 처리)
+    const empCount = current.player.employees.length
+    const empTickInterval = empCount <= 5 ? 10 : empCount <= 15 ? 20 : 30
+    if (current.time.tick % empTickInterval === 0 && empCount > 0) {
+      current.processEmployeeTick()
     }
 
     // AI Competitor Processing (every 5 ticks)
-    if (state.competitorCount > 0) {
+    if (current.competitorCount > 0) {
       // Update competitor assets every tick for accurate ROI
-      state.updateCompetitorAssets()
+      current.updateCompetitorAssets()
 
       // Process AI trading every 5 ticks
-      if (currentState.time.tick % 5 === 0) {
-        state.processCompetitorTick()
+      if (current.time.tick % 5 === 0) {
+        current.processCompetitorTick()
       }
 
       // Update rankings every 10 ticks
-      if (currentState.time.tick % 10 === 0) {
-        const rankings = state.calculateRankings()
+      if (current.time.tick % 10 === 0) {
+        const rankings = current.calculateRankings()
         checkRankChanges(rankings)
       }
     }
@@ -110,7 +210,7 @@ export function startTickLoop() {
     autoSaveCounter++
     if (autoSaveCounter >= AUTO_SAVE_INTERVAL) {
       autoSaveCounter = 0
-      state.autoSave()
+      current.autoSave()
     }
   }
 
@@ -138,6 +238,10 @@ export function stopTickLoop() {
 
 export function destroyTickEngine() {
   stopTickLoop()
+  previousRankings = {}
+  autoSaveCounter = 0
+  resetNewsEngine()
+  resetSentiment()
 
   if (unsubscribeSpeed) {
     unsubscribeSpeed()
@@ -148,84 +252,17 @@ export function destroyTickEngine() {
   worker = null
 }
 
-/* ── Random Event Generator ── */
-function generateRandomEvent() {
-  const store = useGameStore.getState()
-  const template = pickWeightedEvent(EVENT_TEMPLATES)
-
-  // Identify affected companies
-  const affectedCompanyIds = store.companies
-    .filter((c) => {
-      if (template.affectedSectors) {
-        return template.affectedSectors.includes(c.sector)
-      }
-      return true // Global events affect all companies
-    })
-    .map((c) => c.id)
-
-  // Create price snapshot for affected companies
-  const priceSnapshot: Record<
-    string,
-    { priceBefore: number; peakChange: number; currentChange: number }
-  > = {}
-
-  affectedCompanyIds.forEach((id) => {
-    const company = store.companies.find((c) => c.id === id)
-    if (company) {
-      priceSnapshot[id] = {
-        priceBefore: company.price,
-        peakChange: 0,
-        currentChange: 0,
-      }
-    }
-  })
-
-  const event: MarketEvent = {
-    id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    title: template.title,
-    description: template.description,
-    type: template.type,
-    impact: { ...template.impact },
-    duration: template.duration,
-    remainingTicks: template.duration,
-    affectedSectors: template.affectedSectors as Sector[] | undefined,
-    affectedCompanies: affectedCompanyIds,
-    startTimestamp: { ...store.time },
-    priceImpactSnapshot: priceSnapshot,
-  }
-
-  const isBreaking = template.impact.severity === 'high' || template.impact.severity === 'critical'
-
-  // Derive sentiment from drift direction
-  const sentiment: NewsSentiment =
-    template.impact.driftModifier > 0.01
-      ? 'positive'
-      : template.impact.driftModifier < -0.01
-        ? 'negative'
-        : 'neutral'
-
-  // Generate impact summary
-  const impactSummary =
-    affectedCompanyIds.length > 0
-      ? `${affectedCompanyIds.length}개 기업 영향 예상`
-      : '전체 시장 영향'
-
-  store.addEvent(event)
-  store.addNews({
-    id: `news-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    timestamp: { ...store.time },
-    headline: template.title,
-    body: template.description,
-    eventId: event.id,
-    isBreaking,
-    sentiment,
-    relatedCompanies: affectedCompanyIds,
-    impactSummary,
-  })
-
-  if (isBreaking) {
-    store.triggerFlash()
-  }
+/* ── Event Propagation Delay ── */
+/**
+ * 이벤트 경과 시간에 따른 전파 계수
+ * 0-10틱: 0→50% (빠른 반영)
+ * 10-50틱: 50→100% (점진 반영)
+ * 50+틱: 100% (풀 이펙트)
+ */
+function getEventPropagation(elapsed: number): number {
+  if (elapsed < 10) return 0.5 * (elapsed / 10)
+  if (elapsed < 50) return 0.5 + 0.5 * ((elapsed - 10) / 40)
+  return 1.0
 }
 
 /* ── Rank Change Detection ── */

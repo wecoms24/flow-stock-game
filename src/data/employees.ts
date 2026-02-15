@@ -53,9 +53,11 @@ export function generateRandomTraits(): EmployeeTrait[] {
     return Array(weight).fill(trait)
   })
 
-  // 중복 없이 선택
+  // 중복 없이 선택 (무한 루프 방지)
   const selected: EmployeeTrait[] = []
-  while (selected.length < traitCount) {
+  let attempts = 0
+  while (selected.length < traitCount && attempts < 100) {
+    attempts++
     const randomTrait = weightedTraits[Math.floor(Math.random() * weightedTraits.length)]
     if (!selected.includes(randomTrait)) {
       selected.push(randomTrait)

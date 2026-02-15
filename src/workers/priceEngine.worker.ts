@@ -14,6 +14,13 @@ interface EventModifier {
   volatilityModifier: number
   affectedCompanies?: string[]
   affectedSectors?: string[]
+  propagation?: number // 0-1, 전파 단계 (기본 1.0)
+}
+
+interface SentimentData {
+  globalDrift: number // 글로벌 센티먼트 drift 보정
+  volatilityMultiplier: number // 센티먼트 기반 변동성 배율
+  sectorDrifts: Record<string, number> // 섹터별 센티먼트 drift
 }
 
 interface TickMessage {
@@ -21,6 +28,7 @@ interface TickMessage {
   companies: CompanyData[]
   dt: number // time step (fraction of year)
   events: EventModifier[]
+  sentiment?: SentimentData // 시장 센티먼트 데이터
 }
 
 interface PriceUpdate {
@@ -76,19 +84,27 @@ function doesEventAffect(evt: EventModifier, company: CompanyData): boolean {
 self.onmessage = (e: MessageEvent<TickMessage>) => {
   if (e.data.type !== 'tick') return
 
-  const { companies, dt, events } = e.data
+  const { companies, dt, events, sentiment } = e.data
   const prices: Record<string, number> = {}
 
   for (const company of companies) {
     let mu = company.drift
     let sigma = company.volatility
 
-    // Apply active event modifiers with proper sector/company filtering
+    // Apply active event modifiers with propagation delay
     for (const evt of events) {
       if (doesEventAffect(evt, company)) {
-        mu += evt.driftModifier
-        sigma *= 1 + evt.volatilityModifier
+        const propagation = evt.propagation ?? 1.0
+        mu += evt.driftModifier * propagation
+        sigma *= 1 + evt.volatilityModifier * propagation
       }
+    }
+
+    // Apply sentiment-based modifiers
+    if (sentiment) {
+      mu += sentiment.globalDrift
+      mu += sentiment.sectorDrifts[company.sector] ?? 0
+      sigma *= sentiment.volatilityMultiplier
     }
 
     // Clamp sigma to prevent negative volatility from extreme events

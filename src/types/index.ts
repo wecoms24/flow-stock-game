@@ -252,6 +252,22 @@ export const EventType = {
 
 export type EventType = (typeof EventType)[keyof typeof EventType]
 
+export type EventSource = 'random' | 'historical' | 'procedural' | 'chained'
+
+export type EventCategory =
+  | 'policy'
+  | 'global'
+  | 'sector'
+  | 'company'
+  | 'boom'
+  | 'crash'
+  | 'earnings'
+  | 'scandal'
+  | 'innovation'
+  | 'regulation'
+  | 'macro'
+  | 'social'
+
 export interface MarketEvent {
   id: string
   title: string
@@ -273,6 +289,11 @@ export interface MarketEvent {
       currentChange: number
     }
   >
+  // Enhanced event system fields
+  source?: EventSource
+  chainParentId?: string // parent event ID for chained events
+  historicalYear?: number // original year for historical events
+  propagationPhase?: number // 0-1, how much of the effect is applied
 }
 
 export interface EventImpact {
@@ -293,6 +314,7 @@ export interface WindowState {
   isMaximized: boolean
   zIndex: number
   props?: Record<string, unknown>
+  preMaximize?: { x: number; y: number; width: number; height: number }
 }
 
 export type WindowType =
@@ -301,6 +323,7 @@ export type WindowType =
   | 'trading'
   | 'news'
   | 'office'
+  | 'office_history'
   | 'ranking'
   | 'settings'
   | 'ending'

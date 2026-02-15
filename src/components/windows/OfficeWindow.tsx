@@ -12,6 +12,7 @@ import { selectChatter } from '../../data/chatter'
 import { TITLE_LABELS, BADGE_COLORS, badgeForLevel, titleForLevel } from '../../systems/growthSystem'
 import { soundManager } from '../../systems/soundManager'
 import { emitFloatingText } from '../effects/FloatingText'
+import { ROLE_EMOJI, getMoodFace } from '../../data/employeeEmoji'
 
 const HIRE_ROLES: EmployeeRole[] = ['intern', 'analyst', 'trader', 'manager', 'ceo', 'hr_manager']
 
@@ -42,6 +43,7 @@ export function OfficeWindow() {
     unassignEmployeeSeat,
     praiseEmployee,
     scoldEmployee,
+    openWindow,
   } = useGameStore()
 
   // UI State
@@ -231,14 +233,20 @@ export function OfficeWindow() {
     const employee = player.employees.find((e) => e.id === cell.occupiedBy)
     if (employee) {
       const stressLevel = employee.stress ?? 0
+      const satisfaction = employee.satisfaction ?? 80
       const stressColor = stressLevel > 70 ? 'from-red-200 to-red-300' : stressLevel > 50 ? 'from-orange-200 to-orange-300' : hasBuffs ? 'from-green-200 to-green-300' : 'from-green-100 to-green-200'
+      const roleEmoji = ROLE_EMOJI[employee.role]
+      const moodEmoji = getMoodFace(stressLevel, satisfaction)
       return {
         type: 'employee',
         label: employee.name.substring(0, 2),
         color: `bg-gradient-to-br ${stressColor}`,
-        tooltip: `${employee.name} (${EMPLOYEE_ROLE_CONFIG[employee.role].title}) | 스트레스: ${Math.round(stressLevel)}% | 만족도: ${Math.round(employee.satisfaction ?? 80)}%`,
+        tooltip: `${employee.name} (${EMPLOYEE_ROLE_CONFIG[employee.role].title}) | 스트레스: ${Math.round(stressLevel)}% | 만족도: ${Math.round(satisfaction)}%`,
         hasBuffs,
         employeeId: employee.id,
+        roleEmoji,
+        moodEmoji,
+        stressLevel,
       }
     }
 
@@ -249,7 +257,17 @@ export function OfficeWindow() {
     <div className="text-xs p-1 space-y-2 overflow-y-auto h-full">
       {/* Header */}
       <div className="text-center">
-        <div className="text-sm font-bold">사무실 (레벨 {player.officeLevel})</div>
+        <div className="flex items-center justify-center gap-2">
+          <div className="text-sm font-bold">사무실 (레벨 {player.officeLevel})</div>
+          <RetroButton
+            size="sm"
+            onClick={() => openWindow('office_history')}
+            className="text-[8px]"
+            title="사무실 히스토리"
+          >
+            📋
+          </RetroButton>
+        </div>
         <div className="text-retro-gray text-[10px]">
           {time.year}년 {time.month}월 | 월 지출: {player.monthlyExpenses.toLocaleString()}원
         </div>
@@ -314,8 +332,21 @@ export function OfficeWindow() {
                   {info.type === 'furniture' && info.isTopLeft ? (
                     <span className="text-2xl">{info.sprite}</span>
                   ) : info.type === 'employee' ? (
-                    <>
-                      <span className="text-xs font-bold text-green-900">{info.label}</span>
+                    <div className="flex flex-col items-center leading-none">
+                      {/* 역할 + 표정 이모지 */}
+                      <div className="flex items-center gap-0">
+                        <span className="text-[10px]">{info.roleEmoji}</span>
+                        <span className="text-[10px]">{info.moodEmoji}</span>
+                      </div>
+                      {/* 스트레스 미니바 */}
+                      <div className="w-6 h-0.5 bg-gray-300 rounded-full mt-0.5">
+                        <div
+                          className={`h-full rounded-full ${(info.stressLevel ?? 0) > 70 ? 'bg-red-500' : (info.stressLevel ?? 0) > 50 ? 'bg-orange-400' : 'bg-green-400'}`}
+                          style={{ width: `${Math.min(100, info.stressLevel ?? 0)}%` }}
+                        />
+                      </div>
+                      {/* 이름 축약 */}
+                      <span className="text-[6px] font-bold text-gray-700 mt-0.5">{info.label}</span>
                       {/* Employee chat bubble */}
                       {info.employeeId && chatBubbles[info.employeeId] && (
                         <div className="absolute -top-8 left-1/2 -translate-x-1/2 z-10 whitespace-nowrap animate-bounce">
@@ -325,7 +356,7 @@ export function OfficeWindow() {
                           </div>
                         </div>
                       )}
-                    </>
+                    </div>
                   ) : (
                     <span className="text-[8px] text-gray-400">{info.label}</span>
                   )}

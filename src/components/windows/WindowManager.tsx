@@ -8,6 +8,7 @@ import { OfficeWindow } from './OfficeWindow'
 import { RankingWindow } from './RankingWindow'
 import { SettingsWindow } from './SettingsWindow'
 import { EndingScreen } from './EndingScreen'
+import { OfficeHistoryWindow } from './OfficeHistoryWindow'
 import type { WindowType } from '../../types'
 
 const WINDOW_COMPONENTS: Record<WindowType, React.ComponentType<Record<string, unknown>>> = {
@@ -17,6 +18,7 @@ const WINDOW_COMPONENTS: Record<WindowType, React.ComponentType<Record<string, u
   news: NewsWindow as React.ComponentType<Record<string, unknown>>,
   office: OfficeWindow as React.ComponentType<Record<string, unknown>>,
   ranking: RankingWindow as React.ComponentType<Record<string, unknown>>,
+  office_history: OfficeHistoryWindow as React.ComponentType<Record<string, unknown>>,
   settings: SettingsWindow as React.ComponentType<Record<string, unknown>>,
   ending: EndingScreen as React.ComponentType<Record<string, unknown>>,
 }

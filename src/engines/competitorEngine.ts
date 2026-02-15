@@ -1,5 +1,5 @@
 import type { Competitor, Company, TradingStyle, CompetitorAction } from '../types'
-import { PANIC_SELL_CONFIG, AI_STRATEGY_CONFIG } from '../config/aiConfig'
+import { PANIC_SELL_CONFIG, AI_STRATEGY_CONFIG, PERFORMANCE_CONFIG } from '../config/aiConfig'
 
 // ===== Utility Functions =====
 
@@ -31,6 +31,16 @@ function random(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
+/**
+ * 확률 기반 거래 시점 결정
+ * 기존 `tick % random(min, max)` 방식은 작은 수의 배수 tick에 거래가 집중되는 불균일 분포 문제가 있음.
+ * 매 호출마다 균일한 확률로 거래 여부를 결정하여 자연스러운 간격 제공.
+ */
+function shouldTrade(freqMin: number, freqMax: number): boolean {
+  const targetInterval = freqMin + Math.random() * (freqMax - freqMin)
+  return Math.random() < PERFORMANCE_CONFIG.TICK_DISTRIBUTION / targetInterval
+}
+
 // ===== AI Strategies =====
 
 /**
@@ -48,8 +58,7 @@ function sharkStrategy(
 ): CompetitorAction | null {
   const config = AI_STRATEGY_CONFIG.SHARK
 
-  // Trade frequency check
-  if (tick % random(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX) !== 0) return null
+  if (!shouldTrade(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX)) return null
 
   // Find high volatility stocks
   const highVolStocks = companies
@@ -117,8 +126,7 @@ function turtleStrategy(
 ): CompetitorAction | null {
   const config = AI_STRATEGY_CONFIG.TURTLE
 
-  // Trade frequency check (very infrequent)
-  if (tick % random(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX) !== 0) return null
+  if (!shouldTrade(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX)) return null
 
   const safeStocks = companies
     .filter((c) => config.BLUE_CHIPS.some((chip) => c.ticker.includes(chip)))
@@ -182,7 +190,7 @@ function surferStrategy(
 ): CompetitorAction | null {
   const config = AI_STRATEGY_CONFIG.SURFER
 
-  if (tick % random(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX) !== 0) return null
+  if (!shouldTrade(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX)) return null
 
   // Find stocks in uptrend
   const trendingStocks = companies.filter((c) => {
@@ -267,7 +275,7 @@ function bearStrategy(
 ): CompetitorAction | null {
   const config = AI_STRATEGY_CONFIG.BEAR
 
-  if (tick % random(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX) !== 0) return null
+  if (!shouldTrade(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX)) return null
 
   // Check holdings - sell if overbought
   for (const [symbol, position] of Object.entries(competitor.portfolio)) {
@@ -277,12 +285,15 @@ function bearStrategy(
     const rsi = calculateRSI(prices, config.RSI_PERIOD)
 
     if (rsi > config.RSI_OVERBOUGHT) {
+      const company = companies.find((c) => c.ticker === symbol)
+      if (!company) continue
+
       return {
         competitorId: competitor.id,
         action: 'sell',
         symbol,
         quantity: position.shares,
-        price: companies.find((c) => c.ticker === symbol)?.price || 0,
+        price: company.price,
         timestamp: tick,
       }
     }
@@ -383,9 +394,7 @@ export function processAITrading(
 ): CompetitorAction[] {
   const actions: CompetitorAction[] = []
 
-  competitors.forEach((competitor, index) => {
-    // Distribute processing across ticks (offset by index)
-    if ((tick + index) % 5 !== 0) return
+  competitors.forEach((competitor) => {
 
     // 1. Check panic sell first (priority)
     const panicAction = checkPanicSell(competitor, companies, tick)
@@ -435,7 +444,7 @@ export function generateCompetitors(count: number, startingCash: number): Compet
 
   return Array.from({ length: count }, (_, i) => ({
     id: `competitor-${i}`,
-    name: shuffledNames[i],
+    name: shuffledNames[i % shuffledNames.length],
     avatar: AVATARS[i % AVATARS.length],
     style: styles[i % styles.length],
     cash: startingCash,

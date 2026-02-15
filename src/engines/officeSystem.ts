@@ -1,6 +1,8 @@
-import type { Employee, EmployeeTrait, EmployeeSkills } from '../types'
+import type { Employee, EmployeeTrait, EmployeeSkills, GameTime } from '../types'
 import type { GridCell, BuffEffect, OfficeGrid } from '../types/office'
 import { TRAIT_DEFINITIONS } from '../data/traits'
+import { decideAction, getActionEffects, type EmployeeBehavior } from './employeeBehavior'
+import { checkInteractions, type Interaction } from './employeeInteraction'
 
 /* ── Employee Buff Result ── */
 
@@ -10,6 +12,16 @@ export interface EmployeeBuffs {
   skillGrowth: number
   tradingSpeed: number
   morale: number
+}
+
+/* ── Office Event (히스토리 로그용) ── */
+
+export interface OfficeEvent {
+  timestamp: number // 절대 틱
+  type: 'behavior' | 'interaction' | 'warning' | 'resign'
+  emoji: string
+  message: string
+  employeeIds: string[]
 }
 
 /* ── Buff Calculation ── */
@@ -89,12 +101,14 @@ function applyTraitEffects(
     buffs.skillGrowth *= effects.skillGrowth
   }
 
-  // 조건부 효과: 카페인 중독자에게 커피 없으면 스트레스 증가
+  // 조건부 효과: 카페인 중독자 — 커피 있으면 회복 1.5배, 없으면 스트레스 증가
   if (effects.requiresCoffee) {
     const hasCoffee = seatCell.buffs.some(
       (b) => b.type === 'stamina_recovery' && b.value > 1.0,
     )
-    if (!hasCoffee) {
+    if (hasCoffee) {
+      buffs.staminaRecovery *= 1.5
+    } else {
       buffs.stressGeneration *= 1.3
     }
   }
@@ -141,7 +155,7 @@ function applyEmployeeInteraction(
 
 /* ── Adjacent Employee Finder ── */
 
-function getAdjacentEmployees(
+export function getAdjacentEmployees(
   seatIndex: number,
   allEmployees: Employee[],
   grid: OfficeGrid,
@@ -175,25 +189,39 @@ function getAdjacentEmployees(
 
 /* ── Office System Tick Update ── */
 
-/** 매 10틱마다 호출 - 직원 스트레스/만족도/스킬 업데이트 */
-export function updateOfficeSystem(
-  employees: Employee[],
-  officeGrid: OfficeGrid | undefined,
-): {
+export interface OfficeUpdateResult {
   updatedEmployees: Employee[]
   resignedIds: string[]
   warnings: Array<{ employeeId: string; name: string; type: 'resign_warning' }>
-} {
+  behaviors: EmployeeBehavior[]
+  interactions: Interaction[]
+  officeEvents: OfficeEvent[]
+}
+
+/** 매 10틱마다 호출 - 직원 스트레스/만족도/스킬 업데이트 + 행동 AI + 상호작용 */
+export function updateOfficeSystem(
+  employees: Employee[],
+  officeGrid: OfficeGrid | undefined,
+  time?: GameTime,
+): OfficeUpdateResult {
   const resignedIds: string[] = []
   const warnings: Array<{ employeeId: string; name: string; type: 'resign_warning' }> = []
+  const allBehaviors: EmployeeBehavior[] = []
+  const allInteractions: Interaction[] = []
+  const officeEvents: OfficeEvent[] = []
+
+  // 절대 틱 계산 (쿨다운용)
+  const absoluteTick = time
+    ? (time.year - 1995) * 360 * 3600 + (time.month - 1) * 30 * 3600 + (time.day - 1) * 3600 + time.tick
+    : Date.now()
 
   const updatedEmployees = employees.map((employee) => {
     const emp = { ...employee }
 
-    // 스킬 초기화 (없으면)
-    if (!emp.skills) {
-      emp.skills = { analysis: 30, trading: 30, research: 30 }
-    }
+    // 스킬 deep copy (원본 참조 변형 방지)
+    emp.skills = emp.skills
+      ? { ...emp.skills }
+      : { analysis: 30, trading: 30, research: 30 }
     if (emp.stress === undefined) emp.stress = 0
     if (emp.satisfaction === undefined) emp.satisfaction = 80
 
@@ -211,33 +239,111 @@ export function updateOfficeSystem(
         )
         const buffs = calculateEmployeeBuffs(emp, seatCell, adjacentEmployees)
 
-        // 스태미너 회복 (버프 적용)
-        emp.stamina = Math.min(emp.maxStamina, emp.stamina + 0.1 * buffs.staminaRecovery)
+        // 4. 행동 AI 결정
+        if (time) {
+          const behavior = decideAction(emp, adjacentEmployees, time)
+          allBehaviors.push(behavior)
 
-        // 스트레스 증가 (버프 적용)
-        emp.stress = Math.min(100, emp.stress + 0.03 * buffs.stressGeneration)
+          // 행동 효과 적용
+          const actionEffects = getActionEffects(behavior.action)
+          emp.stamina = Math.min(
+            emp.maxStamina,
+            Math.max(0, emp.stamina + actionEffects.staminaDelta + 0.1 * buffs.staminaRecovery),
+          )
+          emp.stress = Math.min(
+            100,
+            Math.max(0, emp.stress + actionEffects.stressDelta + 0.03 * buffs.stressGeneration),
+          )
+          emp.satisfaction = Math.min(
+            100,
+            Math.max(0, (emp.satisfaction ?? 80) + actionEffects.satisfactionDelta),
+          )
 
-        // 스킬 성장 (버프 적용, 느린 속도)
-        const growthRate = 0.005 * buffs.skillGrowth
-        const skills = emp.skills as EmployeeSkills
-        const roleGrowthFocus: Record<string, keyof EmployeeSkills> = {
-          analyst: 'analysis',
-          trader: 'trading',
-          manager: 'research',
-          intern: 'analysis',
-          ceo: 'analysis',
-          hr_manager: 'research',
-        }
-        const focusSkill = roleGrowthFocus[emp.role] || 'analysis'
-        skills[focusSkill] = Math.min(100, skills[focusSkill] + growthRate)
-
-        // 부수 스킬도 아주 조금 성장
-        Object.keys(skills).forEach((key) => {
-          const k = key as keyof EmployeeSkills
-          if (k !== focusSkill) {
-            skills[k] = Math.min(100, skills[k] + growthRate * 0.3)
+          // 스킬 성장 (행동 + 버프)
+          const growthRate = 0.005 * buffs.skillGrowth * actionEffects.skillMultiplier
+          if (growthRate > 0) {
+            const skills = emp.skills as EmployeeSkills
+            const roleGrowthFocus: Record<string, keyof EmployeeSkills> = {
+              analyst: 'analysis',
+              trader: 'trading',
+              manager: 'research',
+              intern: 'analysis',
+              ceo: 'analysis',
+              hr_manager: 'research',
+            }
+            const focusSkill = roleGrowthFocus[emp.role] || 'analysis'
+            skills[focusSkill] = Math.min(100, skills[focusSkill] + growthRate)
+            Object.keys(skills).forEach((key) => {
+              const k = key as keyof EmployeeSkills
+              if (k !== focusSkill) {
+                skills[k] = Math.min(100, skills[k] + growthRate * 0.3)
+              }
+            })
           }
-        })
+
+          // 행동 이벤트 로그 (중요한 행동만)
+          if (
+            behavior.action === 'STRESSED_OUT' ||
+            behavior.action === 'COUNSELING' ||
+            behavior.action === 'SOCIALIZING'
+          ) {
+            officeEvents.push({
+              timestamp: absoluteTick,
+              type: 'behavior',
+              emoji: behavior.emoji,
+              message: `${emp.name}: ${behavior.message ?? behavior.action}`,
+              employeeIds: [emp.id],
+            })
+          }
+
+          // 5. 상호작용 체크
+          const interactions = checkInteractions(emp, adjacentEmployees, absoluteTick)
+          for (const interaction of interactions) {
+            allInteractions.push(interaction)
+
+            // 상호작용 효과 적용 (initiator = current employee)
+            emp.stress = Math.min(100, Math.max(0, emp.stress + interaction.effects.initiator.stressDelta))
+            emp.satisfaction = Math.min(100, Math.max(0, (emp.satisfaction ?? 80) + interaction.effects.initiator.satisfactionDelta))
+            emp.stamina = Math.min(emp.maxStamina, Math.max(0, emp.stamina + interaction.effects.initiator.staminaDelta))
+
+            // 스킬 성장 적용
+            if (interaction.effects.initiator.skillDelta > 0) {
+              const skills = emp.skills as EmployeeSkills
+              skills.analysis = Math.min(100, skills.analysis + interaction.effects.initiator.skillDelta)
+            }
+
+            // 상호작용 이벤트 로그
+            officeEvents.push({
+              timestamp: absoluteTick,
+              type: 'interaction',
+              emoji: interaction.emoji,
+              message: `${interaction.initiatorName}: "${interaction.dialogue[0]}" → ${interaction.targetName}: "${interaction.dialogue[1]}"`,
+              employeeIds: [interaction.initiatorId, interaction.targetId],
+            })
+          }
+        } else {
+          // time이 없으면 기존 로직
+          emp.stamina = Math.min(emp.maxStamina, emp.stamina + 0.1 * buffs.staminaRecovery)
+          emp.stress = Math.min(100, emp.stress + 0.03 * buffs.stressGeneration)
+          const growthRate = 0.005 * buffs.skillGrowth
+          const skills = emp.skills as EmployeeSkills
+          const roleGrowthFocus: Record<string, keyof EmployeeSkills> = {
+            analyst: 'analysis',
+            trader: 'trading',
+            manager: 'research',
+            intern: 'analysis',
+            ceo: 'analysis',
+            hr_manager: 'research',
+          }
+          const focusSkill = roleGrowthFocus[emp.role] || 'analysis'
+          skills[focusSkill] = Math.min(100, skills[focusSkill] + growthRate)
+          Object.keys(skills).forEach((key) => {
+            const k = key as keyof EmployeeSkills
+            if (k !== focusSkill) {
+              skills[k] = Math.min(100, skills[k] + growthRate * 0.3)
+            }
+          })
+        }
       }
     } else {
       // 미배치 직원: 기본 스트레스 감소, 스태미너 천천히 회복
@@ -245,34 +351,76 @@ export function updateOfficeSystem(
       emp.stress = Math.max(0, emp.stress - 0.02)
     }
 
-    // 만족도 계산 (스트레스 기반)
-    const targetStress = 30
-    const stressDiff = emp.stress - targetStress
-    emp.satisfaction = Math.max(
-      0,
-      Math.min(100, emp.satisfaction - stressDiff * 0.005),
-    )
+    // 만족도 계산 (스트레스 기반) — 행동 AI가 없을 때 폴백
+    if (!time) {
+      const targetStress = 30
+      const stressDiff = emp.stress - targetStress
+      emp.satisfaction = Math.max(
+        0,
+        Math.min(100, (emp.satisfaction ?? 80) - stressDiff * 0.005),
+      )
+    }
 
     // 퇴사 경고
-    if (emp.satisfaction < 20 && emp.satisfaction >= 10) {
+    if ((emp.satisfaction ?? 80) < 20 && (emp.satisfaction ?? 80) >= 10) {
       warnings.push({
         employeeId: emp.id,
         name: emp.name,
         type: 'resign_warning',
       })
+      officeEvents.push({
+        timestamp: absoluteTick,
+        type: 'warning',
+        emoji: '⚠️',
+        message: `${emp.name}의 만족도가 위험 수준입니다!`,
+        employeeIds: [emp.id],
+      })
     }
 
     // 자동 퇴사 (만족도 10 미만)
-    if (emp.satisfaction < 10) {
+    if ((emp.satisfaction ?? 80) < 10) {
       resignedIds.push(emp.id)
+      officeEvents.push({
+        timestamp: absoluteTick,
+        type: 'resign',
+        emoji: '🚪',
+        message: `${emp.name}이(가) 퇴사했습니다.`,
+        employeeIds: [emp.id],
+      })
     }
 
     return emp
   })
 
+  // 상호작용 target에 대한 효과도 적용
+  const finalEmployees = updatedEmployees.map((emp) => {
+    const targetInteractions = allInteractions.filter((i) => i.targetId === emp.id)
+    if (targetInteractions.length === 0) return emp
+
+    const updated = { ...emp }
+    if (updated.stress === undefined) updated.stress = 0
+    if (updated.satisfaction === undefined) updated.satisfaction = 80
+
+    for (const interaction of targetInteractions) {
+      updated.stress = Math.min(100, Math.max(0, updated.stress + interaction.effects.target.stressDelta))
+      updated.satisfaction = Math.min(100, Math.max(0, updated.satisfaction + interaction.effects.target.satisfactionDelta))
+      updated.stamina = Math.min(updated.maxStamina, Math.max(0, updated.stamina + interaction.effects.target.staminaDelta))
+
+      if (interaction.effects.target.skillDelta > 0 && updated.skills) {
+        updated.skills = { ...updated.skills }
+        updated.skills.analysis = Math.min(100, updated.skills.analysis + interaction.effects.target.skillDelta)
+      }
+    }
+
+    return updated
+  })
+
   return {
-    updatedEmployees: updatedEmployees.filter((e) => !resignedIds.includes(e.id)),
+    updatedEmployees: finalEmployees.filter((e) => !resignedIds.includes(e.id)),
     resignedIds,
     warnings,
+    behaviors: allBehaviors,
+    interactions: allInteractions,
+    officeEvents,
   }
 }

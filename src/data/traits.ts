@@ -28,7 +28,6 @@ export const TRAIT_DEFINITIONS: Record<EmployeeTrait, TraitConfig> = {
     rarity: 'common',
     effects: {
       requiresCoffee: true,
-      staminaRecovery: 1.5, // 커피머신 근처 시 회복 속도 1.5배
       stressGeneration: 1.3, // 커피 없으면 스트레스 1.3배
     },
   },
@@ -129,51 +128,3 @@ export const TRAIT_DEFINITIONS: Record<EmployeeTrait, TraitConfig> = {
   },
 }
 
-/* ── Trait Generation Helpers ── */
-
-/**
- * 가중치 기반 랜덤 성격 태그 생성 (1-2개)
- * - 70% 확률로 1개, 30% 확률로 2개
- * - rarity에 따른 가중치 적용
- */
-export function generateRandomTraits(): EmployeeTrait[] {
-  const traitCount = Math.random() > 0.7 ? 2 : 1
-  const allTraits = Object.keys(TRAIT_DEFINITIONS) as EmployeeTrait[]
-
-  // rarity에 따른 가중치 배열 생성
-  const weightedTraits = allTraits.flatMap((trait) => {
-    const { rarity } = TRAIT_DEFINITIONS[trait]
-    const weight = rarity === 'common' ? 7 : rarity === 'uncommon' ? 2 : 1
-    return Array(weight).fill(trait)
-  })
-
-  // 중복 없이 선택
-  const selected: EmployeeTrait[] = []
-  while (selected.length < traitCount) {
-    const randomTrait = weightedTraits[Math.floor(Math.random() * weightedTraits.length)]
-    if (!selected.includes(randomTrait)) {
-      selected.push(randomTrait)
-    }
-  }
-
-  return selected
-}
-
-/**
- * 성격 태그 툴팁 텍스트 생성
- */
-export function getTraitTooltip(trait: EmployeeTrait): string {
-  const config = TRAIT_DEFINITIONS[trait]
-  const effects = Object.entries(config.effects)
-    .map(([key, value]) => {
-      if (typeof value === 'boolean') {
-        return `${key}: 필요`
-      }
-      const percent = ((value - 1) * 100).toFixed(0)
-      const sign = value > 1 ? '+' : ''
-      return `${key}: ${sign}${percent}%`
-    })
-    .join('\n')
-
-  return `${config.name}\n${config.description}\n\n효과:\n${effects}`
-}

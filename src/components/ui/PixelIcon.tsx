@@ -39,6 +39,13 @@ const ICONS: Record<string, string> = {
     <rect x="9" y="6" width="4" height="3" fill="#000080"/>
     <rect x="6" y="10" width="4" height="5" fill="#8B6914"/>`,
 
+  office_history: `<rect x="1" y="1" width="14" height="14" fill="#FFF" stroke="#000" stroke-width="1"/>
+    <rect x="3" y="3" width="10" height="2" fill="#000080"/>
+    <rect x="3" y="6" width="8" height="1" fill="#808080"/>
+    <rect x="3" y="8" width="10" height="1" fill="#808080"/>
+    <rect x="3" y="10" width="6" height="1" fill="#808080"/>
+    <rect x="3" y="12" width="9" height="1" fill="#808080"/>`,
+
   ranking: `<polygon points="8,1 10,6 15,6 11,9 12,14 8,11 4,14 5,9 1,6 6,6" fill="#FFFF00" stroke="#000" stroke-width="0.5"/>`,
 
   settings: `<circle cx="8" cy="8" r="3" fill="#808080" stroke="#000" stroke-width="1"/>

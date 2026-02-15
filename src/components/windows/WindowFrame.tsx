@@ -9,10 +9,11 @@ const WINDOW_SIZE_CONSTRAINTS: Record<
 > = {
   portfolio: { minWidth: 320, minHeight: 250 },
   chart: { minWidth: 400, minHeight: 300 },
-  trading: { minWidth: 320, minHeight: 280 },
+  trading: { minWidth: 320, minHeight: 400 },
   news: { minWidth: 300, minHeight: 200 },
   office: { minWidth: 400, minHeight: 350 },
-  ranking: { minWidth: 300, minHeight: 250 },
+  ranking: { minWidth: 340, minHeight: 380 },
+  office_history: { minWidth: 300, minHeight: 250 },
   settings: { minWidth: 320, minHeight: 280 },
   ending: { minWidth: 500, minHeight: 400 },
 }
@@ -37,7 +38,8 @@ interface WindowFrameProps {
 }
 
 export function WindowFrame({ window: win, children }: WindowFrameProps) {
-  const { closeWindow, minimizeWindow, focusWindow, moveWindow, resizeWindow } = useGameStore()
+  const { closeWindow, minimizeWindow, toggleMaximizeWindow, focusWindow, moveWindow, resizeWindow } =
+    useGameStore()
   const dragRef = useRef<{ startX: number; startY: number; winX: number; winY: number } | null>(
     null,
   )
@@ -54,6 +56,7 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       focusWindow(win.id)
+      if (win.isMaximized) return
       dragRef.current = {
         startX: e.clientX,
         startY: e.clientY,
@@ -77,7 +80,7 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
       document.addEventListener('mousemove', handleMouseMove)
       document.addEventListener('mouseup', handleMouseUp)
     },
-    [win.id, win.x, win.y, focusWindow, moveWindow],
+    [win.id, win.x, win.y, win.isMaximized, focusWindow, moveWindow],
   )
 
   const handleResizeMouseDown = useCallback(
@@ -178,6 +181,10 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
       <div
         className="flex items-center px-0.5 py-0.5 gap-1 cursor-move shrink-0"
         onMouseDown={handleMouseDown}
+        onDoubleClick={() => {
+          dragRef.current = null
+          toggleMaximizeWindow(win.id)
+        }}
       >
         <div className="flex-1 bg-win-title-active text-win-title-text px-1.5 py-0.5 text-xs font-bold truncate">
           {win.title}
@@ -190,6 +197,13 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
         </button>
         <button
           className="win-outset bg-win-face w-4 h-4 flex items-center justify-center text-[10px] leading-none cursor-pointer"
+          onClick={() => toggleMaximizeWindow(win.id)}
+          title={win.isMaximized ? '이전 크기로' : '최대화'}
+        >
+          {win.isMaximized ? '❐' : '□'}
+        </button>
+        <button
+          className="win-outset bg-win-face w-4 h-4 flex items-center justify-center text-[10px] leading-none cursor-pointer"
           onClick={() => closeWindow(win.id)}
         >
           X
@@ -199,7 +213,8 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
       {/* Content Area */}
       <div className="flex-1 overflow-auto m-0.5 win-inset p-1">{children}</div>
 
-      {/* Resize Handles - 8 directions */}
+      {/* Resize Handles - 8 directions (hidden when maximized) */}
+      {!win.isMaximized && <>
       {/* Top */}
       <div
         className="absolute top-0 left-2 right-2 h-1 cursor-ns-resize"
@@ -248,6 +263,7 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
         style={{ cursor: RESIZE_CURSORS.se }}
         onMouseDown={(e) => handleResizeMouseDown(e, 'se')}
       />
+      </>}
     </div>
   )
 }

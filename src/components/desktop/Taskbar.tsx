@@ -10,6 +10,7 @@ const TASKBAR_ITEMS: { type: WindowType; icon: string; label: string }[] = [
   { type: 'trading', icon: 'trading', label: '매매' },
   { type: 'news', icon: 'news', label: '뉴스' },
   { type: 'office', icon: 'office', label: '사무실' },
+  { type: 'office_history', icon: 'office_history', label: '히스토리' },
   { type: 'ranking', icon: 'ranking', label: '랭킹' },
   { type: 'settings', icon: 'settings', label: '설정' },
 ]
