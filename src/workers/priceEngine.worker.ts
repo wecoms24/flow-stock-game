@@ -15,6 +15,7 @@ interface EventModifier {
   affectedCompanies?: string[]
   affectedSectors?: string[]
   propagation?: number // 0-1, 전파 단계 (기본 1.0)
+  companySensitivities?: Record<string, number> // 회사별 감응도
 }
 
 interface SentimentData {
@@ -91,12 +92,13 @@ self.onmessage = (e: MessageEvent<TickMessage>) => {
     let mu = company.drift
     let sigma = company.volatility
 
-    // Apply active event modifiers with propagation delay
+    // Apply active event modifiers with propagation delay + sensitivity
     for (const evt of events) {
       if (doesEventAffect(evt, company)) {
         const propagation = evt.propagation ?? 1.0
-        mu += evt.driftModifier * propagation
-        sigma *= 1 + evt.volatilityModifier * propagation
+        const sensitivity = evt.companySensitivities?.[company.id] ?? 1.0
+        mu += evt.driftModifier * propagation * sensitivity
+        sigma *= 1 + evt.volatilityModifier * propagation * sensitivity
       }
     }
 

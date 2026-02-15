@@ -20,13 +20,13 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
   const [mode, setMode] = useState<'buy' | 'sell'>('buy')
   const [tab, setTab] = useState<Tab>('market')
 
-  // 차트 창에서 기업 변경 시 동기화
+  // 차트 창에서 기업 변경 시 동기화 (외부 prop 변경만 추적)
   useEffect(() => {
-    if (companyId && companyId !== selectedId) {
+    if (companyId) {
       setSelectedId(companyId)
       setShares(1)
     }
-  }, [companyId, selectedId])
+  }, [companyId])
 
   const company = companies.find((c) => c.id === selectedId)
   const position = player.portfolio[selectedId]

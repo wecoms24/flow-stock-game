@@ -21,10 +21,12 @@ import type {
   LevelUpEvent,
 } from '../types'
 import type { OfficeGrid, FurnitureType, FurnitureItem } from '../types/office'
+import type { TradeProposal, ProposalStatus } from '../types/trade'
+import { TRADE_AI_CONFIG } from '../config/tradeAIConfig'
 import { EMPLOYEE_ROLE_CONFIG } from '../types'
 import { COMPANIES } from '../data/companies'
 import { DIFFICULTY_TABLE } from '../data/difficulty'
-import { generateEmployeeName, resetNamePool, generateRandomTraits, generateInitialSkills } from '../data/employees'
+import { generateEmployeeName, resetNamePool, generateRandomTraits, generateInitialSkills, generateAssignedSectors } from '../data/employees'
 import { TRAIT_DEFINITIONS } from '../data/traits'
 import { FURNITURE_CATALOG, canBuyFurniture } from '../data/furniture'
 import { saveGame, loadGame, deleteSave } from '../systems/saveSystem'
@@ -38,48 +40,60 @@ import { xpForLevel, titleForLevel, badgeForLevel, SKILL_UNLOCKS, XP_AMOUNTS } f
 import { soundManager } from '../systems/soundManager'
 import { updateOfficeSystem } from '../engines/officeSystem'
 import { processHRAutomation } from '../engines/hrAutomation'
-import { cleanupChatterCooldown } from '../data/chatter'
+import { cleanupChatterCooldown, getPipelineMessage } from '../data/chatter'
 import { cleanupInteractionCooldowns } from '../engines/employeeInteraction'
+import { resetNewsEngine } from '../engines/newsEngine'
+import { resetSentiment } from '../engines/sentimentEngine'
+import { analyzeStock, generateProposal } from '../engines/tradePipeline/analystLogic'
+import { evaluateRisk } from '../engines/tradePipeline/managerLogic'
+import { executeProposal } from '../engines/tradePipeline/traderLogic'
+import { calculateAdjacencyBonus } from '../engines/tradePipeline/adjacencyBonus'
 
 /* ── Ending Scenarios ── */
-const ENDING_SCENARIOS: EndingScenario[] = [
-  {
-    id: 'billionaire',
-    type: 'billionaire',
-    title: '억만장자의 탄생',
-    description: '당신은 전설적인 투자자가 되었습니다. 총 자산 10억 원을 돌파!',
-    condition: (player) => player.totalAssetValue >= 1_000_000_000,
-  },
-  {
-    id: 'legend',
-    type: 'legend',
-    title: '투자의 신',
-    description: '초기 자본 대비 100배 이상의 수익을 달성! 당신의 이름은 역사에 남을 것입니다.',
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    condition: (player, _time) => player.totalAssetValue >= player.cash * 100,
-  },
-  {
-    id: 'retirement',
-    type: 'retirement',
-    title: '행복한 은퇴',
-    description: '30년간의 여정을 무사히 마치고 안정적인 자산과 함께 은퇴합니다.',
-    condition: (player, time) => time.year >= 2025 && player.totalAssetValue > 0,
-  },
-  {
-    id: 'survivor',
-    type: 'survivor',
-    title: '생존자',
-    description: '험난한 시장에서 30년을 버텨냈지만, 초기 자본을 지키지 못했습니다.',
-    condition: (player, time) => time.year >= 2025 && player.totalAssetValue > 0,
-  },
-  {
-    id: 'bankrupt',
-    type: 'bankrupt',
-    title: '파산',
-    description: '자산이 바닥났습니다. 시장은 냉혹합니다.',
-    condition: (player) => player.cash <= 0 && Object.keys(player.portfolio).length === 0,
-  },
-]
+function getEndingScenarios(config: GameConfig): EndingScenario[] {
+  const targetLabel = (config.targetAsset / 100_000_000).toFixed(0)
+  return [
+    {
+      id: 'billionaire',
+      type: 'billionaire',
+      title: '목표 달성!',
+      description: `당신은 전설적인 투자자가 되었습니다. 목표 자산 ${targetLabel}억 원 돌파!`,
+      condition: (player) => player.totalAssetValue >= config.targetAsset,
+    },
+    {
+      id: 'legend',
+      type: 'legend',
+      title: '투자의 신',
+      description: '초기 자본 대비 50배 이상의 수익을 달성! 당신의 이름은 역사에 남을 것입니다.',
+      condition: (player) => player.totalAssetValue >= config.initialCash * 50,
+    },
+    {
+      id: 'retirement',
+      type: 'retirement',
+      title: '행복한 은퇴',
+      description: '30년간의 여정을 무사히 마치고 안정적인 자산과 함께 은퇴합니다.',
+      condition: (player, time) =>
+        time.year >= config.endYear && player.totalAssetValue >= config.initialCash,
+    },
+    {
+      id: 'survivor',
+      type: 'survivor',
+      title: '생존자',
+      description: '험난한 시장에서 30년을 버텨냈지만, 초기 자본을 지키지 못했습니다.',
+      condition: (player, time) =>
+        time.year >= config.endYear &&
+        player.totalAssetValue > 0 &&
+        player.totalAssetValue < config.initialCash,
+    },
+    {
+      id: 'bankrupt',
+      type: 'bankrupt',
+      title: '파산',
+      description: '자산이 바닥났습니다. 시장은 냉혹합니다.',
+      condition: (player) => player.cash <= 0 && Object.keys(player.portfolio).length === 0,
+    },
+  ]
+}
 
 /* ── Store Interface ── */
 interface GameStore {
@@ -109,15 +123,27 @@ interface GameStore {
   isFlashing: boolean
   unreadNewsCount: number
 
+  // Trade AI Pipeline
+  proposals: TradeProposal[]
+
+  // Actions - Trade AI Pipeline
+  addProposal: (proposal: TradeProposal) => void
+  updateProposalStatus: (id: string, status: ProposalStatus, updates?: Partial<TradeProposal>) => void
+  expireOldProposals: (currentTick: number) => void
+  processAnalystTick: () => void
+  processManagerTick: () => void
+  processTraderTick: () => void
+
   // Competitor system
   competitors: Competitor[]
   competitorCount: number // 0 = disabled, 1-5 = active
   competitorActions: CompetitorAction[] // Recent 100 actions
   taunts: TauntMessage[] // Recent 20 taunts
   officeEvents: Array<{ timestamp: number; type: string; emoji: string; message: string; employeeIds: string[] }>
+  employeeBehaviors: Record<string, string> // employeeId → action type (WORKING, IDLE, etc.)
 
   // Actions - Game
-  startGame: (difficulty: Difficulty) => void
+  startGame: (difficulty: Difficulty, targetAsset?: number) => void
   loadSavedGame: () => Promise<boolean>
   autoSave: () => void
   setSpeed: (speed: GameTime['speed']) => void
@@ -191,6 +217,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     endYear: 2025,
     initialCash: 50_000_000,
     maxCompanies: 100,
+    targetAsset: 1_000_000_000,
   },
   difficultyConfig: DIFFICULTY_TABLE.normal,
   isGameStarted: false,
@@ -228,9 +255,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   competitorActions: [],
   taunts: [],
   officeEvents: [],
+  employeeBehaviors: {},
+  proposals: [],
 
   /* ── Game Actions ── */
-  startGame: (difficulty) => {
+  startGame: (difficulty, targetAsset) => {
     const dcfg = DIFFICULTY_TABLE[difficulty]
     const companies = COMPANIES.map((c) => ({
       ...c,
@@ -246,6 +275,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       endYear: dcfg.endYear,
       initialCash: dcfg.initialCash,
       maxCompanies: dcfg.maxCompanies,
+      targetAsset: targetAsset ?? 1_000_000_000,
     }
 
     set({
@@ -282,6 +312,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       nextZIndex: 1,
       windowIdCounter: 0,
       unreadNewsCount: 1,
+      proposals: [],
     })
 
     deleteSave()
@@ -295,6 +326,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   loadSavedGame: async () => {
     const data = await loadGame()
     if (!data) return false
+
+    // 엔진 내부 상태 리셋 (이전 세션 잔여 데이터 방지)
+    resetNewsEngine()
+    resetSentiment()
 
     // Reconstruct companies from save + base data
     const companies = COMPANIES.map((base) => {
@@ -328,22 +363,47 @@ export const useGameStore = create<GameStore>((set, get) => ({
       })),
     }
 
+    const migratedConfig = {
+      ...data.config,
+      targetAsset: data.config.targetAsset ?? 1_000_000_000,
+    }
+
+    // 컴페티터 필드 마이그레이션
+    const migratedCompetitors = (data.competitors ?? []).map((c) => ({
+      ...c,
+      panicSellCooldown: c.panicSellCooldown ?? 0,
+      lastDayChange: c.lastDayChange ?? 0,
+      totalAssetValue: c.totalAssetValue ?? c.cash,
+      roi: c.roi ?? 0,
+      initialAssets: c.initialAssets ?? c.cash,
+    }))
+
+    // 시간 상태: isPaused를 반드시 false로 강제 (게임 재개 보장)
+    const loadedTime = { ...data.time, isPaused: false }
+
+    // lastProcessedMonth 복원 (없으면 현재 시점 기준 계산 — 월급 이중 차감 방지)
+    const fallbackMonth = (data.time.year - (data.config.startYear ?? 1995)) * 12 + data.time.month
+    const lastProcessedMonth = data.lastProcessedMonth ?? fallbackMonth
+
     set({
-      config: data.config,
+      config: migratedConfig,
       difficultyConfig: dcfg,
       isGameStarted: true,
       isGameOver: false,
       endingResult: null,
-      time: data.time,
+      time: loadedTime,
+      lastProcessedMonth,
       player: migratedPlayer,
       companies,
       events: data.events,
       news: data.news,
-      competitors: data.competitors ?? [],
+      competitors: migratedCompetitors,
       competitorCount: data.competitorCount ?? 0,
       competitorActions: [],
       taunts: [],
       officeEvents: [],
+      employeeBehaviors: {},
+      proposals: data.proposals ?? [],
       windows: [],
       nextZIndex: 1,
       windowIdCounter: 0,
@@ -377,8 +437,302 @@ export const useGameStore = create<GameStore>((set, get) => ({
       news: s.news.slice(0, 50), // Save only recent news
       competitors: s.competitors,
       competitorCount: s.competitorCount,
+      proposals: s.proposals,
+      lastProcessedMonth: s.lastProcessedMonth,
     }
     saveGame(data)
+  },
+
+  /* ── Trade AI Pipeline CRUD ── */
+  addProposal: (proposal) =>
+    set((s) => {
+      const pendingCount = s.proposals.filter((p) => p.status === 'PENDING').length
+      if (pendingCount >= TRADE_AI_CONFIG.MAX_PENDING_PROPOSALS) return s
+      return { proposals: [...s.proposals, proposal] }
+    }),
+
+  updateProposalStatus: (id, status, updates) =>
+    set((s) => ({
+      proposals: s.proposals.map((p) =>
+        p.id === id ? { ...p, ...updates, status } : p,
+      ),
+    })),
+
+  expireOldProposals: (currentTick) =>
+    set((s) => ({
+      proposals: s.proposals.map((p) =>
+        (p.status === 'PENDING' || p.status === 'APPROVED') &&
+        currentTick - p.createdAt > TRADE_AI_CONFIG.PROPOSAL_EXPIRE_TICKS
+          ? { ...p, status: 'EXPIRED' as ProposalStatus }
+          : p,
+      ),
+    })),
+
+  processAnalystTick: () => {
+    const s = get()
+    if (!s.player.officeGrid) return
+    const analysts = s.player.employees.filter(
+      (e) => e.role === 'analyst' && e.seatIndex != null && (e.stress ?? 0) < 100,
+    )
+    if (analysts.length === 0) return
+
+    const absoluteTick =
+      ((s.time.year - s.config.startYear) * 360 + (s.time.month - 1) * 30 + (s.time.day - 1)) * 10 +
+      s.time.tick
+
+    let newProposals = [...s.proposals]
+
+    for (const analyst of analysts) {
+      // Adjacency bonus: lower confidence threshold if Manager is adjacent
+      const adjBonus = calculateAdjacencyBonus(analyst, 'manager', s.player.employees, s.player.officeGrid)
+
+      const sectors = analyst.assignedSectors ?? []
+      const targetCompanies = sectors.length > 0
+        ? s.companies.filter((c) => sectors.includes(c.sector))
+        : s.companies.slice(0, 5) // fallback: first 5 if no sector assigned
+
+      for (const company of targetCompanies) {
+        const result = analyzeStock(company, company.priceHistory, analyst, adjBonus)
+        if (!result) continue
+
+        const proposal = generateProposal(analyst, company, result, absoluteTick, newProposals)
+        if (!proposal) continue
+
+        // Check max pending
+        const pendingCount = newProposals.filter((p) => p.status === 'PENDING').length
+        if (pendingCount >= TRADE_AI_CONFIG.MAX_PENDING_PROPOSALS) break
+
+        newProposals = [...newProposals, proposal]
+
+        // Pipeline chatter: analyst created a proposal
+        const msg = getPipelineMessage('proposal_created', {
+          ticker: company.ticker,
+          direction: result.direction,
+          confidence: result.confidence,
+        })
+        set((st) => ({
+          officeEvents: [...st.officeEvents, {
+            timestamp: Date.now(),
+            type: 'proposal_created',
+            emoji: result.isInsight ? '💡' : '📊',
+            message: `${analyst.name}: ${msg}`,
+            employeeIds: [analyst.id],
+          }].slice(-200),
+        }))
+
+        break // One proposal per analyst per tick
+      }
+    }
+
+    if (newProposals.length !== s.proposals.length) {
+      set({ proposals: newProposals })
+    }
+  },
+
+  processManagerTick: () => {
+    const s = get()
+    if (!s.player.officeGrid) return
+    const pendingProposals = s.proposals.filter((p) => p.status === 'PENDING')
+    if (pendingProposals.length === 0) return
+
+    const manager = s.player.employees.find(
+      (e) => e.role === 'manager' && e.seatIndex != null && (e.stress ?? 0) < 100,
+    ) ?? null
+
+    const absoluteTick =
+      ((s.time.year - s.config.startYear) * 360 + (s.time.month - 1) * 30 + (s.time.day - 1)) * 10 +
+      s.time.tick
+
+    // Adjacency bonus: Manager adjacent to relevant roles can process extra proposals
+    const adjBonus = manager
+      ? calculateAdjacencyBonus(manager, 'analyst', s.player.employees, s.player.officeGrid)
+      : 0
+    const processCount = adjBonus > 0 ? 2 : 1 // Process 2 proposals if adjacent
+
+    let updatedProposals = [...s.proposals]
+    let updatedEmployees = [...s.player.employees]
+
+    for (let i = 0; i < Math.min(processCount, pendingProposals.length); i++) {
+      const proposal = pendingProposals[i]
+      const result = evaluateRisk(proposal, manager, s.player.cash, s.player.portfolio)
+
+      updatedProposals = updatedProposals.map((p) => {
+        if (p.id !== proposal.id) return p
+        return {
+          ...p,
+          status: (result.approved ? 'APPROVED' : 'REJECTED') as ProposalStatus,
+          reviewedByEmployeeId: manager?.id ?? null,
+          reviewedAt: absoluteTick,
+          isMistake: result.isMistake ?? false,
+          rejectReason: result.reason ?? null,
+        }
+      })
+
+      // Apply stress on rejection to the analyst who proposed
+      if (!result.approved) {
+        updatedEmployees = updatedEmployees.map((e) =>
+          e.id === proposal.createdByEmployeeId
+            ? { ...e, stress: Math.min(100, (e.stress ?? 0) + TRADE_AI_CONFIG.REJECTION_STRESS_GAIN) }
+            : e,
+        )
+      }
+
+      // Pipeline chatter: manager approved/rejected
+      const msgType = result.approved ? 'proposal_approved' : 'proposal_rejected'
+      const managerName = manager?.name ?? '시스템'
+      const msg = getPipelineMessage(msgType, { ticker: proposal.ticker })
+      set((st) => ({
+        officeEvents: [...st.officeEvents, {
+          timestamp: Date.now(),
+          type: msgType,
+          emoji: result.approved ? '✅' : '❌',
+          message: `${managerName}: ${msg}`,
+          employeeIds: [manager?.id ?? '', proposal.createdByEmployeeId].filter(Boolean),
+        }].slice(-200),
+      }))
+    }
+
+    set({
+      proposals: updatedProposals,
+      player: { ...s.player, employees: updatedEmployees },
+    })
+  },
+
+  processTraderTick: () => {
+    const s = get()
+    if (!s.player.officeGrid) return
+    const approvedProposals = s.proposals.filter((p) => p.status === 'APPROVED')
+    if (approvedProposals.length === 0) return
+
+    const trader = s.player.employees.find(
+      (e) => e.role === 'trader' && e.seatIndex != null && (e.stress ?? 0) < 100,
+    ) ?? null
+
+    const absoluteTick =
+      ((s.time.year - s.config.startYear) * 360 + (s.time.month - 1) * 30 + (s.time.day - 1)) * 10 +
+      s.time.tick
+
+    // Adjacency bonus: Trader adjacent to Manager reduces slippage further
+    const adjBonus = trader
+      ? calculateAdjacencyBonus(trader, 'manager', s.player.employees, s.player.officeGrid)
+      : 0
+
+    // Process one approved proposal per tick
+    const proposal = approvedProposals[0]
+    const company = s.companies.find((c) => c.id === proposal.companyId)
+    if (!company) return
+
+    const result = executeProposal(proposal, trader, company.price, s.player.cash, adjBonus)
+
+    if (result.success) {
+      // Execute the actual trade
+      if (proposal.direction === 'buy') {
+        get().buyStock(proposal.companyId, proposal.quantity)
+        // Deduct fee from cash
+        set((st) => ({
+          player: { ...st.player, cash: Math.max(0, st.player.cash - result.fee) },
+        }))
+      } else {
+        get().sellStock(proposal.companyId, proposal.quantity)
+        set((st) => ({
+          player: { ...st.player, cash: Math.max(0, st.player.cash - result.fee) },
+        }))
+      }
+
+      // Update proposal status
+      set((st) => ({
+        proposals: st.proposals.map((p) =>
+          p.id === proposal.id
+            ? {
+                ...p,
+                status: 'EXECUTED' as ProposalStatus,
+                executedByEmployeeId: trader?.id ?? null,
+                executedAt: absoluteTick,
+                executedPrice: result.executedPrice,
+                slippage: result.slippage,
+              }
+            : p,
+        ),
+        // Success: satisfaction +5 for involved employees
+        player: {
+          ...st.player,
+          employees: st.player.employees.map((e) => {
+            if (
+              e.id === proposal.createdByEmployeeId ||
+              e.id === proposal.reviewedByEmployeeId ||
+              e.id === trader?.id
+            ) {
+              return {
+                ...e,
+                satisfaction: Math.min(100, (e.satisfaction ?? 50) + TRADE_AI_CONFIG.SUCCESS_SATISFACTION_GAIN),
+              }
+            }
+            return e
+          }),
+        },
+      }))
+
+      // Pipeline chatter: trade executed successfully
+      const traderName = trader?.name ?? '시스템'
+      const execMsg = getPipelineMessage('trade_executed', {
+        ticker: proposal.ticker,
+        direction: proposal.direction,
+      })
+      set((st) => ({
+        officeEvents: [...st.officeEvents, {
+          timestamp: Date.now(),
+          type: 'trade_executed',
+          emoji: '💰',
+          message: `${traderName}: ${execMsg}`,
+          employeeIds: [trader?.id ?? '', proposal.createdByEmployeeId].filter(Boolean),
+        }].slice(-200),
+      }))
+    } else {
+      // Failed trade
+      set((st) => ({
+        proposals: st.proposals.map((p) =>
+          p.id === proposal.id
+            ? {
+                ...p,
+                status: 'FAILED' as ProposalStatus,
+                executedByEmployeeId: trader?.id ?? null,
+                executedAt: absoluteTick,
+                rejectReason: result.reason ?? 'execution_failed',
+              }
+            : p,
+        ),
+        // Failure: stress +15 for involved employees
+        player: {
+          ...st.player,
+          employees: st.player.employees.map((e) => {
+            if (
+              e.id === proposal.createdByEmployeeId ||
+              e.id === proposal.reviewedByEmployeeId ||
+              e.id === trader?.id
+            ) {
+              return {
+                ...e,
+                stress: Math.min(100, (e.stress ?? 0) + TRADE_AI_CONFIG.FAILURE_STRESS_GAIN),
+              }
+            }
+            return e
+          }),
+        },
+      }))
+
+      // Pipeline chatter: trade failed
+      const failTraderName = trader?.name ?? '시스템'
+      const failMsg = getPipelineMessage('trade_failed', { ticker: proposal.ticker })
+      set((st) => ({
+        officeEvents: [...st.officeEvents, {
+          timestamp: Date.now(),
+          type: 'trade_failed',
+          emoji: '💸',
+          message: `${failTraderName}: ${failMsg}`,
+          employeeIds: [trader?.id ?? '', proposal.createdByEmployeeId].filter(Boolean),
+        }].slice(-200),
+      }))
+    }
   },
 
   setSpeed: (speed) => set((s) => ({ time: { ...s.time, speed } })),
@@ -389,8 +743,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const state = get()
     if (state.isGameOver) return
 
-    for (const scenario of ENDING_SCENARIOS) {
-      if (scenario.condition(state.player, state.time)) {
+    const scenarios = getEndingScenarios(state.config)
+    for (const scenario of scenarios) {
+      if (scenario.condition(state.player, state.time, state.config)) {
         set({
           isGameOver: true,
           endingResult: scenario,
@@ -751,9 +1106,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
         // ✨ Sprint 1: RPG System
         traits,
         skills,
-        stress: 0, // 초기 스트레스 0
-        satisfaction: 100, // 초기 만족도 100
-        seatIndex: null, // 미배치 상태
+        stress: 0,
+        satisfaction: 100,
+        seatIndex: null,
+
+        // ✨ Trade AI Pipeline: Analyst sector assignment
+        assignedSectors: role === 'analyst' ? generateAssignedSectors() : undefined,
       }
 
       // Deduct 3-month upfront signing bonus (adjusted salary)
@@ -789,7 +1147,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       }
 
+      // Expire orphaned proposals from this employee
+      const updatedProposals = s.proposals.map((p) => {
+        if (
+          (p.status === 'PENDING' || p.status === 'APPROVED') &&
+          (p.createdByEmployeeId === id || p.reviewedByEmployeeId === id || p.executedByEmployeeId === id)
+        ) {
+          return { ...p, status: 'EXPIRED' as ProposalStatus }
+        }
+        return p
+      })
+
       return {
+        proposals: updatedProposals,
         player: {
           ...s.player,
           employees: s.player.employees.filter((e) => e.id !== id),
@@ -857,6 +1227,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         office: '사무실',
         ranking: '랭킹',
         office_history: '사무실 히스토리',
+        employee_detail: '직원 상세',
         settings: '설정',
         ending: '게임 종료',
       }
@@ -867,8 +1238,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         title: titles[type],
         x: 50 + offset,
         y: 50 + offset,
-        width: type === 'chart' ? 500 : type === 'trading' ? 380 : type === 'office' ? 420 : 380,
-        height: type === 'chart' ? 350 : type === 'trading' ? 480 : type === 'office' ? 400 : 300,
+        width: type === 'chart' ? 500 : type === 'trading' ? 380 : type === 'office' ? 420 : type === 'employee_detail' ? 340 : 380,
+        height: type === 'chart' ? 350 : type === 'trading' ? 480 : type === 'office' ? 400 : type === 'employee_detail' ? 420 : 300,
         isMinimized: false,
         isMaximized: false,
         zIndex: s.nextZIndex,
@@ -1595,7 +1966,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const state = get()
     if (state.player.employees.length === 0) return
 
-    const { updatedEmployees, resignedIds, warnings, officeEvents } = updateOfficeSystem(
+    const { updatedEmployees, resignedIds, warnings, officeEvents, behaviors } = updateOfficeSystem(
       state.player.employees,
       state.player.officeGrid,
       state.time,
@@ -1667,6 +2038,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       })
     })
 
+    // 행동 맵 생성
+    const behaviorMap: Record<string, string> = {}
+    behaviors.forEach((b) => { behaviorMap[b.employeeId] = b.action })
+
     set((s) => ({
       player: {
         ...s.player,
@@ -1674,6 +2049,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         cash: Math.max(0, s.player.cash - hrResult.cashSpent),
       },
       officeEvents: [...s.officeEvents, ...officeEvents].slice(-200), // Keep last 200
+      employeeBehaviors: behaviorMap,
     }))
   },
 

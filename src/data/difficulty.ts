@@ -1,4 +1,4 @@
-import type { DifficultyConfig, Difficulty } from '../types'
+import type { DifficultyConfig, Difficulty, VictoryGoal } from '../types'
 
 /* ── [Plan Track] 난이도별 변수 차등 세분화 테이블 ── */
 /*
@@ -38,3 +38,35 @@ export const DIFFICULTY_TABLE: Record<Difficulty, DifficultyConfig> = {
     staminaDrainMultiplier: 1.5, // fast fatigue
   },
 }
+
+/* ── Victory Goal Presets ── */
+export const VICTORY_GOALS: VictoryGoal[] = [
+  {
+    id: 'casual',
+    label: '편한 은퇴',
+    icon: '🏖️',
+    targetAsset: 500_000_000,
+    description: '5억원 달성',
+  },
+  {
+    id: 'standard',
+    label: '억만장자',
+    icon: '💰',
+    targetAsset: 1_000_000_000,
+    description: '10억원 달성',
+  },
+  {
+    id: 'hardcore',
+    label: '투자의 신',
+    icon: '⭐',
+    targetAsset: 5_000_000_000,
+    description: '50억원 달성',
+  },
+  {
+    id: 'impossible',
+    label: '워렌 버핏',
+    icon: '🔥',
+    targetAsset: 10_000_000_000,
+    description: '100억원 달성',
+  },
+]

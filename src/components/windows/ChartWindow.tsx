@@ -12,37 +12,91 @@ import {
 import type { Plugin } from 'chart.js'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
+import { getFearGreedIndex, isSentimentActive } from '../../engines/sentimentEngine'
 
-/* ── Event Marker Plugin ── */
+/* ── Event Marker + Band Plugin ── */
 interface EventMarkerOptions {
   markers: Array<{
     tickIndex: number
+    endTickIndex?: number // 이벤트 밴드 종료 위치
     event: {
       id: string
       title: string
-      impact: { severity: string }
+      impact: { severity: string; driftModifier: number }
+      source?: string
     }
     changePercent: string
   }>
   onMarkerClick?: (eventId: string) => void
+  fearGreedIndex?: number // 센티먼트 지수 (0-100)
 }
 
 const eventMarkerPlugin: Plugin<'line', EventMarkerOptions> = {
   id: 'eventMarkers',
   afterDatasetsDraw(chart, _args, options) {
     const markers = options.markers || []
-    if (!markers.length) return
-
     const ctx = chart.ctx
     const xAxis = chart.scales.x
     const yAxis = chart.scales.y
 
+    // 센티먼트 인디케이터 바
+    const fgi = options.fearGreedIndex
+    if (fgi !== undefined && fgi !== null) {
+      ctx.save()
+      const barWidth = chart.width - 40
+      const barX = 20
+      const barY = yAxis.top - 3
+
+      // 배경
+      const grad = ctx.createLinearGradient(barX, 0, barX + barWidth, 0)
+      grad.addColorStop(0, 'rgba(0,0,255,0.3)')
+      grad.addColorStop(0.5, 'rgba(128,128,128,0.2)')
+      grad.addColorStop(1, 'rgba(255,0,0,0.3)')
+      ctx.fillStyle = grad
+      ctx.fillRect(barX, barY, barWidth, 3)
+
+      // 인디케이터
+      const indicatorX = barX + (fgi / 100) * barWidth
+      ctx.fillStyle = fgi > 60 ? '#FF4444' : fgi < 40 ? '#4444FF' : '#888888'
+      ctx.beginPath()
+      ctx.arc(indicatorX, barY + 1.5, 3, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
+
+    if (!markers.length) return
+
+    // 이벤트 밴드 (반투명 배경) 먼저 그리기
+    markers.forEach((marker) => {
+      if (marker.endTickIndex === undefined) return
+      const startX = xAxis.getPixelForValue(marker.tickIndex)
+      const endX = xAxis.getPixelForValue(marker.endTickIndex)
+      const topY = yAxis.top
+      const bottomY = yAxis.bottom
+      const width = Math.max(2, endX - startX)
+
+      const isPositive = marker.event.impact.driftModifier >= 0
+      const isAfterEffect = marker.event.source === 'aftereffect'
+
+      ctx.save()
+      if (isAfterEffect) {
+        // 여진: 점선 패턴 배경
+        ctx.fillStyle = isPositive ? 'rgba(255, 200, 200, 0.15)' : 'rgba(200, 200, 255, 0.15)'
+        ctx.setLineDash([3, 3])
+      } else {
+        ctx.fillStyle = isPositive ? 'rgba(255, 200, 200, 0.2)' : 'rgba(200, 200, 255, 0.2)'
+      }
+      ctx.fillRect(startX, topY, width, bottomY - topY)
+      ctx.setLineDash([])
+      ctx.restore()
+    })
+
+    // 이벤트 마커 (수직선 + 삼각형)
     markers.forEach((marker) => {
       const x = xAxis.getPixelForValue(marker.tickIndex)
       const topY = yAxis.top
       const bottomY = yAxis.bottom
 
-      // Determine color based on severity
       const severity = marker.event.impact.severity
       const color =
         severity === 'critical'
@@ -53,7 +107,6 @@ const eventMarkerPlugin: Plugin<'line', EventMarkerOptions> = {
               ? 'rgba(255, 200, 0, 0.6)'
               : 'rgba(100, 100, 100, 0.4)'
 
-      // Draw vertical line
       ctx.save()
       ctx.strokeStyle = color
       ctx.lineWidth = 2
@@ -64,7 +117,6 @@ const eventMarkerPlugin: Plugin<'line', EventMarkerOptions> = {
       ctx.stroke()
       ctx.setLineDash([])
 
-      // Draw marker icon (triangle)
       ctx.fillStyle = color
       ctx.beginPath()
       ctx.moveTo(x, topY)
@@ -109,12 +161,12 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   const updateWindowProps = useGameStore((s) => s.updateWindowProps)
   const [selectedId, setSelectedIdLocal] = useState(companyId ?? companies[0]?.id ?? '')
 
-  // 매매 창에서 기업 변경 시 동기화
+  // 매매 창에서 기업 변경 시 동기화 (외부 prop 변경만 추적)
   useEffect(() => {
-    if (companyId && companyId !== selectedId) {
+    if (companyId) {
       setSelectedIdLocal(companyId)
     }
-  }, [companyId, selectedId])
+  }, [companyId])
 
   const setSelectedId = (id: string) => {
     setSelectedIdLocal(id)
@@ -220,7 +272,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
     }
   }, [selected, periodTicks])
 
-  // Calculate event markers for the chart
+  // Calculate event markers for the chart (with band end positions)
   const eventMarkers = useMemo(() => {
     if (!selected || !showEventMarkers || !relevantEvents.length) return []
 
@@ -242,8 +294,13 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
 
         const tickIndex = selected.priceHistory.length + eventStartTick - startTick
 
+        // 이벤트 밴드 종료 위치 계산
+        const elapsed = evt.duration - evt.remainingTicks
+        const endTickIndex = tickIndex + elapsed
+
         // Only show if within visible range
-        if (tickIndex < 0 || tickIndex >= historyLength) return null
+        if (tickIndex >= historyLength && endTickIndex < 0) return null
+        if (tickIndex < 0 && endTickIndex < 0) return null
 
         const impact = evt.priceImpactSnapshot?.[selected.id]
         const changePercent = impact
@@ -251,17 +308,25 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
           : '?'
 
         return {
-          tickIndex,
+          tickIndex: Math.max(0, tickIndex),
+          endTickIndex: Math.min(historyLength - 1, endTickIndex),
           event: evt,
           changePercent,
         }
       })
       .filter((m) => m !== null) as Array<{
       tickIndex: number
+      endTickIndex: number
       event: (typeof relevantEvents)[0]
       changePercent: string
     }>
   }, [selected, showEventMarkers, relevantEvents, periodTicks, currentTime])
+
+  // Sentiment data
+  const fearGreedIdx = useMemo(() => {
+    if (!isSentimentActive()) return undefined
+    return getFearGreedIndex()
+  }, [currentTime.tick])
 
   const chartOptions = useMemo(
     () => ({
@@ -291,10 +356,11 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
         eventMarkers: {
           markers: eventMarkers,
           onMarkerClick: (eventId: string) => setSelectedEventId(eventId),
+          fearGreedIndex: fearGreedIdx,
         },
       },
     }),
-    [eventMarkers],
+    [eventMarkers, fearGreedIdx],
   )
 
   if (!selected || !chartData) {
@@ -454,9 +520,30 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
         <Line data={chartData} options={chartOptions} />
       </div>
 
+      {/* Sentiment Indicator */}
+      {fearGreedIdx !== undefined && (
+        <div className="mt-1 win-inset bg-white px-2 py-0.5 text-[10px] flex items-center gap-2">
+          <span className="text-retro-gray">센티먼트:</span>
+          <span
+            className={`font-bold ${fearGreedIdx > 60 ? 'text-red-500' : fearGreedIdx < 40 ? 'text-blue-500' : 'text-gray-600'}`}
+          >
+            {fearGreedIdx > 75
+              ? '극도의 탐욕'
+              : fearGreedIdx > 60
+                ? '탐욕'
+                : fearGreedIdx < 25
+                  ? '극도의 공포'
+                  : fearGreedIdx < 40
+                    ? '공포'
+                    : '중립'}
+          </span>
+          <span className="text-retro-gray">({Math.round(fearGreedIdx)})</span>
+        </div>
+      )}
+
       {/* Event Info Panel */}
       {showEventMarkers && relevantEvents.length > 0 && (
-        <div className="mt-1 win-inset bg-white p-1 text-[10px] max-h-24 overflow-y-auto">
+        <div className="mt-1 win-inset bg-white p-1 text-[10px] overflow-y-auto">
           <div className="font-bold mb-0.5">관련 이벤트 ({relevantEvents.length})</div>
           <div className="space-y-0.5">
             {relevantEvents.slice(0, 5).map((evt) => {

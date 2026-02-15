@@ -45,6 +45,7 @@ Single store at `src/stores/gameStore.ts` (~1500 LOC). All state mutations go th
 - `competitors: Competitor[]` — AI rivals with independent portfolios and trading styles
 - `events: MarketEvent[]` — Active events modifying drift/volatility
 - `windows: WindowState[]` — Open window positions/z-index
+- `proposals: TradeProposal[]` — Trade AI pipeline proposals (PENDING→APPROVED→EXECUTED)
 - `taunts: TauntMessage[]` — AI competitor chat feed
 
 **Key Patterns**:
@@ -64,8 +65,13 @@ Each tick:
 3. updatePrices() — apply new prices to store
 4. Event system — decay active events, spawn new ones
 5. processEmployeeTick() (every 10 ticks) — stress/satisfaction/skills
-6. processAITrading() — competitor engine trades
-7. Auto-save (every 300 ticks)
+6. Trade AI Pipeline:
+   a. processAnalystTick() (tick%10===0) — scan sectors, generate proposals
+   b. processManagerTick() (tick%5===2) — approve/reject proposals
+   c. expireOldProposals() (tick%10===5) — clean stale proposals
+   d. processTraderTick() (every tick) — execute approved proposals
+7. processAITrading() — competitor engine trades
+8. Auto-save (every 300 ticks)
 ```
 
 Worker initialization happens in `App.tsx` useEffect. Speed changes trigger interval recalculation.
@@ -78,6 +84,10 @@ Worker initialization happens in `App.tsx` useEffect. Speed changes trigger inte
 | `competitorEngine.ts` | AI trading (4 strategies: Shark/Turtle/Surfer/Bear) | Every tick via tick distribution |
 | `officeSystem.ts` | Employee buff calculation + stress/satisfaction/skill updates | Every 10 ticks |
 | `hrAutomation.ts` | Auto stress care + quarterly training + weekly reports | Via processEmployeeTick |
+| `tradePipeline/analystLogic.ts` | Analyst stock analysis + proposal generation | Every 10 ticks (tick%10===0) |
+| `tradePipeline/managerLogic.ts` | Manager risk assessment + approve/reject | Every 5 ticks (tick%5===2) |
+| `tradePipeline/traderLogic.ts` | Trader order execution with slippage | Every tick (when APPROVED exists) |
+| `tradePipeline/adjacencyBonus.ts` | Office adjacency speed bonus calculation | Called by pipeline ticks |
 
 ### Competitor AI System
 
@@ -109,6 +119,38 @@ Furniture buffs × Trait effects × Employee interactions → Final multipliers
 
 **HR Manager**: Auto-hirable role that runs `processHRAutomation` — counsels stressed employees (50K cost, -15 stress), trains skills quarterly (100K), generates weekly reports.
 
+### Trade AI Pipeline (`src/engines/tradePipeline/`)
+
+Employee-driven automated trading system. Analysts scan stocks → Managers approve/reject → Traders execute orders.
+
+**Proposal Lifecycle** (`src/types/trade.ts`):
+```
+PENDING → APPROVED → EXECUTED (success)
+       → REJECTED         → FAILED (insufficient funds, etc.)
+       → EXPIRED (stale)
+```
+
+**Pipeline Configuration** (`src/config/tradeAIConfig.ts`):
+- `CONFIDENCE_THRESHOLD: 70` — minimum confidence for proposal creation
+- `MAX_PENDING_PROPOSALS: 5` — per-pipeline limit
+- `PROPOSAL_EXPIRY_TICKS: 100` — auto-expire stale proposals
+- `BASE_SLIPPAGE: 0.01` — base trade execution slippage (1%)
+- `ADJACENCY_SPEED_BONUS: 0.30` — max 30% bonus for adjacent placement
+
+**Adjacency Bonus** (`adjacencyBonus.ts`): When Analyst sits next to Manager, or Manager next to Trader, pipeline gets speed bonuses:
+- Analyst: confidence threshold lowered (more proposals generated)
+- Manager: processes 2 proposals per tick instead of 1
+- Trader: reduced slippage on execution
+
+**Fallback Behavior**:
+- No Manager → auto-approve with 30% mistake rate
+- No Trader → execute with 2x fee penalty
+- Stress 100 → skip pipeline processing for that employee
+
+**Visual Feedback** (`src/data/chatter.ts`): Pipeline events trigger speech bubbles via `getPipelineMessage()` and office events for toast notifications (`trade_executed`, `trade_failed`).
+
+**Key Store Actions**: `addProposal`, `updateProposalStatus`, `expireOldProposals`, `processAnalystTick`, `processManagerTick`, `processTraderTick`
+
 ### Data Layer (`src/data/`)
 
 - `companies.ts`: 20 companies across 5 sectors (Tech, Finance, Energy, Consumer, Healthcare)
@@ -117,7 +159,7 @@ Furniture buffs × Trait effects × Employee interactions → Final multipliers
 - `employees.ts`: Name pool + role-based skill generation
 - `traits.ts`: 10 personality traits with rarity and effect definitions
 - `furniture.ts`: 10 furniture types with buff effects and costs
-- `chatter.ts`: Employee speech bubble templates and selection logic
+- `chatter.ts`: Employee speech bubble templates, selection logic, and pipeline message templates (`getPipelineMessage`)
 - `taunts.ts`: AI competitor trash-talk by situation (panic sell, rank change, overtake)
 
 ### Systems Layer (`src/systems/`)
@@ -170,6 +212,8 @@ All windows use `WindowFrame` for consistent drag/resize/close behavior. `window
 8. **setTimeout in useEffect**: Track timeout IDs in a `useRef<Set>` and clear on unmount to prevent memory leaks
 9. **Console tampering**: Production mode freezes `getState()` output to prevent cheating
 10. **AI tick distribution**: Competitor trading is spread across ticks to avoid frame drops — don't process all AIs on same tick
+11. **Trade pipeline cleanup**: When firing/resigning employees, orphaned PENDING/APPROVED proposals must be expired or reassigned
+12. **Pipeline officeGrid guard**: All process*Tick actions must check `s.player.officeGrid` exists before calculating adjacency bonuses
 
 ## Performance Considerations
 
@@ -179,3 +223,10 @@ All windows use `WindowFrame` for consistent drag/resize/close behavior. `window
 - **AI distribution**: `PERFORMANCE_CONFIG.TICK_DISTRIBUTION` spreads AI across 5 ticks
 - **Price history cap**: Max 50 data points per company for technical indicators
 - **Chatter cooldowns**: Per-employee minimum interval + per-template cooldown prevents spam
+
+## Active Technologies
+- TypeScript 5.9 (strict mode) + React 19, Zustand 5, Vite 7, TailwindCSS v4 (001-employee-trade-ai)
+- Dexie (IndexedDB) - 기존 세이브 시스템 확장 (001-employee-trade-ai)
+
+## Recent Changes
+- 001-employee-trade-ai: Added TypeScript 5.9 (strict mode) + React 19, Zustand 5, Vite 7, TailwindCSS v4

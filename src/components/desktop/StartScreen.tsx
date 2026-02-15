@@ -3,6 +3,7 @@ import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { RetroPanel } from '../ui/RetroPanel'
 import type { Difficulty } from '../../types'
+import { VICTORY_GOALS } from '../../data/difficulty'
 
 interface StartScreenProps {
   hasSave: boolean
@@ -43,6 +44,7 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
     enabled: false,
     count: 3,
   })
+  const [selectedGoalIdx, setSelectedGoalIdx] = useState(1) // default: 억만장자 (10억)
 
   // Boot animation: reveal lines one by one
   useEffect(() => {
@@ -89,8 +91,8 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
       initializeCompetitors(competitorSetup.count, startingCash)
     }
 
-    // Start the game
-    startGame(difficulty)
+    // Start the game with selected victory goal
+    startGame(difficulty, VICTORY_GOALS[selectedGoalIdx].targetAsset)
   }
 
   const competitorNames = [
@@ -214,6 +216,30 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
             )}
           </RetroPanel>
 
+          {/* Victory Goal Selection */}
+          <RetroPanel variant="inset" className="p-3 space-y-2">
+            <div className="text-sm font-bold">🎯 승리 목표:</div>
+            <div className="grid grid-cols-2 gap-1">
+              {VICTORY_GOALS.map((goal, idx) => (
+                <button
+                  key={goal.id}
+                  onClick={() => setSelectedGoalIdx(idx)}
+                  className={`p-2 text-left text-[11px] border rounded transition-colors ${
+                    selectedGoalIdx === idx
+                      ? 'border-win-highlight bg-win-highlight/10 font-bold'
+                      : 'border-win-shadow bg-win-face hover:bg-win-highlight/5'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>{goal.icon}</span>
+                    <span>{goal.label}</span>
+                  </div>
+                  <div className="text-retro-gray text-[10px]">{goal.description}</div>
+                </button>
+              ))}
+            </div>
+          </RetroPanel>
+
           <div className="space-y-2">
             <div className="text-sm font-bold">새 게임 시작:</div>
             {difficulties.map((d) => (
@@ -224,6 +250,10 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
                     <div className="text-[10px] text-retro-gray">{d.desc}</div>
                     <div className="text-[10px]">
                       초기자본: <span className="text-retro-darkblue font-bold">{d.cash}</span>
+                      {' · '}목표:{' '}
+                      <span className="text-stock-up font-bold">
+                        {VICTORY_GOALS[selectedGoalIdx].description}
+                      </span>
                     </div>
                   </div>
                   <RetroButton variant="primary" onClick={() => handleStartGame(d.key)}>

@@ -4,7 +4,7 @@ import type { Employee, NewsSentiment } from '../types'
 
 export interface ChatterTemplate {
   id: string
-  category: 'market' | 'stress' | 'satisfaction' | 'trait' | 'random'
+  category: 'market' | 'stress' | 'satisfaction' | 'trait' | 'random' | 'pipeline'
   condition: (employee: Employee) => boolean
   messages: string[]
   priority: number
@@ -292,4 +292,56 @@ export function resetChatterCooldowns(): void {
   Object.keys(lastChatterTick).forEach((key) => {
     delete lastChatterTick[key]
   })
+}
+
+/* ── Pipeline Speech Bubble Templates ── */
+
+const PIPELINE_MESSAGES = {
+  proposal_created: [
+    '발견! {ticker} 매수 추천합니다!',
+    '{ticker} 신호 포착! 제안서 작성 중...',
+    'RSI 분석 완료, {ticker} {direction} 가능!',
+    '{ticker} 차트 패턴 감지! 보고서 올립니다',
+    '{ticker} 분석 끝! 컨피던스 {confidence}%',
+  ],
+  proposal_approved: [
+    '승인. {ticker} 진행시켜.',
+    '{ticker} 제안서 검토 완료, 통과!',
+    '리스크 확인, {ticker} 승인합니다',
+    '좋은 분석이야. {ticker} 실행해',
+  ],
+  proposal_rejected: [
+    '{ticker} 반려. 리스크가 너무 높아',
+    '이건 좀... {ticker} 다시 분석해봐',
+    '{ticker} 거래 보류. 시기상조야',
+    '포지션이 너무 커. {ticker} 반려',
+  ],
+  trade_executed: [
+    '{ticker} 체결 완료! 나이스!',
+    '{ticker} {direction} 성공!',
+    '체결! {ticker} 좋은 가격이야',
+    '{ticker} 주문 완료, 슬리피지 최소화!',
+  ],
+  trade_failed: [
+    '{ticker} 체결 실패... 잔고 부족',
+    '아... {ticker} 주문 실패했어',
+    '{ticker} 안 됐어... 다음 기회를',
+  ],
+} as const
+
+export type PipelineMessageType = keyof typeof PIPELINE_MESSAGES
+
+/**
+ * Pipeline 단계에 맞는 말풍선 메시지 생성
+ */
+export function getPipelineMessage(
+  type: PipelineMessageType,
+  params: { ticker?: string; direction?: string; confidence?: number },
+): string {
+  const templates = PIPELINE_MESSAGES[type]
+  const template = templates[Math.floor(Math.random() * templates.length)]
+  return template
+    .replace('{ticker}', params.ticker ?? '???')
+    .replace('{direction}', params.direction === 'buy' ? '매수' : '매도')
+    .replace('{confidence}', String(params.confidence ?? 0))
 }

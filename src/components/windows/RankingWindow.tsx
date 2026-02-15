@@ -180,7 +180,7 @@ export function RankingWindow() {
   // Show battle mode rankings if competitors are active
   if (competitorCount > 0) {
     return (
-      <div className="text-xs h-full flex flex-col overflow-hidden">
+      <div className="text-xs h-full flex flex-col overflow-auto">
         {/* Tab Bar */}
         <div className="flex gap-0.5 px-2 pt-2 pb-1 shrink-0">
           <RetroButton
@@ -287,7 +287,7 @@ export function RankingWindow() {
               </div>
 
               {/* Taunt Feed */}
-              <div className="border-2 border-win-shadow bg-white p-2 max-h-28 overflow-auto shrink-0">
+              <div className="border-2 border-win-shadow bg-white p-2 shrink-0">
                 <div className="text-[10px] font-bold mb-1 flex items-center gap-1">
                   💬 Rival Talk
                 </div>
@@ -430,7 +430,7 @@ export function RankingWindow() {
                     {competitorPortfolio.length === 0 ? (
                       <div className="text-[9px] text-retro-gray p-1">보유 종목 없음</div>
                     ) : (
-                      <div className="border-2 border-win-shadow bg-white overflow-auto max-h-28">
+                      <div className="border-2 border-win-shadow bg-white overflow-auto">
                         <table className="w-full text-[10px]">
                           <thead className="sticky top-0 bg-win-face border-b border-win-shadow">
                             <tr>
@@ -470,7 +470,7 @@ export function RankingWindow() {
                     {competitorTradeHistory.length === 0 ? (
                       <div className="text-[9px] text-retro-gray p-1">거래 내역 없음</div>
                     ) : (
-                      <div className="border-2 border-win-shadow bg-white overflow-auto max-h-24">
+                      <div className="border-2 border-win-shadow bg-white overflow-auto">
                         <table className="w-full text-[10px]">
                           <thead className="sticky top-0 bg-win-face border-b border-win-shadow">
                             <tr>
@@ -517,7 +517,7 @@ export function RankingWindow() {
                     {competitorTaunts.length === 0 ? (
                       <div className="text-[9px] text-retro-gray p-1">발언 없음</div>
                     ) : (
-                      <div className="space-y-1 max-h-20 overflow-auto">
+                      <div className="space-y-1">
                         {competitorTaunts
                           .slice(-10)
                           .reverse()
