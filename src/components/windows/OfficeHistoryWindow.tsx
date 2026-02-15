@@ -85,7 +85,7 @@ export function OfficeHistoryWindow() {
       </div>
 
       {/* Event List */}
-      <div className="win-inset bg-white p-1 space-y-0.5 max-h-[calc(100%-80px)] overflow-y-auto">
+      <div className="win-inset bg-white p-1 space-y-0.5 overflow-y-auto">
         {filteredEvents.length === 0 ? (
           <div className="text-center text-gray-400 text-[10px] py-8">
             기록이 없습니다

@@ -1,4 +1,5 @@
-import type { EmployeeRole, EmployeeSkills, EmployeeTrait } from '../types'
+import type { EmployeeRole, EmployeeSkills, EmployeeTrait, Sector } from '../types'
+import type { AssignedSector } from '../types/trade'
 import { TRAIT_DEFINITIONS } from './traits'
 
 /* ── Employee Name Pool ── */
@@ -105,4 +106,20 @@ export function generateInitialSkills(
   }
 
   return skills
+}
+
+/* ── Analyst Sector Assignment ── */
+
+const ALL_SECTORS: Sector[] = [
+  'tech', 'finance', 'energy', 'healthcare', 'consumer',
+  'industrial', 'telecom', 'materials', 'utilities', 'realestate',
+]
+
+/**
+ * Analyst 고용 시 담당 섹터 랜덤 할당 (1-2개)
+ */
+export function generateAssignedSectors(): AssignedSector[] {
+  const count = Math.random() > 0.6 ? 2 : 1
+  const shuffled = [...ALL_SECTORS].sort(() => Math.random() - 0.5)
+  return shuffled.slice(0, count)
 }

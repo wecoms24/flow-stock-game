@@ -12,7 +12,7 @@ import { selectChatter } from '../../data/chatter'
 import { TITLE_LABELS, BADGE_COLORS, badgeForLevel, titleForLevel } from '../../systems/growthSystem'
 import { soundManager } from '../../systems/soundManager'
 import { emitFloatingText } from '../effects/FloatingText'
-import { ROLE_EMOJI, getMoodFace } from '../../data/employeeEmoji'
+import { ROLE_EMOJI, BEHAVIOR_EMOJI, getMoodFace } from '../../data/employeeEmoji'
 
 const HIRE_ROLES: EmployeeRole[] = ['intern', 'analyst', 'trader', 'manager', 'ceo', 'hr_manager']
 
@@ -27,6 +27,17 @@ function getStatColor(value: number, isStress: boolean): string {
   if (value < 30) return 'bg-red-500'
   if (value < 60) return 'bg-yellow-400'
   return 'bg-blue-400'
+}
+
+const BEHAVIOR_ANIM_CLASS: Record<string, string> = {
+  WORKING: 'sprite-working',
+  IDLE: 'sprite-idle',
+  BREAK: 'sprite-break',
+  SOCIALIZING: 'sprite-socializing',
+  COFFEE: 'sprite-coffee',
+  MEETING: 'sprite-meeting',
+  STRESSED_OUT: 'sprite-stressed',
+  COUNSELING: 'sprite-counseling',
 }
 
 export function OfficeWindow() {
@@ -45,6 +56,7 @@ export function OfficeWindow() {
     scoldEmployee,
     openWindow,
   } = useGameStore()
+  const employeeBehaviors = useGameStore((s) => s.employeeBehaviors)
 
   // UI State
   const [placementMode, setPlacementMode] = useState<PlacementMode>(null)
@@ -152,10 +164,10 @@ export function OfficeWindow() {
           removeFurniture(furniture.id)
         }
       } else {
-        // Employee - unassign
+        // Employee - open detail window
         const employee = player.employees.find((e) => e.id === cell.occupiedBy)
-        if (employee && confirm(`${employee.name}의 좌석을 해제하시겠습니까?`)) {
-          unassignEmployeeSeat(employee.id)
+        if (employee) {
+          openWindow('employee_detail', { employeeId: employee.id })
         }
       }
     }
@@ -332,10 +344,13 @@ export function OfficeWindow() {
                   {info.type === 'furniture' && info.isTopLeft ? (
                     <span className="text-2xl">{info.sprite}</span>
                   ) : info.type === 'employee' ? (
-                    <div className="flex flex-col items-center leading-none">
-                      {/* 역할 + 표정 이모지 */}
+                    <div className={`flex flex-col items-center leading-none ${info.employeeId ? (BEHAVIOR_ANIM_CLASS[employeeBehaviors[info.employeeId] ?? 'IDLE'] ?? '') : ''}`}>
+                      {/* 역할 + 행동 + 표정 이모지 */}
                       <div className="flex items-center gap-0">
                         <span className="text-[10px]">{info.roleEmoji}</span>
+                        {info.employeeId && employeeBehaviors[info.employeeId] && (
+                          <span className="text-[8px]">{BEHAVIOR_EMOJI[employeeBehaviors[info.employeeId] as keyof typeof BEHAVIOR_EMOJI] ?? ''}</span>
+                        )}
                         <span className="text-[10px]">{info.moodEmoji}</span>
                       </div>
                       {/* 스트레스 미니바 */}
@@ -372,7 +387,7 @@ export function OfficeWindow() {
         {/* Furniture Panel - Card Grid */}
         <div className="space-y-1">
           <div className="font-bold text-[10px]">가구 구매</div>
-          <div className="win-inset bg-white p-1 max-h-40 overflow-y-auto">
+          <div className="win-inset bg-white p-1 overflow-y-auto">
             <div className="grid grid-cols-2 gap-1">
               {Object.values(FURNITURE_CATALOG).map((item) => {
                 const canAfford = player.cash >= item.cost
@@ -451,7 +466,7 @@ export function OfficeWindow() {
         {/* Employee Panel */}
         <div className="space-y-1">
           <div className="font-bold text-[10px]">직원 목록 ({player.employees.length}명)</div>
-          <div className="win-inset bg-white p-1 space-y-1 max-h-40 overflow-y-auto">
+          <div className="win-inset bg-white p-1 space-y-1 overflow-y-auto">
             {player.employees.length === 0 ? (
               <div className="text-[9px] text-gray-400 text-center py-4 border-2 border-dashed border-gray-200 rounded">
                 직원을 고용하세요
@@ -486,7 +501,12 @@ export function OfficeWindow() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1">
                           <BadgeIcon badge={badge} title={empTitle} size={12} />
-                          <span className="text-[10px] font-bold truncate">{emp.name}</span>
+                          <span
+                            className="text-[10px] font-bold truncate cursor-pointer hover:text-blue-600 hover:underline"
+                            onClick={() => openWindow('employee_detail', { employeeId: emp.id })}
+                          >
+                            {emp.name}
+                          </span>
                           {emp.traits?.map((trait) => (
                             <span key={trait} className="text-[8px]" title={TRAIT_DEFINITIONS[trait].name}>
                               {TRAIT_DEFINITIONS[trait].icon}

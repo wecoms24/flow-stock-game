@@ -1,0 +1,126 @@
+/* ── Analyst Logic: Signal Detection Pipeline (Pure Functions) ── */
+
+import type { Company, Employee } from '../../types'
+import type { TradeProposal } from '../../types/trade'
+import { calculateRSI, calculateMA } from '../../utils/technicalIndicators'
+import { TRADE_AI_CONFIG } from '../../config/tradeAIConfig'
+
+/**
+ * Analyze a stock and return confidence/direction signal.
+ *
+ * Confidence = (analysisSkill * 0.5) + (traitBonus * 0.3) + (conditionFactor * 0.2)
+ * Insight: 5% chance → +20 confidence bonus
+ */
+export function analyzeStock(
+  company: Company,
+  priceHistory: number[],
+  analyst: Employee,
+  adjacencyBonus: number = 0,
+): { confidence: number; direction: 'buy' | 'sell'; isInsight: boolean } | null {
+  if (priceHistory.length < 15) return null
+
+  const rsi = calculateRSI(priceHistory, 14)
+  const ma20 = calculateMA(priceHistory, 20)
+  const currentPrice = company.price
+
+  // Determine direction from technical signals
+  let direction: 'buy' | 'sell' | null = null
+  let technicalSignal = 0
+
+  if (rsi < 35 && currentPrice < ma20) {
+    direction = 'buy'
+    technicalSignal = (35 - rsi) / 35 // 0~1, stronger when more oversold
+  } else if (rsi > 65 && currentPrice > ma20) {
+    direction = 'sell'
+    technicalSignal = (rsi - 65) / 35
+  } else if (rsi < 30) {
+    direction = 'buy'
+    technicalSignal = (30 - rsi) / 30
+  } else if (rsi > 70) {
+    direction = 'sell'
+    technicalSignal = (rsi - 70) / 30
+  }
+
+  if (!direction) return null
+
+  // Calculate confidence components
+  const analysisSkill = analyst.skills?.analysis ?? 30
+  const skillFactor = (analysisSkill / 100) * 50 // max 50
+
+  // Trait bonus
+  let traitBonus = 0
+  const traits = analyst.traits ?? []
+  if (traits.includes('perfectionist')) traitBonus += 5
+  if (traits.includes('tech_savvy')) traitBonus += 3
+  if (traits.includes('sensitive')) traitBonus += 2 // sensitive analysts pick up subtle signals
+  if (traits.includes('risk_averse')) traitBonus -= 3
+  const traitFactor = Math.max(0, Math.min(30, traitBonus + technicalSignal * 20))
+
+  // Condition factor (inverse of stress)
+  const stress = analyst.stress ?? 0
+  const stamina = analyst.stamina ?? 50
+  const conditionRaw = ((100 - stress) / 100) * 0.5 + (stamina / analyst.maxStamina) * 0.5
+  const conditionFactor = conditionRaw * 20 // max 20
+
+  let confidence = skillFactor + traitFactor + conditionFactor
+
+  // Insight ability: 5% chance → +20 confidence
+  const isInsight = Math.random() < TRADE_AI_CONFIG.INSIGHT_CHANCE
+  if (isInsight) {
+    confidence += TRADE_AI_CONFIG.INSIGHT_CONFIDENCE_BONUS
+  }
+
+  // Adjacency bonus: lower effective threshold (bonus 0~0.3 → threshold reduction 0~21)
+  const effectiveThreshold = TRADE_AI_CONFIG.CONFIDENCE_THRESHOLD - (adjacencyBonus * 70)
+
+  confidence = Math.max(0, Math.min(100, Math.round(confidence)))
+
+  if (confidence < effectiveThreshold) return null
+
+  return { confidence, direction, isInsight }
+}
+
+/**
+ * Generate a TradeProposal from analyst's signal.
+ * Prevents duplicate proposals: same analyst + same stock with PENDING status.
+ */
+export function generateProposal(
+  analyst: Employee,
+  company: Company,
+  analysis: { confidence: number; direction: 'buy' | 'sell'; isInsight: boolean },
+  currentTick: number,
+  existingProposals: TradeProposal[],
+): TradeProposal | null {
+  // Duplicate prevention: same analyst, same company, still PENDING
+  const hasDuplicate = existingProposals.some(
+    (p) =>
+      p.createdByEmployeeId === analyst.id &&
+      p.companyId === company.id &&
+      p.status === 'PENDING',
+  )
+  if (hasDuplicate) return null
+
+  // Calculate quantity based on a reasonable position size (5-15% of typical portfolio)
+  const baseQuantity = Math.max(1, Math.floor((analysis.confidence / 100) * 10))
+
+  return {
+    id: `proposal-${currentTick}-${analyst.id}-${company.ticker}`,
+    companyId: company.id,
+    ticker: company.ticker,
+    direction: analysis.direction,
+    quantity: baseQuantity,
+    targetPrice: company.price,
+    confidence: analysis.confidence,
+    status: 'PENDING',
+    createdByEmployeeId: analyst.id,
+    reviewedByEmployeeId: null,
+    executedByEmployeeId: null,
+    createdAt: currentTick,
+    reviewedAt: null,
+    executedAt: null,
+    executedPrice: null,
+    slippage: null,
+    isMistake: false,
+    rejectReason: null,
+  }
+}

@@ -12,6 +12,12 @@ export function EndingScreen() {
       ? ((player.totalAssetValue - config.initialCash) / config.initialCash) * 100
       : 0
 
+  const goalProgress = Math.min(
+    (player.totalAssetValue / config.targetAsset) * 100,
+    999.9,
+  )
+  const goalReached = player.totalAssetValue >= config.targetAsset
+
   const icons: Record<string, string> = {
     billionaire: '💰',
     legend: '⭐',
@@ -60,18 +66,38 @@ export function EndingScreen() {
               </span>
             </div>
             <div className="flex justify-between">
+              <span className="text-retro-gray">목표 자산:</span>
+              <span className="font-bold">{config.targetAsset.toLocaleString()}원</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-retro-gray">목표 달성률:</span>
+              <span
+                className={`font-bold ${goalReached ? 'text-stock-up' : 'text-stock-down'}`}
+              >
+                {goalProgress.toFixed(1)}%
+              </span>
+            </div>
+            <div className="flex justify-between">
               <span className="text-retro-gray">난이도:</span>
               <span>{config.difficulty.toUpperCase()}</span>
             </div>
           </div>
 
-          <div className="flex gap-2 justify-center">
-            <RetroButton variant="primary" onClick={() => startGame(config.difficulty)}>
+          <div className="flex gap-2 justify-center flex-wrap">
+            <RetroButton
+              variant="primary"
+              onClick={() => startGame(config.difficulty, config.targetAsset)}
+            >
               다시 시작
             </RetroButton>
-            <RetroButton onClick={() => startGame('easy')}>Easy</RetroButton>
-            <RetroButton onClick={() => startGame('normal')}>Normal</RetroButton>
-            <RetroButton variant="danger" onClick={() => startGame('hard')}>
+            <RetroButton onClick={() => startGame('easy', config.targetAsset)}>Easy</RetroButton>
+            <RetroButton onClick={() => startGame('normal', config.targetAsset)}>
+              Normal
+            </RetroButton>
+            <RetroButton
+              variant="danger"
+              onClick={() => startGame('hard', config.targetAsset)}
+            >
               Hard
             </RetroButton>
           </div>

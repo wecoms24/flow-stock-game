@@ -69,12 +69,42 @@ export function startTickLoop() {
       volatility: c.volatility * volatilityMul,
     }))
 
-    // Build event modifiers with propagation delay
+    // Build event modifiers with propagation delay + eventSensitivity
     const eventModifiers = current.events
       .filter((evt) => evt.remainingTicks > 0)
       .flatMap((evt) => {
         const elapsed = evt.duration - evt.remainingTicks
         const propagation = getEventPropagation(elapsed)
+
+        // 회사별 감응도 적용 (이벤트 타입 기반)
+        const eventType = evt.type // 'boom' | 'crash' | 'sector' | 'company' | 'policy' | 'global'
+        const companySensitivities: Record<string, number> = {}
+
+        // 영향받는 섹터의 모든 회사에 감응도 적용
+        if (evt.affectedSectors) {
+          for (const comp of current.companies) {
+            if (evt.affectedSectors.includes(comp.sector) && comp.eventSensitivity?.[eventType]) {
+              companySensitivities[comp.id] = comp.eventSensitivity[eventType]
+            }
+          }
+        }
+        // 직접 지정된 회사에도 감응도 적용
+        if (evt.affectedCompanies) {
+          for (const compId of evt.affectedCompanies) {
+            const comp = current.companies.find((c) => c.id === compId)
+            if (comp?.eventSensitivity?.[eventType]) {
+              companySensitivities[compId] = comp.eventSensitivity[eventType]
+            }
+          }
+        }
+        // 글로벌 이벤트: 모든 회사에 감응도 적용
+        if (!evt.affectedSectors && !evt.affectedCompanies) {
+          for (const comp of current.companies) {
+            if (comp.eventSensitivity?.[eventType]) {
+              companySensitivities[comp.id] = comp.eventSensitivity[eventType]
+            }
+          }
+        }
 
         // 주 이벤트
         const main = {
@@ -83,6 +113,7 @@ export function startTickLoop() {
           affectedCompanies: evt.affectedCompanies,
           affectedSectors: evt.affectedSectors,
           propagation,
+          companySensitivities, // 회사별 감응도 전달
         }
 
         // 섹터 상관관계를 통한 전파 이벤트
@@ -100,6 +131,7 @@ export function startTickLoop() {
                 affectedSectors: [otherSector as Sector],
                 affectedCompanies: undefined,
                 propagation: propagation * 0.7, // 전파된 이벤트는 더 느리게
+                companySensitivities: {},
               })
             }
           }
@@ -159,12 +191,42 @@ export function startTickLoop() {
       }),
     }))
 
-    // Decay events
-    useGameStore.setState((s) => ({
-      events: s.events
+    // Decay events + afterEffect (여진) 생성
+    useGameStore.setState((s) => {
+      const afterEffects: typeof s.events = []
+      const decayed = s.events
         .map((evt) => ({ ...evt, remainingTicks: evt.remainingTicks - 1 }))
-        .filter((evt) => evt.remainingTicks > 0),
-    }))
+
+      // 만료되는 이벤트에서 여진 생성 (이미 여진인 이벤트는 제외)
+      decayed.forEach((evt) => {
+        if (
+          evt.remainingTicks <= 0 &&
+          !evt.source?.startsWith('aftereffect') &&
+          evt.source !== 'aftereffect' &&
+          Math.abs(evt.impact.driftModifier) > 0.01 // 영향이 미미한 이벤트 제외
+        ) {
+          afterEffects.push({
+            ...evt,
+            id: `${evt.id}-after`,
+            title: `[여진] ${evt.title}`,
+            description: `${evt.title}의 잔여 효과`,
+            remainingTicks: 50,
+            duration: 50,
+            impact: {
+              driftModifier: evt.impact.driftModifier * 0.1,
+              volatilityModifier: evt.impact.volatilityModifier * 0.15,
+              severity: 'low',
+            },
+            source: 'aftereffect' as const,
+            chainParentId: evt.id,
+          })
+        }
+      })
+
+      return {
+        events: [...decayed.filter((evt) => evt.remainingTicks > 0), ...afterEffects],
+      }
+    })
 
     // News engine: historical events + chain events
     processNewsEngine(current.time)
@@ -187,6 +249,29 @@ export function startTickLoop() {
     const empTickInterval = empCount <= 5 ? 10 : empCount <= 15 ? 20 : 30
     if (current.time.tick % empTickInterval === 0 && empCount > 0) {
       current.processEmployeeTick()
+    }
+
+    // Trade AI Pipeline (Analyst → Manager → Trader)
+    if (empCount > 0) {
+      // Analyst: every 10 ticks (tick % 10 === 0)
+      if (current.time.tick % 10 === 0) {
+        current.processAnalystTick()
+      }
+      // Manager: every 5 ticks (tick % 5 === 2, offset to avoid collision)
+      if (current.time.tick % 5 === 2) {
+        current.processManagerTick()
+      }
+      // Expire old proposals: every 10 ticks (tick % 10 === 5)
+      if (current.time.tick % 10 === 5) {
+        const absoluteTick =
+          ((current.time.year - current.config.startYear) * 360 +
+            (current.time.month - 1) * 30 +
+            (current.time.day - 1)) * 10 +
+          current.time.tick
+        current.expireOldProposals(absoluteTick)
+      }
+      // Trader: every tick when APPROVED proposals exist (Phase 4)
+      current.processTraderTick()
     }
 
     // AI Competitor Processing (every 5 ticks)

@@ -18,6 +18,7 @@ export interface Company {
   drift: number // mu for GBM
   marketCap: number
   description: string
+  eventSensitivity?: Record<string, number> // 이벤트 카테고리별 감응도 (1.0 = 기본)
 }
 
 export type Sector =
@@ -67,6 +68,9 @@ export interface Employee {
   stress?: number // 스트레스 (0-100)
   satisfaction?: number // 만족도 (0-100)
   skills?: EmployeeSkills // 스킬 스탯
+
+  // ✨ Trade AI Pipeline
+  assignedSectors?: import('./trade').AssignedSector[] // Analyst 담당 섹터 (1-2개)
 
   // ✨ Growth System - Sprint 3
   level?: number // 1-30+ (default 1)
@@ -252,7 +256,7 @@ export const EventType = {
 
 export type EventType = (typeof EventType)[keyof typeof EventType]
 
-export type EventSource = 'random' | 'historical' | 'procedural' | 'chained'
+export type EventSource = 'random' | 'historical' | 'procedural' | 'chained' | 'aftereffect'
 
 export type EventCategory =
   | 'policy'
@@ -324,6 +328,7 @@ export type WindowType =
   | 'news'
   | 'office'
   | 'office_history'
+  | 'employee_detail'
   | 'ranking'
   | 'settings'
   | 'ending'
@@ -364,6 +369,15 @@ export interface GameConfig {
   endYear: number
   initialCash: number
   maxCompanies: number
+  targetAsset: number
+}
+
+export interface VictoryGoal {
+  id: string
+  label: string
+  icon: string
+  targetAsset: number
+  description: string
 }
 
 export interface EndingScenario {
@@ -371,7 +385,7 @@ export interface EndingScenario {
   type: 'billionaire' | 'retirement' | 'bankrupt' | 'legend' | 'survivor'
   title: string
   description: string
-  condition: (player: PlayerState, time: GameTime) => boolean
+  condition: (player: PlayerState, time: GameTime, config: GameConfig) => boolean
 }
 
 export interface LeaderboardEntry {
@@ -395,6 +409,8 @@ export interface SaveData {
   news: NewsItem[]
   competitors?: Competitor[] // Optional for backward compatibility
   competitorCount?: number
+  proposals?: import('./trade').TradeProposal[] // Trade AI Pipeline (optional for backward compat)
+  lastProcessedMonth?: number // Monthly processing tracking
 }
 
 /* ── Investment Battle Mode Types ── */

@@ -14,6 +14,7 @@ const WINDOW_SIZE_CONSTRAINTS: Record<
   office: { minWidth: 400, minHeight: 350 },
   ranking: { minWidth: 340, minHeight: 380 },
   office_history: { minWidth: 300, minHeight: 250 },
+  employee_detail: { minWidth: 280, minHeight: 350 },
   settings: { minWidth: 320, minHeight: 280 },
   ending: { minWidth: 500, minHeight: 400 },
 }

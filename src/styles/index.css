@@ -256,3 +256,61 @@ body {
 .mood-indicator {
   animation: mood-glow 2s ease-in-out infinite;
 }
+
+/* ── Office Toast Animations ── */
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* ── Employee Sprite Behavior Animations ── */
+@keyframes sprite-working {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1px); }
+}
+
+@keyframes sprite-idle {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.97); }
+}
+
+@keyframes sprite-coffee {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-5deg); }
+  75% { transform: rotate(5deg); }
+}
+
+@keyframes sprite-socializing {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-1px); }
+  75% { transform: translateX(1px); }
+}
+
+@keyframes sprite-stressed {
+  0%, 100% { transform: translateX(0); }
+  10% { transform: translateX(-1px); }
+  20% { transform: translateX(1px); }
+  30% { transform: translateX(-1px); }
+  40% { transform: translateX(0); }
+}
+
+@keyframes sprite-meeting {
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-2px); }
+  60% { transform: translateY(0); }
+}
+
+.sprite-working { animation: sprite-working 1.5s ease-in-out infinite; }
+.sprite-idle { animation: sprite-idle 3s ease-in-out infinite; }
+.sprite-break { animation: sprite-idle 4s ease-in-out infinite; }
+.sprite-coffee { animation: sprite-coffee 1s ease-in-out infinite; }
+.sprite-socializing { animation: sprite-socializing 0.8s ease-in-out infinite; }
+.sprite-meeting { animation: sprite-meeting 2s ease-in-out infinite; }
+.sprite-stressed { animation: sprite-stressed 0.5s ease-in-out infinite; }
+.sprite-counseling { animation: sprite-idle 2s ease-in-out infinite; }

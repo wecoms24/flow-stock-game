@@ -1,5 +1,20 @@
 import type { Company, Sector } from '../types'
 
+/* ── 섹터별 이벤트 감응도 기본값 ── */
+// 이벤트 타입별 감응도 (1.0 = 기본, >1.0 = 민감, <1.0 = 둔감)
+const SECTOR_SENSITIVITY: Record<Sector, Record<string, number>> = {
+  tech: { policy: 0.8, global: 1.2, boom: 1.5, crash: 1.3, innovation: 1.8, regulation: 1.2 },
+  finance: { policy: 1.5, global: 1.4, boom: 1.2, crash: 1.5, regulation: 1.6, macro: 1.3 },
+  energy: { policy: 1.3, global: 1.5, boom: 0.9, crash: 1.2, regulation: 1.4, macro: 1.1 },
+  healthcare: { policy: 1.2, global: 0.8, boom: 0.7, crash: 0.8, innovation: 1.5, regulation: 1.7 },
+  consumer: { policy: 0.9, global: 1.0, boom: 1.1, crash: 1.0, social: 1.4, macro: 0.8 },
+  industrial: { policy: 1.1, global: 1.2, boom: 1.0, crash: 1.1, regulation: 1.0, macro: 1.2 },
+  telecom: { policy: 1.3, global: 0.9, boom: 0.8, crash: 0.9, innovation: 1.3, regulation: 1.5 },
+  materials: { policy: 0.9, global: 1.3, boom: 1.1, crash: 1.2, macro: 1.4, regulation: 0.8 },
+  utilities: { policy: 1.4, global: 0.6, boom: 0.5, crash: 0.6, regulation: 1.8, macro: 0.7 },
+  realestate: { policy: 1.6, global: 1.0, boom: 1.3, crash: 1.4, regulation: 1.5, macro: 1.5 },
+}
+
 /* ── 100 Virtual Companies: 10 sectors x 10 companies ── */
 
 function makeCompany(
@@ -25,8 +40,11 @@ function makeCompany(
     drift,
     marketCap: price * 1_000_000,
     description,
+    eventSensitivity: SECTOR_SENSITIVITY[sector],
   }
 }
+
+export { SECTOR_SENSITIVITY }
 
 export const COMPANIES: Company[] = [
   // ── Tech (10) ──
