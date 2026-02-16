@@ -348,7 +348,7 @@ export function RankingWindow() {
                       const isPanic = action.action === 'panic_sell'
                       return (
                         <tr
-                          key={`${action.timestamp}-${action.competitorId}-${action.symbol}`}
+                          key={`${action.timestamp}-${action.competitorId}-${action.companyId}`}
                           className={`border-b border-win-shadow ${isPanic ? 'bg-red-50' : 'hover:bg-win-face'}`}
                         >
                           <td className="p-1 font-medium">
@@ -357,7 +357,7 @@ export function RankingWindow() {
                           <td className={`p-1 font-bold ${display.color}`}>
                             {display.icon} {display.label}
                           </td>
-                          <td className="p-1 font-mono">{action.symbol}</td>
+                          <td className="p-1 font-mono">{action.ticker ?? action.companyId}</td>
                           <td className="p-1 text-right font-mono">
                             {action.quantity.toLocaleString()}
                           </td>
@@ -489,13 +489,13 @@ export function RankingWindow() {
                               }
                               return (
                                 <tr
-                                  key={`${action.timestamp}-${action.symbol}`}
+                                  key={`${action.timestamp}-${action.companyId}`}
                                   className={`border-b border-win-shadow ${action.action === 'panic_sell' ? 'bg-red-50' : ''}`}
                                 >
                                   <td className={`p-0.5 font-bold ${display.color}`}>
                                     {display.icon} {display.label}
                                   </td>
-                                  <td className="p-0.5 font-mono">{action.symbol}</td>
+                                  <td className="p-0.5 font-mono">{action.ticker ?? action.companyId}</td>
                                   <td className="p-0.5 text-right font-mono">
                                     {action.quantity.toLocaleString()}
                                   </td>

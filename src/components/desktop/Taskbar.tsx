@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { PixelIcon } from '../ui/PixelIcon'
+import { formatHour } from '../../config/timeConfig'
 import type { WindowType, WindowLayoutPreset } from '../../types'
 
 const TASKBAR_ITEMS: { type: WindowType; icon: string; label: string }[] = [
@@ -147,8 +148,10 @@ export function Taskbar() {
       <div className="w-px h-5 bg-win-shadow mx-0.5" />
 
       {/* Clock */}
-      <div className="win-inset bg-white px-2 py-0.5 text-[10px] shrink-0 tabular-nums">
-        {time.year}.{String(time.month).padStart(2, '0')}.{String(time.day).padStart(2, '0')}
+      <div className="win-inset bg-white px-2 py-0.5 text-[10px] shrink-0 tabular-nums flex items-center gap-1">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" title="장 중" />
+        {time.year}.{String(time.month).padStart(2, '0')}.{String(time.day).padStart(2, '0')}{' '}
+        {formatHour(time.hour)}
       </div>
     </div>
   )

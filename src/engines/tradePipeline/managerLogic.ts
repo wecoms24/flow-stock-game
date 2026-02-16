@@ -63,10 +63,11 @@ export function evaluateRisk(
   // Confidence-weighted evaluation
   const effectiveConfidence = proposal.confidence + (managerSkill - 50) * 0.3
 
-  // Portfolio concentration check: reject if >30% in one stock
+  // Portfolio concentration check: reject if >30% in one stock (including proposed buy)
   if (proposal.direction === 'buy') {
     const position = portfolio[proposal.ticker]
-    if (position && position.shares * proposal.targetPrice > playerCash * 0.3) {
+    const totalShares = (position?.shares ?? 0) + proposal.quantity
+    if (totalShares * proposal.targetPrice > playerCash * 0.3) {
       threshold += 15 // more cautious with concentrated positions
     }
   }

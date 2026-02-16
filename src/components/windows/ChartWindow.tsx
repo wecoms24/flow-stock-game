@@ -290,7 +290,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
           (evt.startTimestamp.year - currentTime.year) * 12 * 30 * 10 +
           (evt.startTimestamp.month - currentTime.month) * 30 * 10 +
           (evt.startTimestamp.day - currentTime.day) * 10 +
-          (evt.startTimestamp.tick - currentTime.tick)
+          (evt.startTimestamp.hour - currentTime.hour)
 
         const tickIndex = selected.priceHistory.length + eventStartTick - startTick
 
@@ -326,7 +326,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   const fearGreedIdx = useMemo(() => {
     if (!isSentimentActive()) return undefined
     return getFearGreedIndex()
-  }, [currentTime.tick])
+  }, [currentTime.hour])
 
   const chartOptions = useMemo(
     () => ({

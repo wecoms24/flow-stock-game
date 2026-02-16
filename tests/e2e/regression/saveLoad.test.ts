@@ -161,9 +161,9 @@ describe('E2E: 저장/로드 시스템 검증 (Save/Load Integrity)', () => {
       store.buyStock(testTicker, 100)
       const initialAssets = store.getState().player.totalAssetValue
 
-      // And: 1년 진행 (365일 × 24시간 × 60분 = 525,600틱)
-      // 간단히 30개월 진행 (3600틱 = 1일 계산)
-      advanceNTicks(store, 30 * 3600)
+      // And: 1년 진행 (영업일 기준)
+      // 간단히 30개월 진행 (10시간 = 1일)
+      advanceNTicks(store, 300)
 
       // And: 가격 변동
       setCompanyPrice(store, testTicker, 100_000) // 2배 상승 가정
@@ -174,7 +174,7 @@ describe('E2E: 저장/로드 시스템 검증 (Save/Load Integrity)', () => {
       const assetsAfterProgress = store.getState().player.totalAssetValue
 
       // And: 추가 진행
-      advanceNTicks(store, 30 * 3600)
+      advanceNTicks(store, 300)
 
       // And: 로드
       store.setState(savedState)
@@ -210,16 +210,16 @@ describe('E2E: 저장/로드 시스템 검증 (Save/Load Integrity)', () => {
       hireEmployee(store, employee)
       const employeeCountBefore = store.getState().player.employees.length
 
-      // When: 1개월 진행 (3600 * 30 = 108000틱)
-      advanceNTicks(store, 108_000)
+      // When: 1개월 진행 (10시간 × 30일 = 300시간)
+      advanceNTicks(store, 300)
 
       // And: 상태 저장
       const savedState = JSON.parse(JSON.stringify(store.getState()))
       const monthAfterProgress = store.getState().time.month
       const dayAfterProgress = store.getState().time.day
 
-      // And: 추가 진행
-      advanceNTicks(store, 10_000)
+      // And: 추가 진행 (약 27일)
+      advanceNTicks(store, 270)
 
       // And: 로드
       store.setState(savedState)
@@ -253,8 +253,8 @@ describe('E2E: 저장/로드 시스템 검증 (Save/Load Integrity)', () => {
       const savePoint3 = JSON.parse(JSON.stringify(store.getState()))
       const cash3 = savePoint3.player.cash
 
-      // When: 세 번째 저장점에서 진행
-      advanceNTicks(store, 10_000)
+      // When: 세 번째 저장점에서 진행 (약 27일)
+      advanceNTicks(store, 270)
 
       // And: 첫 번째 저장점으로 로드
       store.setState(savePoint1)
@@ -337,7 +337,7 @@ describe('E2E: 저장/로드 시스템 검증 (Save/Load Integrity)', () => {
         style: 'aggressive',
         cash: 50_000_000,
         portfolio: {},
-        totalAssets: 50_000_000,
+        totalAssetValue: 50_000_000,
         roi: 0,
       } as any)
 
@@ -375,8 +375,8 @@ describe('E2E: 저장/로드 시스템 검증 (Save/Load Integrity)', () => {
       // Time fields
       expect(state.time).toBeDefined()
       expect(state.time.year).toBeGreaterThanOrEqual(1995)
-      expect(state.time.month).toBeGreaterThanOrEqual(1)
-      expect(state.time.month).toBeLessThanOrEqual(12)
+      expect(state.time.month).toBeGreaterThanOrEqual(0)
+      expect(state.time.month).toBeLessThanOrEqual(11)
 
       // Player fields
       expect(state.player).toBeDefined()

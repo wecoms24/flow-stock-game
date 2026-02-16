@@ -67,7 +67,7 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
         expect(comp.portfolio).toBeDefined()
         expect(typeof comp.portfolio).toBe('object')
         expect(comp.roi).toBeDefined()
-        expect(comp.totalAssets).toBe(50_000_000) // 초기 상태는 현금만
+        expect(comp.totalAssetValue).toBe(50_000_000) // 초기 상태는 현금만
       })
     })
 
@@ -165,7 +165,7 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
         price: 50_000,
       })
 
-      // Create uptrend price history (매 틱 +0.5%)
+      // Create uptrend price history (매 시간 +0.5%)
       const history = [50_000]
       for (let i = 1; i < 50; i++) {
         history.push(history[i - 1] * 1.005) // +0.5% uptrend
@@ -175,7 +175,7 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
 
       store.setState({ companies: [trendStock] })
 
-      // When: 300틱 실행 (상승추세 동안)
+      // When: 300시간 실행 (상승추세 동안)
       for (let tick = 0; tick < 300; tick++) {
         store.processCompetitorTick(tick)
       }
@@ -212,7 +212,7 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
 
       store.setState({ companies: [rsiStock] })
 
-      // When: 500틱 실행 (충분한 거래 기회)
+      // When: 500시간 실행 (충분한 거래 기회)
       for (let tick = 0; tick < 500; tick++) {
         store.processCompetitorTick(tick)
       }
@@ -238,13 +238,13 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
 
       // When: 각 경쟁자에게 수익/손실 시뮬레이션
       const competitors = store.getState().competitors
-      competitors[0].totalAssets = 60_000_000 // +20% ROI
-      competitors[1].totalAssets = 50_000_000 // 0% ROI
-      competitors[2].totalAssets = 40_000_000 // -20% ROI
+      competitors[0].totalAssetValue = 60_000_000 // +20% ROI
+      competitors[1].totalAssetValue = 50_000_000 // 0% ROI
+      competitors[2].totalAssetValue = 40_000_000 // -20% ROI
 
       competitors.forEach((c: any) => {
         c.roi =
-          ((c.totalAssets - 50_000_000) / 50_000_000) * 100
+          ((c.totalAssetValue - 50_000_000) / 50_000_000) * 100
       })
 
       store.setState({ competitors })
@@ -252,10 +252,11 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
       // And: 순위 계산 실행
       store.calculateRankings()
 
-      // Then: ROI 높은 경쟁자가 순위 1위
+      // Then: ROI 높은 경쟁자가 순위 1위 (플레이어 포함 시 4 entries)
       const rankings = store.getState().rankings
-      expect(rankings[0].roi).toBe(20)
-      expect(rankings[2].roi).toBe(-20)
+      const competitorRankings = rankings.filter((r: any) => !r.isPlayer)
+      expect(competitorRankings[0].roi).toBe(20)
+      expect(competitorRankings[2].roi).toBe(-20)
     })
 
     it('경쟁자가 순위를 올리면 타운트 메시지가 생성된다', () => {
@@ -269,9 +270,9 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
       const initialRankings = store.getState().rankings.map((r: any) => r.id)
 
       // When: comp1이 comp2를 추월
-      comp1.totalAssets = 55_000_000
+      comp1.totalAssetValue = 55_000_000
       comp1.roi = 10
-      comp2.totalAssets = 50_000_000
+      comp2.totalAssetValue = 50_000_000
       comp2.roi = 0
 
       store.setState({
@@ -300,7 +301,7 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
 
       // When: 플레이어와 경쟁자의 총 자산 비교
       const playerAssets = player.totalAssetValue
-      const competitorAssets = competitor.totalAssets
+      const competitorAssets = competitor.totalAssetValue
 
       // Then: 플레이어가 앞서감
       expect(playerAssets).toBeGreaterThan(competitorAssets)
@@ -314,7 +315,7 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
      * 조건:
      * - ROI < -8% (자산이 초기 자금 대비 8% 이상 손실)
      * - 5% 확률로 발생
-     * - 쿨다운: 300틱 (약 1분)
+     * - 쿨다운: 300시간
      *
      * 동작:
      * - 모든 보유 주식을 즉시 시장가로 매도
@@ -328,17 +329,17 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
 
       // And: 손실 포지션 설정 (ROI -10%)
       const company = getCompanyAt(store, 0)
-      competitor.portfolio[company.ticker] = {
+      competitor.portfolio[company.id] = {
         companyId: company.id,
         shares: 100,
         avgBuyPrice: company.price * 1.2, // 20% 손실 중
       }
-      competitor.totalAssets = 45_000_000 // -10% ROI
+      competitor.totalAssetValue = 45_000_000 // -10% ROI
       competitor.roi = -10
 
       store.setState({ competitors: [competitor] })
 
-      // When: 500틱 실행 (패닉 매도 발생 기회)
+      // When: 500시간 실행 (패닉 매도 발생 기회)
       for (let tick = 0; tick < 500; tick++) {
         store.processCompetitorTick(tick)
       }
@@ -357,15 +358,15 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
 
       store.setState({ competitors: [competitor] })
 
-      // When: 10틱 실행 (TICK_DISTRIBUTION으로 매 5틱마다 감소)
+      // When: 10시간 실행 (HOUR_DISTRIBUTION으로 매 5시간마다 감소)
       for (let tick = 0; tick < 10; tick++) {
         store.processCompetitorTick(tick)
       }
 
       // Then: 쿨다운이 감소함
       const updated = store.getState().competitors[0]
-      // Expected: 각 processCompetitorTick에서 TICK_DISTRIBUTION (5) 감소
-      // 10틱 = 2회 호출 = 10 감소 (또는 모듈로 분산에 따라 변동)
+      // Expected: 각 processCompetitorTick에서 HOUR_DISTRIBUTION (5) 감소
+      // 10시간 = 2회 호출 = 10 감소 (또는 모듈로 분산에 따라 변동)
       expect(updated.panicSellCooldown).toBeLessThan(300)
     })
   })
@@ -424,7 +425,7 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
 
       // And: 경쟁자도 거래 (시뮬레이션)
       const competitor = store.getState().competitors[0]
-      competitor.portfolio[company.ticker] = {
+      competitor.portfolio[company.id] = {
         companyId: company.id,
         shares: 20,
         avgBuyPrice: company.price,
@@ -437,7 +438,7 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
       const player = store.getState().player
       const playerShares =
         player.portfolio[company.ticker]?.shares || 0
-      const competitorShares = competitor.portfolio[company.ticker]?.shares || 0
+      const competitorShares = competitor.portfolio[company.id]?.shares || 0
 
       expect(playerShares).toBe(10)
       expect(competitorShares).toBe(20)
@@ -448,25 +449,25 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
     /**
      * 게임 메뉴얼: 경쟁자 AI 심화 시뮬레이션
      *
-     * 수백 틱(게임 진행) 동안 경쟁자들의 거래, 순위, 타운트가
+     * 수백 시간(게임 진행) 동안 경쟁자들의 거래, 순위, 타운트가
      * 일관성 있게 동작하는지 검증
      */
-    it('10년(876,000틱) 동안 경쟁자들이 독립적으로 거래한다', () => {
+    it('10년(36,000시간) 동안 경쟁자들이 독립적으로 거래한다', () => {
       // Given: 경쟁자 5명, 플레이어 1명 (모두 5천만원 시작)
       store.initializeCompetitors(5, 50_000_000)
       addCash(store, 50_000_000) // 플레이어 100M
 
       const initialCompetitors = store.getState().competitors
-      const initialAssets = initialCompetitors.map((c: any) => c.totalAssets)
+      const initialAssets = initialCompetitors.map((c: any) => c.totalAssetValue)
 
-      // When: 10일(36,000틱) 시뮬레이션 (빠른 검증용)
-      for (let tick = 0; tick < 36_000; tick++) {
-        store.advanceTick()
+      // When: 10일(100시간) 시뮬레이션 (빠른 검증용)
+      for (let hour = 0; hour < 100; hour++) {
+        store.advanceHour()
 
-        if (tick % 300 === 0) {
-          // 매 300틱마다 경쟁자 업데이트
+        if (hour % 3 === 0) {
+          // 매 3시간마다 경쟁자 업데이트
           for (let i = 0; i < 5; i++) {
-            store.processCompetitorTick(tick)
+            store.processCompetitorTick(hour)
           }
         }
       }
@@ -477,8 +478,8 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
 
       // And: 경쟁자들의 시스템이 작동함
       competitors.forEach((comp: any) => {
-        expect(typeof comp.totalAssets).toBe('number')
-        expect(comp.totalAssets).toBeGreaterThan(0)
+        expect(typeof comp.totalAssetValue).toBe('number')
+        expect(comp.totalAssetValue).toBeGreaterThan(0)
         expect(comp.panicSellCooldown).toBeGreaterThanOrEqual(0)
       })
     })
@@ -488,35 +489,41 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
       store.initializeCompetitors(5, 50_000_000)
       const competitors = store.getState().competitors
 
-      // When: 자산 변동 시뮬레이션 (거래 결과)
-      competitors[0].totalAssets = 60_000_000 // 1위
-      competitors[1].totalAssets = 55_000_000 // 2위
-      competitors[2].totalAssets = 50_000_000 // 3위
-      competitors[3].totalAssets = 45_000_000 // 4위
-      competitors[4].totalAssets = 40_000_000 // 5위
+      // When: 자산 변동 시뮬레이션 (거래 결과) — ROI도 함께 설정
+      competitors[0].totalAssetValue = 60_000_000 // 1위
+      competitors[0].roi = 20
+      competitors[1].totalAssetValue = 55_000_000 // 2위
+      competitors[1].roi = 10
+      competitors[2].totalAssetValue = 50_000_000 // 3위
+      competitors[2].roi = 0
+      competitors[3].totalAssetValue = 45_000_000 // 4위
+      competitors[3].roi = -10
+      competitors[4].totalAssetValue = 40_000_000 // 5위
+      competitors[4].roi = -20
 
       store.setState({ competitors })
       store.calculateRankings()
 
-      // Then: 순위가 자산 내림차순 정렬됨
+      // Then: 순위가 ROI 내림차순 정렬됨 (totalAssetValue와 상관관계)
       const rankings = store.getState().rankings
-      for (let i = 0; i < rankings.length - 1; i++) {
-        expect(rankings[i].totalAssets).toBeGreaterThanOrEqual(
-          rankings[i + 1].totalAssets
+      const competitorRankings = rankings.filter((r: any) => !r.isPlayer)
+      for (let i = 0; i < competitorRankings.length - 1; i++) {
+        expect(competitorRankings[i].roi).toBeGreaterThanOrEqual(
+          competitorRankings[i + 1].roi
         )
       }
 
-      // And: 우승자는 1위
-      expect(rankings[0].totalAssets).toBe(60_000_000)
+      // And: 우승자는 ROI 1위
+      expect(competitorRankings[0].totalAssetValue).toBe(60_000_000)
     })
 
     it('플레이어가 경쟁자를 모두 이기면 최종 승리 조건을 만족한다', () => {
       // Given: 경쟁자 5명, 플레이어 1명
       store.initializeCompetitors(5, 50_000_000)
 
-      // When: 플레이어가 모든 경쟁자를 능가
+      // When: 플레이어가 모든 경쟁자를 능가 (cash를 직접 설정 — getState()가 totalAssetValue를 재계산)
       const player = store.getState().player
-      player.totalAssetValue = 150_000_000 // 150M (모두의 3배)
+      player.cash = 150_000_000 // 150M (모두의 3배)
 
       store.setState({
         player,
@@ -529,8 +536,9 @@ describe('E2E: AI 경쟁자 전투 시스템 (Competitor Battle)', () => {
 
       // Then: 플레이어가 모든 경쟁자를 능가함
       expect(playerAssets).toBeGreaterThan(100_000_000) // 플레이어 자산
-      rankings.forEach((rank: any) => {
-        expect(playerAssets).toBeGreaterThan(rank.totalAssets)
+      const competitorRankings = rankings.filter((r: any) => !r.isPlayer)
+      competitorRankings.forEach((rank: any) => {
+        expect(playerAssets).toBeGreaterThan(rank.totalAssetValue)
       })
     })
   })

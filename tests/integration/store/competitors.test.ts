@@ -82,7 +82,7 @@ describe('스토어 통합: AI 경쟁자 시스템 (Competitor System)', () => {
       expect(store.getState().competitors.length).toBe(3)
     })
 
-    it('패닉 쿨다운이 매 틱마다 감소한다', () => {
+    it('패닉 쿨다운이 매 시간마다 감소한다', () => {
       const competitor = store.getState().competitors[0]
       const initialCooldown = competitor.panicCooldown || 0
 
@@ -108,11 +108,11 @@ describe('스토어 통합: AI 경쟁자 시스템 (Competitor System)', () => {
       expect(competitor.roi).toBeLessThan(-8)
     })
 
-    it('틱 분산: 경쟁자는 여러 틱에 걸쳐 처리된다', () => {
+    it('시간 분산: 경쟁자는 여러 시간에 걸쳐 처리된다', () => {
       store.initializeCompetitors(5, 50_000_000)
 
-      // 틱 분산으로 한 번에 모든 경쟁자가 처리되지 않음
-      // (PERFORMANCE_CONFIG.TICK_DISTRIBUTION)
+      // 시간 분산으로 한 번에 모든 경쟁자가 처리되지 않음
+      // (PERFORMANCE_CONFIG.HOUR_DISTRIBUTION)
       const competitors = store.getState().competitors
       expect(competitors.length).toBe(5)
     })
@@ -143,8 +143,8 @@ describe('스토어 통합: AI 경쟁자 시스템 (Competitor System)', () => {
       // 매수 시뮬레이션
       const company = store.getState().companies[0]
       store.setState({
-        'competitors[0].portfolio[company.ticker]': {
-          ticker: company.ticker,
+        [`competitors[0].portfolio.${company.id}`]: {
+          companyId: company.id,
           shares: 10,
           avgBuyPrice: company.price,
         },
@@ -165,7 +165,7 @@ describe('스토어 통합: AI 경쟁자 시스템 (Competitor System)', () => {
 
       store.setState({
         'competitors[0].cash': initialCash + saleAmount,
-        'competitors[0].portfolio[company.ticker]': undefined,
+        [`competitors[0].portfolio.${company.id}`]: undefined,
       })
 
       const updated = store.getState().competitors[0]
@@ -221,8 +221,8 @@ describe('스토어 통합: AI 경쟁자 시스템 (Competitor System)', () => {
       // 포트폴리오에 주식 추가
       const company = store.getState().companies[0]
       store.setState({
-        'competitors[0].portfolio[company.ticker]': {
-          ticker: company.ticker,
+        [`competitors[0].portfolio.${company.id}`]: {
+          companyId: company.id,
           shares: 100,
           avgBuyPrice: company.price,
         },

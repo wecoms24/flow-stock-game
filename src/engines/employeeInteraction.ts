@@ -174,7 +174,7 @@ const INTERACTION_RULES: InteractionRule[] = [
 
 // 키: "initiatorId-targetId" → 마지막 상호작용 시간 (절대 틱)
 const interactionCooldowns: Map<string, number> = new Map()
-const COOLDOWN_TICKS = 100
+const COOLDOWN_HOURS = 100
 
 function getCooldownKey(a: string, b: string): string {
   // 순서 무관 — 항상 작은 ID가 앞
@@ -185,7 +185,7 @@ function isOnCooldown(a: string, b: string, currentTick: number): boolean {
   const key = getCooldownKey(a, b)
   const lastTick = interactionCooldowns.get(key)
   if (lastTick === undefined) return false
-  return currentTick - lastTick < COOLDOWN_TICKS
+  return currentTick - lastTick < COOLDOWN_HOURS
 }
 
 function setCooldown(a: string, b: string, currentTick: number): void {

@@ -316,7 +316,7 @@ export function checkHistoricalEvents(time: GameTime): void {
     const offset = randomInt(-1, 1)
     const triggerMonth = Math.max(1, Math.min(12, targetMonth + offset))
 
-    if (time.month === triggerMonth && time.day <= 5 && time.tick < 10) {
+    if (time.month === triggerMonth && time.day <= 5 && time.hour === 9) {
       triggeredHistoricalEvents.add(eventKey)
       createEventFromHistorical(hEvent, store)
     }
@@ -443,10 +443,10 @@ export function checkChainEvents(time: GameTime): void {
 
 function gameTimeToAbsoluteTick(time: GameTime): number {
   return (
-    (time.year - 1995) * 360 * 3600 +
-    (time.month - 1) * 30 * 3600 +
-    (time.day - 1) * 3600 +
-    time.tick
+    (time.year - 1995) * 360 * 10 +
+    (time.month - 1) * 30 * 10 +
+    (time.day - 1) * 10 +
+    (time.hour - 9)
   )
 }
 
@@ -543,7 +543,7 @@ export function generateRandomEvent(): void {
 
 export function processNewsEngine(time: GameTime): void {
   // 1. 역사적 이벤트 체크 (매일 초반에만)
-  if (time.tick < 10) {
+  if (time.hour === 9) {
     checkHistoricalEvents(time)
   }
 

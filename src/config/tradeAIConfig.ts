@@ -1,18 +1,18 @@
 /* ── Trade AI Pipeline Configuration ── */
 
 export const TRADE_AI_CONFIG = {
-  /** Analyst 분석 주기 (틱) */
-  ANALYST_TICK_INTERVAL: 10,
-  /** Manager 검토 주기 (틱) */
-  MANAGER_TICK_INTERVAL: 5,
-  /** Trader 체결 주기 (틱) */
-  TRADER_TICK_INTERVAL: 1,
+  /** Analyst 분석 주기 (영업시간 수) */
+  ANALYST_HOUR_INTERVAL: 10,
+  /** Manager 검토 주기 (영업시간 수) */
+  MANAGER_HOUR_INTERVAL: 5,
+  /** Trader 체결 주기 (영업시간 수) */
+  TRADER_HOUR_INTERVAL: 1,
   /** 제안서 생성 최소 Confidence */
   CONFIDENCE_THRESHOLD: 70,
   /** 최대 PENDING 제안서 수 */
   MAX_PENDING_PROPOSALS: 10,
-  /** PENDING 자동 만료 틱 수 */
-  PROPOSAL_EXPIRE_TICKS: 100,
+  /** PENDING 자동 만료 영업시간 수 */
+  PROPOSAL_EXPIRE_HOURS: 100,
   /** 기본 슬리피지 비율 (1%) */
   BASE_SLIPPAGE: 0.01,
   /** Manager 부재 시 실수 확률 (30%) */

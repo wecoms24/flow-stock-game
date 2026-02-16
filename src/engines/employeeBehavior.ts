@@ -119,29 +119,34 @@ const TRAIT_MODIFIERS: Partial<Record<EmployeeTrait, Partial<ActionWeights>>> = 
 /* ── 시간대 보정 ── */
 
 function applyTimeModifiers(weights: ActionWeights, time: GameTime): void {
-  const tickOfDay = time.tick
-  const totalTicksPerDay = 3600
+  const hour = time.hour
 
-  // 오전 시작 (틱 0-300): 워킹 증가
-  if (tickOfDay < 300) {
+  // 출근 직후 (9-10시): 워킹 증가, 높은 에너지
+  if (hour <= 10) {
     weights.WORKING += 10
     weights.IDLE -= 5
   }
-  // 점심 시간대 (틱 1200-1600): 휴식/소셜 증가
-  else if (tickOfDay >= 1200 && tickOfDay < 1600) {
+  // 점심 시간대 (12시): 휴식/소셜 증가
+  else if (hour === 12) {
     weights.BREAK += 15
     weights.SOCIALIZING += 10
     weights.COFFEE += 10
     weights.WORKING -= 15
   }
-  // 오후 졸림 (틱 2000-2400): 커피/아이들 증가
-  else if (tickOfDay >= 2000 && tickOfDay < 2400) {
+  // 점심 후 졸음 (13시): 커피/아이들 증가
+  else if (hour === 13) {
     weights.COFFEE += 10
     weights.IDLE += 5
     weights.WORKING -= 5
   }
-  // 퇴근 전 (틱 3200-3600): 아이들/소셜 증가
-  else if (tickOfDay >= totalTicksPerDay - 400) {
+  // 오후 슬럼프 (16시): 커피/아이들 증가
+  else if (hour === 16) {
+    weights.COFFEE += 10
+    weights.IDLE += 5
+    weights.WORKING -= 5
+  }
+  // 퇴근 시간 (17-18시): 아이들/소셜 증가
+  else if (hour >= 17) {
     weights.IDLE += 10
     weights.SOCIALIZING += 5
     weights.WORKING -= 10

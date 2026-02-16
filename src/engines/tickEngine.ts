@@ -15,8 +15,9 @@ import {
 } from './sentimentEngine'
 import { SECTOR_CORRELATION, SPILLOVER_FACTOR } from '../data/sectorCorrelation'
 import type { Sector } from '../types'
+import { getBusinessHourIndex, getAbsoluteTimestamp } from '../config/timeConfig'
 
-/* ── Tick Engine: 1-tick time control system ── */
+/* ── Tick Engine: 1-hour time control system ── */
 
 let worker: Worker | null = null
 let intervalId: ReturnType<typeof setInterval> | null = null
@@ -24,8 +25,8 @@ let unsubscribeSpeed: (() => void) | null = null
 let autoSaveCounter = 0
 let previousRankings: Record<string, number> = {} // Track previous rankings for change detection
 
-const BASE_TICK_MS = 200
-const AUTO_SAVE_INTERVAL = 300 // Auto-save every 300 ticks (~2.5 min at 1x)
+const BASE_HOUR_MS = 200
+const AUTO_SAVE_INTERVAL = 300 // Auto-save every 300 hours (~2.5 min at 1x)
 
 export function initTickEngine() {
   if (worker) return
@@ -49,13 +50,13 @@ export function startTickLoop() {
     if (state.time.isPaused || !state.isGameStarted || !worker) return
 
     // Advance game time
-    state.advanceTick()
+    state.advanceHour()
 
     // Re-read state after time advancement
     const current = useGameStore.getState()
 
-    // Monthly processing (salary, stamina) on day 1
-    if (current.time.day === 1 && current.time.tick === 0) {
+    // Monthly processing (salary, stamina) on day 1 at market open
+    if (current.time.day === 1 && current.time.hour === 9) {
       current.processMonthly()
     }
 
@@ -157,7 +158,7 @@ export function startTickLoop() {
       }
     }
 
-    const dt = 1 / 3600
+    const dt = 1 / 10 // 하루 10시간, 1시간 = 1/10일
 
     worker.postMessage({
       type: 'tick',
@@ -240,52 +241,48 @@ export function startTickLoop() {
     // Update sentiment for newly added events
     const latestState = useGameStore.getState()
     latestState.events
-      .filter((evt) => evt.duration === evt.remainingTicks) // 이번 틱에 생성된 이벤트
+      .filter((evt) => evt.duration === evt.remainingTicks) // 이번 시간에 생성된 이벤트
       .forEach((evt) => onEventOccurred(evt))
 
-    // Employee System Processing (every 10 ticks)
-    // 직원 5명 이하: 매 10틱, 6-15명: 매 20틱, 16+명: 매 30틱 (분산 처리)
+    // Employee System Processing (hourIndex 기반)
+    const hourIndex = getBusinessHourIndex(current.time.hour)
     const empCount = current.player.employees.length
-    const empTickInterval = empCount <= 5 ? 10 : empCount <= 15 ? 20 : 30
-    if (current.time.tick % empTickInterval === 0 && empCount > 0) {
+    const empHourInterval = empCount <= 5 ? 10 : empCount <= 15 ? 20 : 30
+    if (hourIndex % empHourInterval === 0 && empCount > 0) {
       current.processEmployeeTick()
     }
 
     // Trade AI Pipeline (Analyst → Manager → Trader)
     if (empCount > 0) {
-      // Analyst: every 10 ticks (tick % 10 === 0)
-      if (current.time.tick % 10 === 0) {
+      // Analyst: hourIndex % 10 === 0 (매일 9시)
+      if (hourIndex % 10 === 0) {
         current.processAnalystTick()
       }
-      // Manager: every 5 ticks (tick % 5 === 2, offset to avoid collision)
-      if (current.time.tick % 5 === 2) {
+      // Manager: hourIndex % 5 === 2 (11시, 16시)
+      if (hourIndex % 5 === 2) {
         current.processManagerTick()
       }
-      // Expire old proposals: every 10 ticks (tick % 10 === 5)
-      if (current.time.tick % 10 === 5) {
-        const absoluteTick =
-          ((current.time.year - current.config.startYear) * 360 +
-            (current.time.month - 1) * 30 +
-            (current.time.day - 1)) * 10 +
-          current.time.tick
-        current.expireOldProposals(absoluteTick)
+      // Expire old proposals: hourIndex % 10 === 5 (14시)
+      if (hourIndex % 10 === 5) {
+        const absoluteTimestamp = getAbsoluteTimestamp(current.time, current.config.startYear)
+        current.expireOldProposals(absoluteTimestamp)
       }
-      // Trader: every tick when APPROVED proposals exist (Phase 4)
+      // Trader: every hour when APPROVED proposals exist
       current.processTraderTick()
     }
 
-    // AI Competitor Processing (every 5 ticks)
+    // AI Competitor Processing (every 5 hours)
     if (current.competitorCount > 0) {
-      // Update competitor assets every tick for accurate ROI
+      // Update competitor assets every hour for accurate ROI
       current.updateCompetitorAssets()
 
-      // Process AI trading every 5 ticks
-      if (current.time.tick % 5 === 0) {
+      // Process AI trading every 5 hours
+      if (hourIndex % 5 === 0) {
         current.processCompetitorTick()
       }
 
-      // Update rankings every 10 ticks
-      if (current.time.tick % 10 === 0) {
+      // Update rankings every 10 hours
+      if (hourIndex % 10 === 0) {
         const rankings = current.calculateRankings()
         checkRankChanges(rankings)
       }
@@ -302,7 +299,7 @@ export function startTickLoop() {
   const updateInterval = () => {
     const speed = useGameStore.getState().time.speed
     if (intervalId) clearInterval(intervalId)
-    intervalId = setInterval(tick, BASE_TICK_MS / speed)
+    intervalId = setInterval(tick, BASE_HOUR_MS / speed)
   }
 
   updateInterval()
@@ -340,9 +337,9 @@ export function destroyTickEngine() {
 /* ── Event Propagation Delay ── */
 /**
  * 이벤트 경과 시간에 따른 전파 계수
- * 0-10틱: 0→50% (빠른 반영)
- * 10-50틱: 50→100% (점진 반영)
- * 50+틱: 100% (풀 이펙트)
+ * 0-10시간: 0→50% (빠른 반영)
+ * 10-50시간: 50→100% (점진 반영)
+ * 50+시간: 100% (풀 이펙트)
  */
 function getEventPropagation(elapsed: number): number {
   if (elapsed < 10) return 0.5 * (elapsed / 10)

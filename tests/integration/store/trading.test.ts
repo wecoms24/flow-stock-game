@@ -111,6 +111,7 @@ describe('스토어 통합: 거래 시스템 (Trading)', () => {
     })
 
     it('일반적인 거래 플로우 (1000주)', () => {
+      addCash(store, 50_000_000) // 85K × 1000 = 85M 이므로 추가 자금 필요
       const company = store.getState().companies[0]
       const cost = company.price * 1000
 
@@ -189,14 +190,17 @@ describe('스토어 통합: 거래 시스템 (Trading)', () => {
     })
 
     it('손실을 실현할 수도 있다', () => {
-      const initialCash = store.getState().player.cash
+      // 매수 전 원금을 복원하여 비교 기준으로 사용
+      const preBuyCash =
+        store.getState().player.cash + testCompany.price * 10
 
       setCompanyPrice(store, testCompany.ticker, testCompany.price / 2)
 
       store.sellStock(testCompany.ticker, 10)
 
+      // 매수가보다 낮은 가격에 팔면 원금 대비 손실
       expect(store.getState().player.cash).toBeLessThan(
-        initialCash
+        preBuyCash
       )
     })
   })

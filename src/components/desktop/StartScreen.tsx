@@ -3,7 +3,7 @@ import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { RetroPanel } from '../ui/RetroPanel'
 import type { Difficulty } from '../../types'
-import { VICTORY_GOALS } from '../../data/difficulty'
+import { DIFFICULTY_TABLE, VICTORY_GOALS } from '../../data/difficulty'
 
 interface StartScreenProps {
   hasSave: boolean
@@ -79,13 +79,7 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
 
   const handleStartGame = (difficulty: Difficulty) => {
     if (competitorSetup.enabled) {
-      // Get initial cash for the difficulty
-      const difficultyConfig = {
-        easy: 100_000_000,
-        normal: 50_000_000,
-        hard: 20_000_000,
-      }
-      const startingCash = difficultyConfig[difficulty]
+      const startingCash = DIFFICULTY_TABLE[difficulty].initialCash
 
       // Initialize competitors first
       initializeCompetitors(competitorSetup.count, startingCash)

@@ -34,7 +34,7 @@ export function createTestStoreWithEmployees(
       name: `Test Employee ${i}`,
       role: 'analyst',
       salary: 5_000_000,
-      hired: store.time.tick,
+      hiredMonth: 0,
       level: 1,
       xp: 0,
       title: 'intern',
@@ -42,14 +42,11 @@ export function createTestStoreWithEmployees(
       stamina: 100,
       stress: 20,
       satisfaction: 70,
-      skills: ['trading:5', 'analysis:3', 'coding:0'],
+      skills: { analysis: 3, trading: 5, research: 0 },
       traits: [],
-      gridPosition: null,
-      hiredDate: store.time.tick,
-      lastRaiseTick: store.time.tick,
-      lastPraiseTick: -1000,
-      lastScoldTick: -1000,
-      resumedWork: false,
+      seatIndex: null,
+      praiseCooldown: 0,
+      scoldCooldown: 0,
       ...employeeOverrides,
     }
     
@@ -65,24 +62,24 @@ export function createTestStoreWithEmployees(
 }
 
 /**
- * 게임을 N틱 진행
+ * 게임을 N시간 진행
  */
-export function simulateTicks(count: number) {
+export function simulateHours(count: number) {
   const store = useGameStore.getState()
   for (let i = 0; i < count; i++) {
-    store.advanceTick()
+    store.advanceHour()
   }
 }
 
 /**
- * 게임을 N일 진행 (3600틱 = 1일)
+ * 게임을 N일 진행 (10시간 = 1영업일)
  */
 export function simulateDays(count: number) {
-  simulateTicks(count * 3600)
+  simulateHours(count * 10)
 }
 
 /**
- * 게임을 N개월 진행 (30일 × 3600틱)
+ * 게임을 N개월 진행 (30일 × 10시간)
  */
 export function simulateMonths(count: number) {
   simulateDays(count * 30)

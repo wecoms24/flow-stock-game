@@ -357,10 +357,10 @@ describe('E2E: 이벤트 시뮬레이션 (Event Scenarios)', () => {
   describe('이벤트 지속 기간 (Duration)', () => {
     /**
      * 이벤트 Duration: 각 이벤트마다 고유한 지속 시간
-     * - Policy: 100~200틱
-     * - Sector: 120~200틱
-     * - Crash: 20~300틱 (다양함)
-     * - Boom: 50~200틱
+     * - Policy: 100~200시간
+     * - Sector: 120~200시간
+     * - Crash: 20~300시간 (다양함)
+     * - Boom: 50~200시간
      */
     it('이벤트 Duration 동안 지속적 영향', () => {
       const companies = store.getState().companies
@@ -369,7 +369,7 @@ describe('E2E: 이벤트 시뮬레이션 (Event Scenarios)', () => {
       const initialPrice = testStock.price
       const pricesOverTime: number[] = [initialPrice]
 
-      // 100틱 동안 매틱 1% 상승 이벤트
+      // 100시간 동안 매시간 1% 상승 이벤트
       for (let tick = 0; tick < 100; tick++) {
         const currentPrice = store.getState().companies.find(
           (c: any) => c.ticker === testStock.ticker
@@ -392,7 +392,7 @@ describe('E2E: 이벤트 시뮬레이션 (Event Scenarios)', () => {
       const initialPrice = testStock.price
       let currentPrice = initialPrice
 
-      // 이벤트 진행: 50틱 × 0.8% 상승
+      // 이벤트 진행: 50시간 × 0.8% 상승
       for (let i = 0; i < 50; i++) {
         currentPrice = currentPrice * 1.008
         setCompanyPrice(store, testStock.ticker, currentPrice)

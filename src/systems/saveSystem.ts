@@ -1,4 +1,5 @@
 import type { SaveData } from '../types'
+import { COMPANIES } from '../data/companies'
 
 /* ── IndexedDB Auto-Save System ── */
 
@@ -6,7 +7,52 @@ const DB_NAME = 'retro-stock-os'
 const DB_VERSION = 1
 const STORE_NAME = 'saves'
 const AUTO_SAVE_KEY = 'autosave'
-const SAVE_VERSION = 1
+const SAVE_VERSION = 3
+
+/** Build ticker→companyId lookup from COMPANIES data */
+const TICKER_TO_ID: Record<string, string> = {}
+for (const c of COMPANIES) {
+  TICKER_TO_ID[c.ticker] = c.id
+}
+
+/** Migrate save data through all versions */
+function migrateSaveData(data: Record<string, unknown>): SaveData {
+  if (!data) return data as SaveData
+
+  // v1 → v2: tick (0-9) → hour (9-18)
+  if ((data.version as number) < 2) {
+    const time = data.time as Record<string, unknown> | undefined
+    if (time && 'tick' in time) {
+      time.hour = ((time.tick as number) ?? 0) + 9
+      delete time.tick
+    }
+    data.version = 2
+  }
+
+  // v2 → v3: competitor portfolio keys ticker → companyId
+  if ((data.version as number) < 3) {
+    const competitors = data.competitors as Array<Record<string, unknown>> | undefined
+    if (competitors && Array.isArray(competitors)) {
+      for (const competitor of competitors) {
+        if (!competitor.portfolio) continue
+        const oldPortfolio = competitor.portfolio as Record<string, Record<string, unknown>>
+        const newPortfolio: Record<string, Record<string, unknown>> = {}
+        for (const [key, position] of Object.entries(oldPortfolio)) {
+          // If key looks like a ticker (not an id pattern like "tech-01"), convert it
+          const companyId = TICKER_TO_ID[key] ?? key
+          newPortfolio[companyId] = {
+            ...position,
+            companyId,
+          }
+        }
+        competitor.portfolio = newPortfolio
+      }
+    }
+    data.version = 3
+  }
+
+  return data as unknown as SaveData
+}
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -55,9 +101,13 @@ export async function loadGame(): Promise<SaveData | null> {
       const request = store.get(AUTO_SAVE_KEY)
       request.onsuccess = () => {
         db.close()
-        const data = request.result as SaveData | undefined
-        if (data && data.version === SAVE_VERSION) {
-          resolve(data)
+        const data = request.result as Record<string, unknown> | undefined
+        if (!data) {
+          resolve(null)
+        } else if (data.version === SAVE_VERSION) {
+          resolve(data as unknown as SaveData)
+        } else if (data.version && (data.version as number) < SAVE_VERSION) {
+          resolve(migrateSaveData(data))
         } else {
           resolve(null)
         }

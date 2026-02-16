@@ -5,7 +5,7 @@ import { createTestStore, advanceNTicks, getCompanyAt } from '../../integration/
  * 게임 메뉴얼: 완주 게임플레이 시뮬레이션
  *
  * - 게임 기간: 30년 (1995년 ~ 2025년)
- * - 시간 진행: 3,888,000틱 (3600틱/일 × 30일/월 × 12개월 × 30년)
+ * - 시간 진행: 108,000시간 (10시간/일 × 30일/월 × 12개월 × 30년)
  * - 엔딩 시나리오: 5가지 (부자, 투자의신, 행복한은퇴, 생존자, 파산)
  *
  * 각 엔딩의 조건:
@@ -17,8 +17,8 @@ import { createTestStore, advanceNTicks, getCompanyAt } from '../../integration/
  */
 describe('E2E: 30년 완주 게임 시나리오 (Full Game Simulation)', () => {
   let store: any
-  const THIRTY_YEARS_TICKS = 3600 * 30 * 12 * 30 // 3,888,000
-  const TICKS_PER_YEAR = 3600 * 30 * 12 // 1,296,000
+  const THIRTY_YEARS_HOURS = 10 * 30 * 12 * 30 // 108,000
+  const HOURS_PER_YEAR = 10 * 30 * 12 // 3,600
 
   beforeEach(() => {
     store = createTestStore()
@@ -34,7 +34,7 @@ describe('E2E: 30년 완주 게임 시나리오 (Full Game Simulation)', () => {
       for (let year = 0; year < 30; year++) {
         // 월간 처리 시뮬레이션 (자동으로 발생)
         for (let month = 0; month < 12; month++) {
-          store.advanceTick()
+          store.advanceHour()
           store.processMonthly?.()
         }
       }
@@ -49,7 +49,7 @@ describe('E2E: 30년 완주 게임 시나리오 (Full Game Simulation)', () => {
       // 단축 시뮬레이션: 10년 진행 후 이벤트 확인
       for (let year = 0; year < 10; year++) {
         for (let month = 0; month < 12; month++) {
-          store.advanceTick()
+          store.advanceHour()
         }
       }
 
@@ -64,7 +64,7 @@ describe('E2E: 30년 완주 게임 시나리오 (Full Game Simulation)', () => {
 
       // 1년 진행
       for (let month = 0; month < 12; month++) {
-        store.advanceTick()
+        store.advanceHour()
       }
 
       const afterPrices = store.getState().companies.map(
@@ -262,7 +262,7 @@ describe('E2E: 30년 완주 게임 시나리오 (Full Game Simulation)', () => {
 
       // When: 1년 진행
       for (let month = 0; month < 12; month++) {
-        store.advanceTick()
+        store.advanceHour()
         store.processMonthly?.()
       }
 
@@ -320,7 +320,7 @@ describe('E2E: 30년 완주 게임 시나리오 (Full Game Simulation)', () => {
 
       // When: 1년 단축 시뮬레이션 (30년 전체는 시간이 오래 걸림)
       for (let month = 0; month < 12; month++) {
-        store.advanceTick()
+        store.advanceHour()
       }
 
       // Then: 1년 진행이 5초 이내 완료
@@ -334,7 +334,7 @@ describe('E2E: 30년 완주 게임 시나리오 (Full Game Simulation)', () => {
 
       // When: 120개월 진행
       for (let month = 0; month < monthCount; month++) {
-        store.advanceTick()
+        store.advanceHour()
         store.processMonthly?.()
       }
 
@@ -351,7 +351,7 @@ describe('E2E: 30년 완주 게임 시나리오 (Full Game Simulation)', () => {
 
       // When: 100개월 진행
       for (let month = 0; month < 100; month++) {
-        store.advanceTick()
+        store.advanceHour()
         store.processMonthly?.()
       }
 

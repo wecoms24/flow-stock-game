@@ -121,7 +121,7 @@ describe('게임 엔진: AI 경쟁자 시스템 (Competitor Engine)', () => {
 
     it('Surfer 전략은 추세 기반으로 거래한다', () => {
       const surfer = createTestCompetitor({
-        style: 'trend_follower',
+        style: 'trend-follower',
         cash: 10_000_000,
       })
 
@@ -164,8 +164,8 @@ describe('게임 엔진: AI 경쟁자 시스템 (Competitor Engine)', () => {
       const competitor = createTestCompetitor({
         cash: 100_000_000,
         portfolio: {
-          TEST: {
-            ticker: 'TEST',
+          'test-id': {
+            companyId: 'test-id',
             shares: 100,
             avgBuyPrice: 100_000,
           },
@@ -192,7 +192,7 @@ describe('게임 엔진: AI 경쟁자 시스템 (Competitor Engine)', () => {
         )
         if (
           actions.some(
-            (a) => a.action === 'sell' && a.reason === 'panic'
+            (a) => a.action === 'panic_sell'
           )
         ) {
           panicOccurred = true
@@ -201,23 +201,23 @@ describe('게임 엔진: AI 경쟁자 시스템 (Competitor Engine)', () => {
       }
 
       // 패닉 매도가 발생할 확률이 있어야 함
-      expect(panicOccurred || actions.length === 0).toBe(true)
+      expect(panicOccurred).toBe(true)
     })
 
     it('패닉 매도 후 쿨다운이 적용된다', () => {
       const competitor = createTestCompetitor({
-        panicCooldown: 0,
+        panicSellCooldown: 0,
         roi: -10,
       })
 
-      expect(competitor.panicCooldown).toBe(0)
+      expect(competitor.panicSellCooldown).toBe(0)
 
       // 패닉 매도 후 쿨다운 설정 (실제 구현 확인 필요)
     })
 
     it('쿨다운 중에는 패닉 매도가 발생하지 않는다', () => {
       const competitor = createTestCompetitor({
-        panicCooldown: 100, // 쿨다운 활성화
+        panicSellCooldown: 100, // 쿨다운 활성화
         roi: -10,
       })
 
@@ -226,7 +226,7 @@ describe('게임 엔진: AI 경쟁자 시스템 (Competitor Engine)', () => {
       const actions = processAITrading([competitor], companies, 0, {})
 
       const hasPanicSell = actions.some(
-        (a) => a.action === 'sell' && a.reason === 'panic'
+        (a) => a.action === 'panic_sell'
       )
       expect(hasPanicSell).toBe(false)
     })
@@ -265,27 +265,32 @@ describe('게임 엔진: AI 경쟁자 시스템 (Competitor Engine)', () => {
 
   describe('가격 히스토리 관리', () => {
     it('getPriceHistory()가 회사 가격 히스토리를 반환한다', () => {
-      const competitor = createTestCompetitor()
-      const history = getPriceHistory(competitor, 'TEST_COMPANY')
+      const companies = store.getState().companies
+      const history = getPriceHistory(companies)
 
-      expect(Array.isArray(history)).toBe(true)
+      expect(typeof history).toBe('object')
+      expect(Object.keys(history).length).toBeGreaterThan(0)
     })
 
     it('가격 히스토리는 최대 50개 데이터 포인트를 유지한다', () => {
-      const competitor = createTestCompetitor()
+      const companies = store.getState().companies
 
       // 히스토리에 많은 데이터가 축적되어도 최대 50개만 유지
-      // (실제 구현 검증 필요)
+      const history = getPriceHistory(companies)
+      for (const ticker of Object.keys(history)) {
+        expect(history[ticker].length).toBeLessThanOrEqual(50)
+      }
     })
 
     it('여러 회사의 가격 히스토리가 독립적으로 관리된다', () => {
-      const competitor = createTestCompetitor()
+      const companies = store.getState().companies
+      const history = getPriceHistory(companies)
 
-      const hist1 = getPriceHistory(competitor, 'COMPANY_1')
-      const hist2 = getPriceHistory(competitor, 'COMPANY_2')
-
-      expect(Array.isArray(hist1)).toBe(true)
-      expect(Array.isArray(hist2)).toBe(true)
+      const keys = Object.keys(history)
+      expect(keys.length).toBeGreaterThanOrEqual(2)
+      // Each company has independent history
+      expect(Array.isArray(history[keys[0]])).toBe(true)
+      expect(Array.isArray(history[keys[1]])).toBe(true)
     })
   })
 
@@ -361,9 +366,9 @@ describe('게임 엔진: AI 경쟁자 시스템 (Competitor Engine)', () => {
       expect(elapsed).toBeLessThan(1000)
     })
 
-    it('경쟁자 처리는 틱별로 분산된다', () => {
-      // PERFORMANCE_CONFIG.TICK_DISTRIBUTION에 따라
-      // 경쟁자 처리가 여러 틱에 분산되어야 함
+    it('경쟁자 처리는 시간별로 분산된다', () => {
+      // PERFORMANCE_CONFIG.HOUR_DISTRIBUTION에 따라
+      // 경쟁자 처리가 여러 시간에 분산되어야 함
       expect(true).toBe(true)
     })
   })

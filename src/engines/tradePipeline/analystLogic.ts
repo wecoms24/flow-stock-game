@@ -100,8 +100,10 @@ export function generateProposal(
   )
   if (hasDuplicate) return null
 
-  // Calculate quantity based on a reasonable position size (5-15% of typical portfolio)
-  const baseQuantity = Math.max(1, Math.floor((analysis.confidence / 100) * 10))
+  // Calculate quantity scaled by stock price (target investment: 1M ~ 5M won based on confidence)
+  const confidenceRatio = Math.min(1, Math.max(0, (analysis.confidence - 70) / 30))
+  const targetInvestment = 1_000_000 + confidenceRatio * 4_000_000
+  const baseQuantity = Math.max(1, Math.floor(targetInvestment / company.price))
 
   return {
     id: `proposal-${currentTick}-${analyst.id}-${company.ticker}`,

@@ -249,7 +249,7 @@ describe('스토어 통합: 직원 관리 시스템 (Employee System)', () => {
       hireEmployee(store, employee)
     })
 
-    it('매 틱마다 스태미너가 소모된다', () => {
+    it('매 시간마다 스태미너가 소모된다', () => {
       const initialStamina = store.getState().player.employees[0].stamina
       advanceNTicks(store, 100)
 
@@ -268,7 +268,7 @@ describe('스토어 통합: 직원 관리 시스템 (Employee System)', () => {
       const staminaBefore = store.getState().player.employees[0].stamina
 
       // 1개월 진행
-      advanceNTicks(store, 3600 * 30)
+      advanceNTicks(store, 300)
 
       const staminaAfter = store.getState().player.employees[0].stamina
       expect(staminaAfter).toBeGreaterThan(staminaBefore)
@@ -284,7 +284,7 @@ describe('스토어 통합: 직원 관리 시스템 (Employee System)', () => {
       expect(store.getState().player.employees.length).toBe(1)
 
       // 월간 처리 또는 체크 (구현에 따라)
-      advanceNTicks(store, 3600 * 30)
+      advanceNTicks(store, 300)
 
       // 구현에 따라 퇴사되거나 유지될 수 있음
       // 현재는 퇴사 메커니즘이 완전히 구현되지 않았을 수 있음
@@ -310,7 +310,7 @@ describe('스토어 통합: 직원 관리 시스템 (Employee System)', () => {
     it('월간 처리 시 직원에게 XP가 부여된다', () => {
       const initialXp = store.getState().player.employees[0].xp
 
-      advanceNTicks(store, 3600 * 30)
+      advanceNTicks(store, 300)
 
       const finalXp = store.getState().player.employees[0].xp
       expect(finalXp).toBeGreaterThan(initialXp)
@@ -402,7 +402,7 @@ describe('스토어 통합: 직원 관리 시스템 (Employee System)', () => {
     it('월간 처리 시 만족도가 변동한다', () => {
       const initialSatisfaction = store.getState().player.employees[0].satisfaction
 
-      advanceNTicks(store, 3600 * 30)
+      advanceNTicks(store, 300)
 
       const finalSatisfaction = store.getState().player.employees[0].satisfaction
       expect(Math.abs(finalSatisfaction - initialSatisfaction)).toBeLessThanOrEqual(2)
@@ -419,7 +419,7 @@ describe('스토어 통합: 직원 관리 시스템 (Employee System)', () => {
         ],
       })
 
-      advanceNTicks(store, 3600 * 30)
+      advanceNTicks(store, 300)
 
       const finalSatisfaction = store.getState().player.employees[0].satisfaction
       expect(finalSatisfaction).toBeLessThanOrEqual(75)
@@ -439,7 +439,7 @@ describe('스토어 통합: 직원 관리 시스템 (Employee System)', () => {
 
       const initialCount = store.getState().player.employees.length
 
-      advanceNTicks(store, 3600 * 30)
+      advanceNTicks(store, 300)
 
       const finalCount = store.getState().player.employees.length
       // 구현에 따라 퇴사되거나 유지될 수 있음
@@ -461,7 +461,7 @@ describe('스토어 통합: 직원 관리 시스템 (Employee System)', () => {
       hireEmployee(store, employee)
     })
 
-    it('매 틱마다 스트레스가 증가한다', () => {
+    it('매 시간마다 스트레스가 증가한다', () => {
       const initialStress = store.getState().player.employees[0].stress
 
       advanceNTicks(store, 100)
@@ -549,7 +549,7 @@ describe('스토어 통합: 직원 관리 시스템 (Employee System)', () => {
       }
 
       expect(store.getState().player.employees.length).toBe(5)
-      expect(store.getState().player.monthlyExpenses).toBe(550_000)
+      expect(store.getState().player.monthlyExpenses).toBe(600_000)
     })
 
     it('특정 직원만 선택적으로 해고할 수 있다', () => {
@@ -615,7 +615,7 @@ describe('스토어 통합: 직원 관리 시스템 (Employee System)', () => {
 
       // 경력 개발 (수개월 진행)
       for (let month = 0; month < 6; month++) {
-        advanceNTicks(store, 3600 * 30)
+        advanceNTicks(store, 300)
       }
 
       const developedEmp = store.getState().player.employees[0]

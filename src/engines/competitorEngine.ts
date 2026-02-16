@@ -13,7 +13,7 @@ function random(min: number, max: number): number {
  */
 function shouldTrade(freqMin: number, freqMax: number): boolean {
   const targetInterval = freqMin + Math.random() * (freqMax - freqMin)
-  return Math.random() < PERFORMANCE_CONFIG.TICK_DISTRIBUTION / targetInterval
+  return Math.random() < PERFORMANCE_CONFIG.HOUR_DISTRIBUTION / targetInterval
 }
 
 // ===== AI Strategies =====
@@ -47,7 +47,7 @@ function sharkStrategy(
   const target = highVolStocks[0]
 
   // Check if already holding - take profit/stop loss
-  const position = competitor.portfolio[target.ticker]
+  const position = competitor.portfolio[target.id]
   if (position) {
     const profitPercent = ((target.price - position.avgBuyPrice) / position.avgBuyPrice) * 100
 
@@ -59,7 +59,8 @@ function sharkStrategy(
       return {
         competitorId: competitor.id,
         action: 'sell',
-        symbol: target.ticker,
+        companyId: target.id,
+        ticker: target.ticker,
         quantity: position.shares,
         price: target.price,
         timestamp: tick,
@@ -79,7 +80,8 @@ function sharkStrategy(
   return {
     competitorId: competitor.id,
     action: 'buy',
-    symbol: target.ticker,
+    companyId: target.id,
+    ticker: target.ticker,
     quantity,
     price: target.price,
     timestamp: tick,
@@ -112,7 +114,7 @@ function turtleStrategy(
   const target = safeStocks[random(0, safeStocks.length - 1)]
 
   // Check existing position
-  const position = competitor.portfolio[target.ticker]
+  const position = competitor.portfolio[target.id]
   if (position) {
     const profitPercent = ((target.price - position.avgBuyPrice) / position.avgBuyPrice) * 100
 
@@ -123,7 +125,8 @@ function turtleStrategy(
       return {
         competitorId: competitor.id,
         action: 'sell',
-        symbol: target.ticker,
+        companyId: target.id,
+        ticker: target.ticker,
         quantity: position.shares,
         price: target.price,
         timestamp: tick,
@@ -143,7 +146,8 @@ function turtleStrategy(
   return {
     competitorId: competitor.id,
     action: 'buy',
-    symbol: target.ticker,
+    companyId: target.id,
+    ticker: target.ticker,
     quantity,
     price: target.price,
     timestamp: tick,
@@ -169,7 +173,7 @@ function surferStrategy(
 
   // Find stocks in uptrend
   const trendingStocks = companies.filter((c) => {
-    const prices = priceHistory[c.ticker] || []
+    const prices = priceHistory[c.id] || []
     if (prices.length < config.MA_PERIOD) return false
 
     const ma = calculateMA(prices, config.MA_PERIOD)
@@ -177,11 +181,11 @@ function surferStrategy(
   })
 
   // Check holdings - sell if below MA
-  for (const [symbol, position] of Object.entries(competitor.portfolio)) {
-    const company = companies.find((c) => c.ticker === symbol)
+  for (const [companyId, position] of Object.entries(competitor.portfolio)) {
+    const company = companies.find((c) => c.id === companyId)
     if (!company) continue
 
-    const prices = priceHistory[symbol] || []
+    const prices = priceHistory[companyId] || []
     if (prices.length < config.MA_PERIOD) continue
 
     const ma = calculateMA(prices, config.MA_PERIOD)
@@ -191,7 +195,8 @@ function surferStrategy(
       return {
         competitorId: competitor.id,
         action: 'sell',
-        symbol,
+        companyId,
+        ticker: company.ticker,
         quantity: position.shares,
         price: company.price,
         timestamp: tick,
@@ -204,7 +209,7 @@ function surferStrategy(
   // Find strongest trend
   const strongestTrend = trendingStocks
     .map((c) => {
-      const prices = priceHistory[c.ticker] || []
+      const prices = priceHistory[c.id] || []
       const ma = calculateMA(prices, config.MA_PERIOD)
       const strength = (c.price - ma) / ma
       return { company: c, strength }
@@ -216,7 +221,7 @@ function surferStrategy(
   const target = strongestTrend.company
 
   // Don't buy if already holding
-  if (competitor.portfolio[target.ticker]) return null
+  if (competitor.portfolio[target.id]) return null
 
   const positionSize =
     competitor.cash *
@@ -228,7 +233,8 @@ function surferStrategy(
   return {
     competitorId: competitor.id,
     action: 'buy',
-    symbol: target.ticker,
+    companyId: target.id,
+    ticker: target.ticker,
     quantity,
     price: target.price,
     timestamp: tick,
@@ -253,20 +259,21 @@ function bearStrategy(
   if (!shouldTrade(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX)) return null
 
   // Check holdings - sell if overbought
-  for (const [symbol, position] of Object.entries(competitor.portfolio)) {
-    const prices = priceHistory[symbol] || []
+  for (const [companyId, position] of Object.entries(competitor.portfolio)) {
+    const prices = priceHistory[companyId] || []
     if (prices.length < config.RSI_PERIOD + 1) continue
 
     const rsi = calculateRSI(prices, config.RSI_PERIOD)
 
     if (rsi > config.RSI_OVERBOUGHT) {
-      const company = companies.find((c) => c.ticker === symbol)
+      const company = companies.find((c) => c.id === companyId)
       if (!company) continue
 
       return {
         competitorId: competitor.id,
         action: 'sell',
-        symbol,
+        companyId,
+        ticker: company.ticker,
         quantity: position.shares,
         price: company.price,
         timestamp: tick,
@@ -276,7 +283,7 @@ function bearStrategy(
 
   // Find oversold stocks
   const oversoldStocks = companies.filter((c) => {
-    const prices = priceHistory[c.ticker] || []
+    const prices = priceHistory[c.id] || []
     if (prices.length < config.RSI_PERIOD + 1) return false
 
     const rsi = calculateRSI(prices, config.RSI_PERIOD)
@@ -288,7 +295,7 @@ function bearStrategy(
   const target = oversoldStocks[random(0, oversoldStocks.length - 1)]
 
   // Don't buy if already holding
-  if (competitor.portfolio[target.ticker]) return null
+  if (competitor.portfolio[target.id]) return null
 
   const positionSize =
     competitor.cash *
@@ -300,7 +307,8 @@ function bearStrategy(
   return {
     competitorId: competitor.id,
     action: 'buy',
-    symbol: target.ticker,
+    companyId: target.id,
+    ticker: target.ticker,
     quantity,
     price: target.price,
     timestamp: tick,
@@ -324,8 +332,8 @@ function checkPanicSell(
   }
 
   // Check all holdings for losses
-  for (const [symbol, position] of Object.entries(competitor.portfolio)) {
-    const company = companies.find((c) => c.ticker === symbol)
+  for (const [companyId, position] of Object.entries(competitor.portfolio)) {
+    const company = companies.find((c) => c.id === companyId)
     if (!company) continue
 
     const lossPercent = ((company.price - position.avgBuyPrice) / position.avgBuyPrice) * 100
@@ -339,7 +347,8 @@ function checkPanicSell(
       return {
         competitorId: competitor.id,
         action: 'panic_sell',
-        symbol,
+        companyId,
+        ticker: company.ticker,
         quantity: position.shares,
         price: company.price,
         timestamp: _tick,
@@ -439,7 +448,7 @@ export function generateCompetitors(count: number, startingCash: number): Compet
  * Limits to last 50 prices to prevent memory bloat (MA20 + RSI14 require ~30 prices)
  *
  * @param companies - Current stock data with price history
- * @returns Record of ticker -> price array (max 50 recent prices)
+ * @returns Record of companyId -> price array (max 50 recent prices)
  */
 export function getPriceHistory(companies: Company[]): Record<string, number[]> {
   const history: Record<string, number[]> = {}
@@ -450,7 +459,7 @@ export function getPriceHistory(companies: Company[]): Record<string, number[]> 
 
     // Limit to last 50 prices to prevent memory leak
     // 50 is sufficient for MA20 (20) + RSI14 (14) + buffer
-    history[company.ticker] = fullHistory.slice(-50)
+    history[company.id] = fullHistory.slice(-50)
   })
 
   return history

@@ -1,7 +1,7 @@
 /* ── Core Type Definitions ── */
 
 export interface PricePoint {
-  tick: number
+  hour: number
   price: number
 }
 
@@ -239,7 +239,7 @@ export interface GameTime {
   quarter: number // 1-4 (data-model spec)
   month: number // 1-12
   day: number // 1-30
-  tick: number // ticks within a day
+  hour: number // 9-18 (영업시간)
   speed: GameSpeed
   isPaused: boolean
 }
@@ -434,7 +434,8 @@ export interface Competitor {
 export interface CompetitorAction {
   competitorId: string
   action: 'buy' | 'sell' | 'panic_sell'
-  symbol: string
+  companyId: string
+  ticker?: string // display only
   quantity: number
   price: number
   timestamp: number

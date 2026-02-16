@@ -9,6 +9,8 @@ import {
   createTestStore,
   advanceNTicks,
   getGameStateSnapshot,
+  createTestEmployee,
+  hireEmployee,
 } from '../helpers'
 
 describe('게임 엔진: 틱 시스템 (Tick Engine)', () => {
@@ -62,12 +64,12 @@ describe('게임 엔진: 틱 시스템 (Tick Engine)', () => {
       initTickEngine()
       store = createTestStore()
 
-      const initialTick = store.getState().time.tick
+      const initialTick = store.getState().time.hour
       startTickLoop()
 
       setTimeout(() => {
         stopTickLoop()
-        const finalTick = store.getState().time.tick
+        const finalTick = store.getState().time.hour
         expect(finalTick).toBeGreaterThan(initialTick)
         done()
       }, 500)
@@ -80,17 +82,17 @@ describe('게임 엔진: 틱 시스템 (Tick Engine)', () => {
           year: 1995,
           month: 1,
           day: 1,
-          tick: 0,
+          hour: 9,
           isPaused: true,
         },
       })
 
-      const initialTick = store.getState().time.tick
+      const initialTick = store.getState().time.hour
       startTickLoop()
 
       setTimeout(() => {
         stopTickLoop()
-        const finalTick = store.getState().time.tick
+        const finalTick = store.getState().time.hour
         expect(finalTick).toBe(initialTick)
         done()
       }, 300)
@@ -100,12 +102,12 @@ describe('게임 엔진: 틱 시스템 (Tick Engine)', () => {
       initTickEngine()
       store = createTestStore({ isGameStarted: false })
 
-      const initialTick = store.getState().time.tick
+      const initialTick = store.getState().time.hour
       startTickLoop()
 
       setTimeout(() => {
         stopTickLoop()
-        const finalTick = store.getState().time.tick
+        const finalTick = store.getState().time.hour
         expect(finalTick).toBe(initialTick)
         done()
       }, 300)
@@ -113,7 +115,7 @@ describe('게임 엔진: 틱 시스템 (Tick Engine)', () => {
   })
 
   describe('틱 엔진 동작', () => {
-    it('매 틱마다 Worker에 메시지를 전송한다', () => {
+    it('매 시간마다 Worker에 메시지를 전송한다', () => {
       initTickEngine()
       store = createTestStore()
 
@@ -145,7 +147,7 @@ describe('게임 엔진: 틱 시스템 (Tick Engine)', () => {
 
       const lastCall = mockWorker.postMessage.mock.calls[0]?.[0]
       expect(lastCall.dt).toBeDefined()
-      expect(lastCall.dt).toBe(1 / 3600) // 1 tick = 1/3600 day
+      expect(lastCall.dt).toBe(1 / 10) // 1 hour = 1/10 business day
     })
 
     it('Worker 메시지에는 이벤트 modifier가 포함된다', () => {
@@ -182,7 +184,7 @@ describe('게임 엔진: 틱 시스템 (Tick Engine)', () => {
   })
 
   describe('이벤트 감쇠 시스템', () => {
-    it('매 틱마다 이벤트의 remainingTicks가 감소한다', () => {
+    it('매 시간마다 이벤트의 remainingTicks가 감소한다', () => {
       store = createTestStore({
         events: [
           {
@@ -291,11 +293,17 @@ describe('게임 엔진: 틱 시스템 (Tick Engine)', () => {
 
   describe('월간 처리 (Monthly Processing)', () => {
     it('매월 1일 첫 틱에 processMonthly()가 호출된다', () => {
-      store = createTestStore()
+      // Start at the last tick of previous month so 1 tick crosses the month boundary
+      store = createTestStore({
+        'time.year': 1994,
+        'time.month': 11,
+        'time.day': 29,
+        'time.hour': 18,
+      })
       store.processMonthly = vi.fn()
 
-      // Advance to day 1, tick 0
-      advanceNTicks(store, 3600) // 1 day = 3600 ticks
+      // Advance past the month boundary (1 day = 10 hours)
+      advanceNTicks(store, 10)
 
       expect(store.processMonthly).toHaveBeenCalled()
     })
@@ -306,7 +314,7 @@ describe('게임 엔진: 틱 시스템 (Tick Engine)', () => {
           year: 1995,
           month: 1,
           day: 2,
-          tick: 0,
+          hour: 9,
           isPaused: false,
         },
       })
@@ -319,7 +327,7 @@ describe('게임 엔진: 틱 시스템 (Tick Engine)', () => {
   })
 
   describe('자동 저장 시스템', () => {
-    it('매 300틱마다 자동 저장이 트리거된다', () => {
+    it('매 300시간마다 자동 저장이 트리거된다', () => {
       store = createTestStore()
       const saveGame = vi.fn()
 
@@ -330,8 +338,9 @@ describe('게임 엔진: 틱 시스템 (Tick Engine)', () => {
   })
 
   describe('직원 시스템 처리', () => {
-    it('매 10틱마다 processEmployeeTick()이 호출된다', () => {
+    it('매 10시간마다 processEmployeeTick()이 호출된다', () => {
       store = createTestStore()
+      hireEmployee(store, createTestEmployee()) // Need at least one employee
       store.processEmployeeTick = vi.fn()
 
       advanceNTicks(store, 10)
@@ -350,7 +359,7 @@ describe('게임 엔진: 틱 시스템 (Tick Engine)', () => {
   })
 
   describe('AI 경쟁자 처리', () => {
-    it('경쟁자 자산이 매 틱마다 업데이트된다', () => {
+    it('경쟁자 자산이 매 시간마다 업데이트된다', () => {
       store = createTestStore({ competitorCount: 1 })
       store.updateCompetitorAssets = vi.fn()
 
@@ -377,11 +386,11 @@ describe('게임 엔진: 틱 시스템 (Tick Engine)', () => {
       startTickLoop()
 
       setTimeout(() => {
-        const tickBefore = store.getState().time.tick
+        const tickBefore = store.getState().time.hour
         stopTickLoop()
 
         setTimeout(() => {
-          const tickAfter = store.getState().time.tick
+          const tickAfter = store.getState().time.hour
           expect(tickAfter).toBe(tickBefore)
           done()
         }, 200)

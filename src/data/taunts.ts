@@ -38,8 +38,24 @@ export const CHAMPION_TAUNTS = [
   '챔피언 등극! 🎉🎊',
 ]
 
+/** 시간대별 대사 접두어 (선택적으로 붙음) */
+const TIME_PREFIXES: Record<string, string[]> = {
+  morning: ['오전에 벌써 ', '아침부터 '],
+  lunch: ['점심시간인데 '],
+  afternoon: ['오후장에서 '],
+  closing: ['마감 직전에 ', '장 마감 전에 '],
+}
+
+function getTimePrefix(hour?: number): string {
+  if (hour == null || Math.random() > 0.4) return '' // 60%는 기본 대사
+  const key = hour <= 11 ? 'morning' : hour <= 12 ? 'lunch' : hour <= 16 ? 'afternoon' : 'closing'
+  const prefixes = TIME_PREFIXES[key]
+  return prefixes[Math.floor(Math.random() * prefixes.length)]
+}
+
 export function getRandomTaunt(
   type: 'panic' | 'rank_up' | 'rank_down' | 'overtake' | 'champion',
+  hour?: number,
 ): string {
   const taunts = {
     panic: PANIC_SELL_TAUNTS,
@@ -50,5 +66,7 @@ export function getRandomTaunt(
   }
 
   const pool = taunts[type]
-  return pool[Math.floor(Math.random() * pool.length)]
+  const base = pool[Math.floor(Math.random() * pool.length)]
+  const prefix = getTimePrefix(hour)
+  return prefix ? `${prefix}${base}` : base
 }

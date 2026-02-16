@@ -23,6 +23,8 @@ import type {
 import type { OfficeGrid, FurnitureType, FurnitureItem } from '../types/office'
 import type { TradeProposal, ProposalStatus } from '../types/trade'
 import { TRADE_AI_CONFIG } from '../config/tradeAIConfig'
+import { getAbsoluteTimestamp } from '../config/timeConfig'
+import { OFFICE_BALANCE } from '../config/balanceConfig'
 import { EMPLOYEE_ROLE_CONFIG } from '../types'
 import { COMPANIES } from '../data/companies'
 import { DIFFICULTY_TABLE } from '../data/difficulty'
@@ -129,7 +131,7 @@ interface GameStore {
   // Actions - Trade AI Pipeline
   addProposal: (proposal: TradeProposal) => void
   updateProposalStatus: (id: string, status: ProposalStatus, updates?: Partial<TradeProposal>) => void
-  expireOldProposals: (currentTick: number) => void
+  expireOldProposals: (currentTimestamp: number) => void
   processAnalystTick: () => void
   processManagerTick: () => void
   processTraderTick: () => void
@@ -151,7 +153,7 @@ interface GameStore {
   checkEnding: () => void
 
   // Actions - Time
-  advanceTick: () => void
+  advanceHour: () => void
   processMonthly: () => void
 
   // Actions - Trading
@@ -224,7 +226,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   isGameOver: false,
   endingResult: null,
 
-  time: { year: 1995, quarter: 1, month: 1, day: 1, tick: 0, speed: 1, isPaused: true },
+  time: { year: 1995, quarter: 1, month: 1, day: 1, hour: 9, speed: 1, isPaused: true },
   lastProcessedMonth: 0,
 
   player: {
@@ -284,7 +286,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       isGameStarted: true,
       isGameOver: false,
       endingResult: null,
-      time: { year: dcfg.startYear, quarter: 1, month: 1, day: 1, tick: 0, speed: 1, isPaused: false },
+      time: { year: dcfg.startYear, quarter: 1, month: 1, day: 1, hour: 9, speed: 1, isPaused: false },
       lastProcessedMonth: 0,
       player: {
         cash: dcfg.initialCash,
@@ -301,7 +303,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       news: [
         {
           id: 'welcome',
-          timestamp: { year: dcfg.startYear, quarter: 1, month: 1, day: 1, tick: 0, speed: 1, isPaused: false },
+          timestamp: { year: dcfg.startYear, quarter: 1, month: 1, day: 1, hour: 9, speed: 1, isPaused: false },
           headline: `${dcfg.startYear}년, 당신의 투자 여정이 시작됩니다`,
           body: '초기 자본금으로 현명한 투자를 시작하세요. 시장은 기회와 위험으로 가득합니다.',
           isBreaking: true,
@@ -447,22 +449,40 @@ export const useGameStore = create<GameStore>((set, get) => ({
   addProposal: (proposal) =>
     set((s) => {
       const pendingCount = s.proposals.filter((p) => p.status === 'PENDING').length
-      if (pendingCount >= TRADE_AI_CONFIG.MAX_PENDING_PROPOSALS) return s
+      if (pendingCount >= TRADE_AI_CONFIG.MAX_PENDING_PROPOSALS) {
+        // Expire oldest PENDING proposal to make room
+        const oldestPending = s.proposals
+          .filter((p) => p.status === 'PENDING')
+          .sort((a, b) => a.createdAt - b.createdAt)[0]
+        if (!oldestPending) return s
+        const updated = s.proposals.map((p) =>
+          p.id === oldestPending.id ? { ...p, status: 'EXPIRED' as ProposalStatus } : p,
+        )
+        return { proposals: [...updated, proposal] }
+      }
       return { proposals: [...s.proposals, proposal] }
     }),
 
   updateProposalStatus: (id, status, updates) =>
     set((s) => ({
-      proposals: s.proposals.map((p) =>
-        p.id === id ? { ...p, ...updates, status } : p,
-      ),
+      proposals: s.proposals.map((p) => {
+        if (p.id !== id) return p
+        // State transition validation
+        const validTransitions: Record<string, string[]> = {
+          PENDING: ['APPROVED', 'REJECTED', 'EXPIRED'],
+          APPROVED: ['EXECUTED', 'FAILED'],
+        }
+        const allowed = validTransitions[p.status]
+        if (!allowed || !allowed.includes(status)) return p
+        return { ...p, ...updates, status }
+      }),
     })),
 
-  expireOldProposals: (currentTick) =>
+  expireOldProposals: (currentTimestamp) =>
     set((s) => ({
       proposals: s.proposals.map((p) =>
-        (p.status === 'PENDING' || p.status === 'APPROVED') &&
-        currentTick - p.createdAt > TRADE_AI_CONFIG.PROPOSAL_EXPIRE_TICKS
+        p.status === 'PENDING' &&
+        currentTimestamp - p.createdAt > TRADE_AI_CONFIG.PROPOSAL_EXPIRE_HOURS
           ? { ...p, status: 'EXPIRED' as ProposalStatus }
           : p,
       ),
@@ -471,16 +491,41 @@ export const useGameStore = create<GameStore>((set, get) => ({
   processAnalystTick: () => {
     const s = get()
     if (!s.player.officeGrid) return
+
+    // Check if ALL pipeline employees are stressed out (stress >= 100)
+    const pipelineRoles = ['analyst', 'manager', 'trader'] as const
+    const pipelineEmployees = s.player.employees.filter(
+      (e) => pipelineRoles.includes(e.role as typeof pipelineRoles[number]) && e.seatIndex != null,
+    )
+    if (pipelineEmployees.length > 0 && pipelineEmployees.every((e) => (e.stress ?? 0) >= 100)) {
+      // Cooldown: only warn once per 100 ticks to prevent spam
+      const tick = getAbsoluteTimestamp(s.time, s.config.startYear)
+      const lastStressWarning = s.officeEvents
+        .filter((ev) => ev.type === 'warning' && ev.message === '직원들이 지쳐 거래를 중단했습니다!')
+        .at(-1)
+      if (!lastStressWarning || tick - lastStressWarning.timestamp > 100) {
+        set((st) => ({
+          officeEvents: [...st.officeEvents, {
+            timestamp: tick,
+            type: 'warning',
+            emoji: '😫',
+            message: '직원들이 지쳐 거래를 중단했습니다!',
+            employeeIds: pipelineEmployees.map((e) => e.id),
+          }].slice(-200),
+        }))
+      }
+      return
+    }
+
     const analysts = s.player.employees.filter(
       (e) => e.role === 'analyst' && e.seatIndex != null && (e.stress ?? 0) < 100,
     )
     if (analysts.length === 0) return
 
-    const absoluteTick =
-      ((s.time.year - s.config.startYear) * 360 + (s.time.month - 1) * 30 + (s.time.day - 1)) * 10 +
-      s.time.tick
+    const absoluteTick = getAbsoluteTimestamp(s.time, s.config.startYear)
 
     let newProposals = [...s.proposals]
+    const newEvents: typeof s.officeEvents = []
 
     for (const analyst of analysts) {
       // Adjacency bonus: lower confidence threshold if Manager is adjacent
@@ -504,28 +549,59 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
         newProposals = [...newProposals, proposal]
 
-        // Pipeline chatter: analyst created a proposal
+        // Pipeline chatter: analyst created a proposal (accumulated, not set() here)
         const msg = getPipelineMessage('proposal_created', {
           ticker: company.ticker,
           direction: result.direction,
           confidence: result.confidence,
+          hour: s.time.hour,
         })
-        set((st) => ({
-          officeEvents: [...st.officeEvents, {
-            timestamp: Date.now(),
-            type: 'proposal_created',
-            emoji: result.isInsight ? '💡' : '📊',
-            message: `${analyst.name}: ${msg}`,
-            employeeIds: [analyst.id],
-          }].slice(-200),
-        }))
+        newEvents.push({
+          timestamp: absoluteTick,
+          type: 'proposal_created',
+          emoji: result.isInsight ? '💡' : '📊',
+          message: `${analyst.name}: ${msg}`,
+          employeeIds: [analyst.id],
+        })
 
         break // One proposal per analyst per tick
       }
     }
 
     if (newProposals.length !== s.proposals.length) {
-      set({ proposals: newProposals })
+      // Cross-analyst dedup: same stock PENDING → keep highest confidence only
+      const pendingByStock = new Map<string, typeof newProposals>()
+      for (const p of newProposals) {
+        if (p.status !== 'PENDING') continue
+        const existing = pendingByStock.get(p.companyId)
+        if (existing) existing.push(p)
+        else pendingByStock.set(p.companyId, [p])
+      }
+      const expireIds = new Set<string>()
+      for (const [, proposals] of pendingByStock) {
+        if (proposals.length <= 1) continue
+        proposals.sort((a, b) => b.confidence - a.confidence)
+        for (let i = 1; i < proposals.length; i++) {
+          expireIds.add(proposals[i].id)
+        }
+      }
+      if (expireIds.size > 0) {
+        newProposals = newProposals.map((p) =>
+          expireIds.has(p.id) ? { ...p, status: 'EXPIRED' as ProposalStatus } : p,
+        )
+      }
+
+      set((st) => ({
+        proposals: newProposals,
+        officeEvents: newEvents.length > 0
+          ? [...st.officeEvents, ...newEvents].slice(-200)
+          : st.officeEvents,
+      }))
+    } else if (newEvents.length > 0) {
+      // No new proposals but chatter events to flush (edge case)
+      set((st) => ({
+        officeEvents: [...st.officeEvents, ...newEvents].slice(-200),
+      }))
     }
   },
 
@@ -539,9 +615,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       (e) => e.role === 'manager' && e.seatIndex != null && (e.stress ?? 0) < 100,
     ) ?? null
 
-    const absoluteTick =
-      ((s.time.year - s.config.startYear) * 360 + (s.time.month - 1) * 30 + (s.time.day - 1)) * 10 +
-      s.time.tick
+    const absoluteTick = getAbsoluteTimestamp(s.time, s.config.startYear)
 
     // Adjacency bonus: Manager adjacent to relevant roles can process extra proposals
     const adjBonus = manager
@@ -551,6 +625,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     let updatedProposals = [...s.proposals]
     let updatedEmployees = [...s.player.employees]
+    const managerEvents: typeof s.officeEvents = []
 
     for (let i = 0; i < Math.min(processCount, pendingProposals.length); i++) {
       const proposal = pendingProposals[i]
@@ -577,25 +652,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
         )
       }
 
-      // Pipeline chatter: manager approved/rejected
+      // Pipeline chatter: manager approved/rejected (accumulated, not set() here)
       const msgType = result.approved ? 'proposal_approved' : 'proposal_rejected'
       const managerName = manager?.name ?? '시스템'
-      const msg = getPipelineMessage(msgType, { ticker: proposal.ticker })
-      set((st) => ({
-        officeEvents: [...st.officeEvents, {
-          timestamp: Date.now(),
-          type: msgType,
-          emoji: result.approved ? '✅' : '❌',
-          message: `${managerName}: ${msg}`,
-          employeeIds: [manager?.id ?? '', proposal.createdByEmployeeId].filter(Boolean),
-        }].slice(-200),
-      }))
+      const msg = getPipelineMessage(msgType, { ticker: proposal.ticker, hour: s.time.hour })
+      managerEvents.push({
+        timestamp: absoluteTick,
+        type: msgType,
+        emoji: result.approved ? '✅' : '❌',
+        message: `${managerName}: ${msg}`,
+        employeeIds: [manager?.id ?? '', proposal.createdByEmployeeId].filter(Boolean),
+      })
     }
 
-    set({
+    set((st) => ({
       proposals: updatedProposals,
       player: { ...s.player, employees: updatedEmployees },
-    })
+      officeEvents: managerEvents.length > 0
+        ? [...st.officeEvents, ...managerEvents].slice(-200)
+        : st.officeEvents,
+    }))
   },
 
   processTraderTick: () => {
@@ -608,9 +684,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       (e) => e.role === 'trader' && e.seatIndex != null && (e.stress ?? 0) < 100,
     ) ?? null
 
-    const absoluteTick =
-      ((s.time.year - s.config.startYear) * 360 + (s.time.month - 1) * 30 + (s.time.day - 1)) * 10 +
-      s.time.tick
+    const absoluteTick = getAbsoluteTimestamp(s.time, s.config.startYear)
 
     // Adjacency bonus: Trader adjacent to Manager reduces slippage further
     const adjBonus = trader
@@ -625,21 +699,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const result = executeProposal(proposal, trader, company.price, s.player.cash, adjBonus)
 
     if (result.success) {
-      // Execute the actual trade
+      // Execute the actual trade (buyStock/sellStock are separate actions)
       if (proposal.direction === 'buy') {
         get().buyStock(proposal.companyId, proposal.quantity)
-        // Deduct fee from cash
-        set((st) => ({
-          player: { ...st.player, cash: Math.max(0, st.player.cash - result.fee) },
-        }))
       } else {
         get().sellStock(proposal.companyId, proposal.quantity)
-        set((st) => ({
-          player: { ...st.player, cash: Math.max(0, st.player.cash - result.fee) },
-        }))
       }
 
-      // Update proposal status
+      // Compute toast significance after trade execution
+      const traderName = trader?.name ?? '시스템'
+      const execMsg = getPipelineMessage('trade_executed', {
+        ticker: proposal.ticker,
+        direction: proposal.direction,
+        hour: get().time.hour,
+      })
+      const tradeValue = result.executedPrice * proposal.quantity
+      const totalAssets = get().player.totalAssetValue
+      const isSignificant = totalAssets > 0 && tradeValue >= totalAssets * 0.05
+
+      // Single atomic set: fee + proposal EXECUTED + satisfaction + toast
       set((st) => ({
         proposals: st.proposals.map((p) =>
           p.id === proposal.id
@@ -653,9 +731,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
               }
             : p,
         ),
-        // Success: satisfaction +5 for involved employees
         player: {
           ...st.player,
+          cash: Math.max(0, st.player.cash - result.fee),
           employees: st.player.employees.map((e) => {
             if (
               e.id === proposal.createdByEmployeeId ||
@@ -670,25 +748,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
             return e
           }),
         },
-      }))
-
-      // Pipeline chatter: trade executed successfully
-      const traderName = trader?.name ?? '시스템'
-      const execMsg = getPipelineMessage('trade_executed', {
-        ticker: proposal.ticker,
-        direction: proposal.direction,
-      })
-      set((st) => ({
-        officeEvents: [...st.officeEvents, {
-          timestamp: Date.now(),
-          type: 'trade_executed',
-          emoji: '💰',
-          message: `${traderName}: ${execMsg}`,
-          employeeIds: [trader?.id ?? '', proposal.createdByEmployeeId].filter(Boolean),
-        }].slice(-200),
+        officeEvents: isSignificant
+          ? [...st.officeEvents, {
+              timestamp: absoluteTick,
+              type: 'trade_executed',
+              emoji: '💰',
+              message: `${traderName}: ${execMsg}`,
+              employeeIds: [trader?.id ?? '', proposal.createdByEmployeeId].filter(Boolean),
+            }].slice(-200)
+          : st.officeEvents,
       }))
     } else {
-      // Failed trade
+      // Compute toast significance for failure
+      const failTraderName = trader?.name ?? '시스템'
+      const failMsg = getPipelineMessage('trade_failed', { ticker: proposal.ticker, hour: get().time.hour })
+      const failTradeValue = proposal.targetPrice * proposal.quantity
+      const failTotalAssets = get().player.totalAssetValue
+      const isFailSignificant = failTotalAssets > 0 && failTradeValue >= failTotalAssets * 0.05
+
+      // Single atomic set: proposal FAILED + stress + toast
       set((st) => ({
         proposals: st.proposals.map((p) =>
           p.id === proposal.id
@@ -701,7 +779,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
               }
             : p,
         ),
-        // Failure: stress +15 for involved employees
         player: {
           ...st.player,
           employees: st.player.employees.map((e) => {
@@ -718,19 +795,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
             return e
           }),
         },
-      }))
-
-      // Pipeline chatter: trade failed
-      const failTraderName = trader?.name ?? '시스템'
-      const failMsg = getPipelineMessage('trade_failed', { ticker: proposal.ticker })
-      set((st) => ({
-        officeEvents: [...st.officeEvents, {
-          timestamp: Date.now(),
-          type: 'trade_failed',
-          emoji: '💸',
-          message: `${failTraderName}: ${failMsg}`,
-          employeeIds: [trader?.id ?? '', proposal.createdByEmployeeId].filter(Boolean),
-        }].slice(-200),
+        officeEvents: isFailSignificant
+          ? [...st.officeEvents, {
+              timestamp: absoluteTick,
+              type: 'trade_failed',
+              emoji: '💸',
+              message: `${failTraderName}: ${failMsg}`,
+              employeeIds: [trader?.id ?? '', proposal.createdByEmployeeId].filter(Boolean),
+            }].slice(-200)
+          : st.officeEvents,
       }))
     }
   },
@@ -757,13 +830,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   /* ── Time ── */
-  advanceTick: () =>
+  advanceHour: () =>
     set((s) => {
       const oldDay = s.time.day
-      let { year, month, day, tick } = s.time
-      tick += 1
-      if (tick >= 10) {
-        tick = 0
+      let { year, month, day, hour } = s.time
+      hour += 1
+      if (hour > 18) {
+        hour = 9
         day += 1
       }
       if (day > 30) {
@@ -793,7 +866,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
 
       return {
-        time: { ...s.time, year, month, day, tick },
+        time: { ...s.time, year, month, day, hour },
         player: updatedPlayer,
       }
     }),
@@ -1147,15 +1220,36 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       }
 
-      // Expire orphaned proposals from this employee
+      // Reassign or expire orphaned proposals from this employee
+      // APPROVED proposals must stay APPROVED (fallback system handles them)
+      // Only PENDING proposals can be EXPIRED
+      const remainingEmployees = s.player.employees.filter((e) => e.id !== id)
       const updatedProposals = s.proposals.map((p) => {
-        if (
-          (p.status === 'PENDING' || p.status === 'APPROVED') &&
-          (p.createdByEmployeeId === id || p.reviewedByEmployeeId === id || p.executedByEmployeeId === id)
-        ) {
-          return { ...p, status: 'EXPIRED' as ProposalStatus }
+        if (p.status !== 'PENDING' && p.status !== 'APPROVED') return p
+
+        let changed = false
+        const updates: Partial<typeof p> = {}
+
+        if (p.createdByEmployeeId === id) {
+          const replacement = remainingEmployees.find((e) => e.role === emp.role && e.seatIndex != null)
+          if (replacement) {
+            updates.createdByEmployeeId = replacement.id
+            changed = true
+          } else if (p.status === 'PENDING') {
+            // Only PENDING can be expired; APPROVED stays for fallback execution
+            return { ...p, status: 'EXPIRED' as ProposalStatus }
+          }
         }
-        return p
+        if (p.reviewedByEmployeeId === id) {
+          updates.reviewedByEmployeeId = null
+          changed = true
+        }
+        if (p.executedByEmployeeId === id) {
+          updates.executedByEmployeeId = null
+          changed = true
+        }
+
+        return changed ? { ...p, ...updates } : p
       })
 
       return {
@@ -1172,15 +1266,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   upgradeOffice: () =>
     set((s) => {
       const currentLevel = s.player.officeLevel
-      if (currentLevel >= 3) return s // Max level
+      if (currentLevel >= OFFICE_BALANCE.MAX_LEVEL) return s
 
-      // Upgrade costs by level
-      const upgradeCosts: Record<number, number> = {
-        1: 10_000_000, // Level 1 → 2
-        2: 30_000_000, // Level 2 → 3
-      }
-
-      const cost = upgradeCosts[currentLevel]
+      const cost = OFFICE_BALANCE.UPGRADE_COSTS[currentLevel]
       if (s.player.cash < cost) return s // Not enough cash
 
       // Reset all employee stamina to max on office upgrade
@@ -1189,12 +1277,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
         stamina: emp.maxStamina,
       }))
 
+      // 그리드 확장: 기존 직원/가구 보존하며 새 크기로 재생성
+      const newLevel = currentLevel + 1
+      const newGrid = createInitialOfficeGrid(newLevel)
+      const oldGrid = s.player.officeGrid
+      if (oldGrid) {
+        // 기존 셀 데이터 복사 (기존 범위 내)
+        for (let y = 0; y < oldGrid.size.height; y++) {
+          for (let x = 0; x < oldGrid.size.width; x++) {
+            if (newGrid.cells[y]?.[x] && oldGrid.cells[y]?.[x]) {
+              newGrid.cells[y][x] = oldGrid.cells[y][x]
+            }
+          }
+        }
+        // 기존 가구 목록 보존
+        newGrid.furniture = [...oldGrid.furniture]
+      }
+
       return {
         player: {
           ...s.player,
           cash: s.player.cash - cost,
-          officeLevel: currentLevel + 1,
+          officeLevel: newLevel,
           employees: refreshedEmployees,
+          officeGrid: newGrid,
           totalAssetValue:
             s.player.cash - cost + calcPortfolioValue(s.player.portfolio, s.companies),
         },
@@ -1497,11 +1603,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const { competitors, companies, time } = get()
     if (competitors.length === 0) return
 
-    // Decrease panic sell cooldowns (compensate for TICK_DISTRIBUTION interval)
+    // Decrease panic sell cooldowns (compensate for HOUR_DISTRIBUTION interval)
     set((state) => ({
       competitors: state.competitors.map((c) => ({
         ...c,
-        panicSellCooldown: Math.max(0, c.panicSellCooldown - PERFORMANCE_CONFIG.TICK_DISTRIBUTION),
+        panicSellCooldown: Math.max(0, c.panicSellCooldown - PERFORMANCE_CONFIG.HOUR_DISTRIBUTION),
       })),
     }))
 
@@ -1515,7 +1621,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const actions = processAITrading(
       updatedState.competitors,
       companies,
-      time.tick,
+      time.hour,
       priceHistory,
     )
 
@@ -1529,6 +1635,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((state) => {
       const newCompetitors = [...state.competitors]
       const newTaunts = [...state.taunts]
+      const batchTick = getAbsoluteTimestamp(state.time, state.config.startYear)
 
       actions.forEach((action) => {
         const competitor = newCompetitors.find((c) => c.id === action.competitorId)
@@ -1547,21 +1654,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
           competitor.cash -= cost
 
-          const position = competitor.portfolio[action.symbol]
+          const position = competitor.portfolio[action.companyId]
           if (position) {
             const totalCost = position.avgBuyPrice * position.shares + cost
             const totalShares = position.shares + action.quantity
             position.shares = totalShares
             position.avgBuyPrice = totalCost / totalShares
           } else {
-            competitor.portfolio[action.symbol] = {
-              companyId: action.symbol,
+            competitor.portfolio[action.companyId] = {
+              companyId: action.companyId,
               shares: action.quantity,
               avgBuyPrice: action.price,
             }
           }
         } else if (action.action === 'sell' || action.action === 'panic_sell') {
-          const position = competitor.portfolio[action.symbol]
+          const position = competitor.portfolio[action.companyId]
           if (!position) return
 
           // Validate sufficient shares
@@ -1577,19 +1684,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
           position.shares -= action.quantity
 
           if (position.shares <= 0) {
-            delete competitor.portfolio[action.symbol]
+            delete competitor.portfolio[action.companyId]
           }
 
           // Add taunt for panic sell and set cooldown
           if (action.action === 'panic_sell') {
-            competitor.panicSellCooldown = PANIC_SELL_CONFIG.COOLDOWN_TICKS
+            competitor.panicSellCooldown = PANIC_SELL_CONFIG.COOLDOWN_HOURS
 
             newTaunts.push({
               competitorId: competitor.id,
               competitorName: competitor.name,
               message: `${competitor.name}: "손절이다! 더 떨어지기 전에!!" 😱`,
               type: 'panic',
-              timestamp: Date.now(),
+              timestamp: batchTick,
             })
           }
         }
@@ -1607,8 +1714,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((state) => {
       const newCompetitors = state.competitors.map((competitor) => {
         const portfolioValue = Object.entries(competitor.portfolio).reduce(
-          (sum, [symbol, position]) => {
-            const company = state.companies.find((c) => c.ticker === symbol)
+          (sum, [companyId, position]) => {
+            const company = state.companies.find((c) => c.id === companyId)
             const currentPrice = company?.price || 0
             return sum + position.shares * currentPrice
           },
@@ -1792,7 +1899,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((s) => {
       if (s.player.officeGrid) return s // 이미 초기화됨
 
-      const grid = createInitialOfficeGrid()
+      const grid = createInitialOfficeGrid(s.player.officeLevel)
       return {
         player: {
           ...s.player,
@@ -1919,8 +2026,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       // 기존 좌석 해제
       if (employee.seatIndex !== null && employee.seatIndex !== undefined) {
-        const oldY = Math.floor(employee.seatIndex / 10)
-        const oldX = employee.seatIndex % 10
+        const gridW = s.player.officeGrid?.size.width ?? 10
+        const oldY = Math.floor(employee.seatIndex / gridW)
+        const oldX = employee.seatIndex % gridW
         const oldCell = s.player.officeGrid?.cells[oldY]?.[oldX]
         if (oldCell) {
           oldCell.occupiedBy = null
@@ -1929,7 +2037,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
 
       // 새 좌석 배치
-      employee.seatIndex = y * 10 + x
+      const gridW = s.player.officeGrid?.size.width ?? 10
+      employee.seatIndex = y * gridW + x
       cell.occupiedBy = employeeId
       cell.type = 'desk'
 
@@ -1947,8 +2056,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const grid = s.player.officeGrid
       if (!grid) return s
 
-      const y = Math.floor(employee.seatIndex / 10)
-      const x = employee.seatIndex % 10
+      const gridW = grid.size.width
+      const y = Math.floor(employee.seatIndex / gridW)
+      const x = employee.seatIndex % gridW
       const cell = grid.cells[y]?.[x]
 
       if (cell) {
@@ -1986,7 +2096,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       })
     })
 
-    // 퇴사 처리: 좌석 정리 + 쿨다운 정리 + 뉴스
+    // 퇴사 처리: 좌석 정리 + 쿨다운 정리 + 제안서 정리 + 뉴스
     resignedIds.forEach((id) => {
       const emp = state.player.employees.find((e) => e.id === id)
       cleanupChatterCooldown(id)
@@ -2003,6 +2113,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
             cell.type = 'empty'
           }
         }
+        // Expire orphaned PENDING proposals from resigned employee
+        // APPROVED proposals stay APPROVED (fallback system handles them)
+        set((st) => ({
+          proposals: st.proposals.map((p) => {
+            const isRelated =
+              p.createdByEmployeeId === id || p.reviewedByEmployeeId === id || p.executedByEmployeeId === id
+            if (!isRelated) return p
+
+            if (p.status === 'PENDING') {
+              return { ...p, status: 'EXPIRED' as ProposalStatus }
+            }
+            if (p.status === 'APPROVED') {
+              // Clear employee references but keep APPROVED for fallback execution
+              const updates: Partial<typeof p> = {}
+              if (p.createdByEmployeeId === id) updates.createdByEmployeeId = id // keep original creator for audit
+              if (p.reviewedByEmployeeId === id) updates.reviewedByEmployeeId = null
+              if (p.executedByEmployeeId === id) updates.executedByEmployeeId = null
+              return Object.keys(updates).length > 0 ? { ...p, ...updates } : p
+            }
+            return p
+          }),
+        }))
         state.addNews({
           id: `news-resign-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           timestamp: { ...state.time },
@@ -2116,10 +2248,10 @@ function calcPortfolioValue(
 }
 
 /**
- * 10x10 빈 오피스 그리드 생성
+ * 오피스 레벨에 맞는 빈 오피스 그리드 생성
  */
-function createInitialOfficeGrid(): OfficeGrid {
-  const size = { width: 10, height: 10 }
+function createInitialOfficeGrid(level: number = 1): OfficeGrid {
+  const size = OFFICE_BALANCE.GRID_SIZES[level] ?? OFFICE_BALANCE.GRID_SIZES[1]
   const cells: import('../types/office').GridCell[][] = []
 
   for (let y = 0; y < size.height; y++) {

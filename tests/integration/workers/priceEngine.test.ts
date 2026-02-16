@@ -8,7 +8,7 @@ import type { CompanyData, TickMessage, PriceUpdate } from '@/workers/priceEngin
  *   S(t+dt) = S(t) × exp((μ - σ²/2)×dt + σ×√dt×Z)
  *   여기서 Z ~ N(0,1)는 표준정규분포
  *
- * - dt = 1/3600 (1틱 = 1시간 / 3600시간)
+ * - dt = 1/10 (1시간 = 영업일의 1/10)
  * - 이벤트 적용: driftModifier 누적 (더하기), volatilityModifier 곱셈
  * - 가격 범위: 최소 100원 (상장폐지 방지)
  * - 컴퍼니/섹터 필터링: 글로벌 이벤트는 모든 주식 영향
@@ -47,7 +47,7 @@ describe('스토어 통합: Web Worker 가격 엔진 (Price Engine)', () => {
             volatility: 0.2,
           },
         ],
-        dt: 1 / 3600,
+        dt: 1 / 10,
         events: [],
       }
 
@@ -59,9 +59,9 @@ describe('스토어 통합: Web Worker 가격 엔진 (Price Engine)', () => {
   describe('GBM 가격 계산', () => {
     /**
      * GBM 공식 검증
-     * dt = 1/3600는 1틱의 시간 진행을 나타냄
+     * dt = 1/10은 1시간(영업일의 1/10)의 시간 진행을 나타냄
      */
-    it('dt = 1/3600으로 가격이 변동한다', () => {
+    it('dt = 1/10으로 가격이 변동한다', () => {
       // Given: 기본 회사 데이터
       const company: CompanyData = {
         id: 'samsung',
@@ -71,12 +71,12 @@ describe('스토어 통합: Web Worker 가격 엔진 (Price Engine)', () => {
         volatility: 0.01,
       }
 
-      // When: dt = 1/3600 (1틱)
-      const dt = 1 / 3600
-      const expectedDt = dt // 미세한 시간 진행
+      // When: dt = 1/10 (1시간 = 영업일의 1/10)
+      const dt = 1 / 10
+      const expectedDt = dt
 
       // Then: dt가 올바른 값
-      expect(expectedDt).toBeCloseTo(0.000278, 5)
+      expect(expectedDt).toBeCloseTo(0.1, 5)
     })
 
     it('volatility가 높을수록 가격 변동이 크다', () => {
@@ -532,8 +532,8 @@ describe('스토어 통합: Web Worker 가격 엔진 (Price Engine)', () => {
       expect(Object.keys(prices).length).toBe(100)
     })
 
-    it('매 틱마다 메시지 송수신이 동작한다', () => {
-      // Given: 연속 틱 메시지
+    it('매 시간마다 메시지 송수신이 동작한다', () => {
+      // Given: 연속 시간 메시지
       const tickCount = 100
       const messages: TickMessage[] = Array(tickCount)
         .fill(null)
@@ -548,7 +548,7 @@ describe('스토어 통합: Web Worker 가격 엔진 (Price Engine)', () => {
               volatility: 0.2,
             },
           ],
-          dt: 1 / 3600,
+          dt: 1 / 10,
           events: [],
         }))
 

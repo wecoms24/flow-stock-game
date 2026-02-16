@@ -137,7 +137,7 @@ describe('성능 벤치마크: 버프 계산 (Buff Calculation)', () => {
   })
 
   describe('버프 계산 빈도', () => {
-    bench('10틱마다 버프 계산 (매 100ms)', () => {
+    bench('10시간마다 버프 계산 (매 100ms)', () => {
       for (let i = 0; i < 5; i++) {
         hireEmployee(store, {
           id: `emp-perf-${i}`,
@@ -162,7 +162,7 @@ describe('성능 벤치마크: 버프 계산 (Buff Calculation)', () => {
       }
     })
 
-    bench('100틱마다 버프 계산 (매 1초)', () => {
+    bench('100시간마다 버프 계산 (매 1초)', () => {
       for (let i = 0; i < 5; i++) {
         hireEmployee(store, {
           id: `emp-perf-${i}`,

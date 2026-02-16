@@ -132,7 +132,7 @@ PENDING → APPROVED → EXECUTED (success)
 
 **Pipeline Configuration** (`src/config/tradeAIConfig.ts`):
 - `CONFIDENCE_THRESHOLD: 70` — minimum confidence for proposal creation
-- `MAX_PENDING_PROPOSALS: 5` — per-pipeline limit
+- `MAX_PENDING_PROPOSALS: 10` — global pending proposal limit (oldest expired when exceeded)
 - `PROPOSAL_EXPIRY_TICKS: 100` — auto-expire stale proposals
 - `BASE_SLIPPAGE: 0.01` — base trade execution slippage (1%)
 - `ADJACENCY_SPEED_BONUS: 0.30` — max 30% bonus for adjacent placement

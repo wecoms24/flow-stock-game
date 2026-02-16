@@ -273,6 +273,10 @@ describe('스토어 통합: 사무실 시스템 (Office System)', () => {
   })
 
   describe('버프 재계산 (Recalculate Grid Buffs)', () => {
+    beforeEach(() => {
+      hireEmployee(store, createTestEmployee())
+    })
+
     it('가구와 직원의 인접도에 따라 버프가 적용된다', () => {
       addCash(store, 2_000_000)
 
@@ -372,6 +376,10 @@ describe('스토어 통합: 사무실 시스템 (Office System)', () => {
   })
 
   describe('사무실 배치 전략', () => {
+    beforeEach(() => {
+      hireEmployee(store, createTestEmployee())
+    })
+
     it('중앙 배치: 가구를 중앙에 배치하면 영향 범위가 넓다', () => {
       addCash(store, 3_000_000)
 
@@ -419,6 +427,10 @@ describe('스토어 통합: 사무실 시스템 (Office System)', () => {
   })
 
   describe('그리드 전체 상태', () => {
+    beforeEach(() => {
+      hireEmployee(store, createTestEmployee())
+    })
+
     it('점유된 셀의 수를 계산할 수 있다', () => {
       addCash(store, 2_000_000)
 

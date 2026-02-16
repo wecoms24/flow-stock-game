@@ -101,8 +101,8 @@ export const PANIC_SELL_CONFIG = {
   /** Probability when loss threshold met (5%) */
   TRIGGER_PROBABILITY: 0.05,
 
-  /** Cooldown period after panic sell (300 ticks) */
-  COOLDOWN_TICKS: 300,
+  /** Cooldown period after panic sell (300 hours) */
+  COOLDOWN_HOURS: 300,
 } as const
 
 // ===== Technical Analysis Parameters =====
@@ -121,11 +121,11 @@ export const TECHNICAL_CONFIG = {
 // ===== Performance Tuning =====
 
 export const PERFORMANCE_CONFIG = {
-  /** Distribute AI processing across N ticks */
-  TICK_DISTRIBUTION: 5,
+  /** Distribute AI processing across N hours */
+  HOUR_DISTRIBUTION: 5,
 
-  /** Recalculate rankings every N ticks */
-  RANKING_UPDATE_INTERVAL: 10,
+  /** Recalculate rankings every N hours */
+  RANKING_UPDATE_HOURS: 10,
 
   /** Keep last N competitor actions in history */
   MAX_ACTION_HISTORY: 100,

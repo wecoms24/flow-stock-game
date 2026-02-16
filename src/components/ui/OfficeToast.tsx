@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useGameStore } from '../../stores/gameStore'
+import { formatHour } from '../../config/timeConfig'
 
 interface Toast {
   id: number
@@ -14,6 +15,7 @@ const TOAST_DURATION = 4000
 export function OfficeToast() {
   const officeEvents = useGameStore((s) => s.officeEvents)
   const isGameStarted = useGameStore((s) => s.isGameStarted)
+  const hour = useGameStore((s) => s.time.hour)
   const [toasts, setToasts] = useState<Toast[]>([])
   const lastSeenRef = useRef(0)
   const toastIdRef = useRef(0)
@@ -57,7 +59,7 @@ export function OfficeToast() {
     const toast: Toast = {
       id,
       emoji: latest.emoji,
-      message: latest.message,
+      message: `${formatHour(hour)} | ${latest.message}`,
       type: latest.type,
     }
 

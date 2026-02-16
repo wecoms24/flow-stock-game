@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { processHRAutomation } from '@/engines/hrAutomation'
+import { processHRAutomation as _processHRAutomation } from '@/engines/hrAutomation'
 import {
   createTestStore,
   createTestEmployee,
@@ -7,6 +7,26 @@ import {
   addCash,
 } from '../helpers'
 import type { Employee } from '@/types'
+
+/**
+ * Adapter: tests call processHRAutomation(storeState, employees)
+ * but actual signature is (employees[], cash, gameDays).
+ * Merges store employees (HR manager) with extra employees,
+ * keeping extra employees FIRST so result indices match test assertions.
+ */
+function processHRAutomation(storeState: any, extraEmployees: Employee[]) {
+  const storeEmployees: Employee[] = storeState.player?.employees ?? []
+  const allEmployees = [...extraEmployees]
+  for (const se of storeEmployees) {
+    if (!allEmployees.find((e) => e.id === se.id)) {
+      allEmployees.push(se)
+    }
+  }
+  const cash = storeState.player?.cash ?? 50_000_000
+  const { year = 1995, month = 0, day = 0 } = storeState.time ?? {}
+  const gameDays = (year - 1995) * 360 + month * 30 + day
+  return _processHRAutomation(allEmployees, cash, gameDays)
+}
 
 describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
   let store: any
@@ -161,7 +181,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
       hireEmployee(store, hrManager)
       addCash(store, 1_000_000)
 
-      // 90일 경과 (324,000 틱 = 90 × 3600)
+      // 90일 경과 (900 시간 = 90 × 10)
       const result = processHRAutomation(store.getState(), [employee])
 
       expect(result).toBeDefined()
@@ -233,7 +253,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
 
       hireEmployee(store, hrManager)
 
-      // 7일 경과 (25,200 틱 = 7 × 3600)
+      // 7일 경과 (70 시간 = 7 × 10)
       const result = processHRAutomation(store.getState(), [employee])
 
       expect(result.reports).toBeDefined()

@@ -1,6 +1,7 @@
 import type { Employee, EmployeeTrait, EmployeeSkills, GameTime } from '../types'
 import type { GridCell, BuffEffect, OfficeGrid } from '../types/office'
 import { TRAIT_DEFINITIONS } from '../data/traits'
+import { EMPLOYEE_BALANCE } from '../config/balanceConfig'
 import { decideAction, getActionEffects, type EmployeeBehavior } from './employeeBehavior'
 import { checkInteractions, type Interaction } from './employeeInteraction'
 
@@ -210,9 +211,9 @@ export function updateOfficeSystem(
   const allInteractions: Interaction[] = []
   const officeEvents: OfficeEvent[] = []
 
-  // 절대 틱 계산 (쿨다운용)
+  // 절대 타임스탬프 계산 (쿨다운용) — time 없으면 Date.now()로 폴백 (쿨다운 비교 안전)
   const absoluteTick = time
-    ? (time.year - 1995) * 360 * 3600 + (time.month - 1) * 30 * 3600 + (time.day - 1) * 3600 + time.tick
+    ? (time.year - 1995) * 360 * 10 + (time.month - 1) * 30 * 10 + (time.day - 1) * 10 + (time.hour - 9)
     : Date.now()
 
   const updatedEmployees = employees.map((employee) => {
@@ -252,15 +253,15 @@ export function updateOfficeSystem(
           )
           emp.stress = Math.min(
             100,
-            Math.max(0, emp.stress + actionEffects.stressDelta + 0.03 * buffs.stressGeneration),
+            Math.max(0, emp.stress + actionEffects.stressDelta + EMPLOYEE_BALANCE.STRESS_ACCUMULATION_RATE * buffs.stressGeneration),
           )
           emp.satisfaction = Math.min(
             100,
-            Math.max(0, (emp.satisfaction ?? 80) + actionEffects.satisfactionDelta),
+            Math.max(0, (emp.satisfaction ?? EMPLOYEE_BALANCE.DEFAULT_SATISFACTION) + actionEffects.satisfactionDelta),
           )
 
           // 스킬 성장 (행동 + 버프)
-          const growthRate = 0.005 * buffs.skillGrowth * actionEffects.skillMultiplier
+          const growthRate = EMPLOYEE_BALANCE.SKILL_GROWTH_RATE * buffs.skillGrowth * actionEffects.skillMultiplier
           if (growthRate > 0) {
             const skills = emp.skills as EmployeeSkills
             const roleGrowthFocus: Record<string, keyof EmployeeSkills> = {
@@ -276,7 +277,7 @@ export function updateOfficeSystem(
             Object.keys(skills).forEach((key) => {
               const k = key as keyof EmployeeSkills
               if (k !== focusSkill) {
-                skills[k] = Math.min(100, skills[k] + growthRate * 0.3)
+                skills[k] = Math.min(100, skills[k] + growthRate * EMPLOYEE_BALANCE.SKILL_SPILLOVER_RATIO)
               }
             })
           }
@@ -303,7 +304,7 @@ export function updateOfficeSystem(
 
             // 상호작용 효과 적용 (initiator = current employee)
             emp.stress = Math.min(100, Math.max(0, emp.stress + interaction.effects.initiator.stressDelta))
-            emp.satisfaction = Math.min(100, Math.max(0, (emp.satisfaction ?? 80) + interaction.effects.initiator.satisfactionDelta))
+            emp.satisfaction = Math.min(100, Math.max(0, (emp.satisfaction ?? EMPLOYEE_BALANCE.DEFAULT_SATISFACTION) + interaction.effects.initiator.satisfactionDelta))
             emp.stamina = Math.min(emp.maxStamina, Math.max(0, emp.stamina + interaction.effects.initiator.staminaDelta))
 
             // 스킬 성장 적용
@@ -324,8 +325,8 @@ export function updateOfficeSystem(
         } else {
           // time이 없으면 기존 로직
           emp.stamina = Math.min(emp.maxStamina, emp.stamina + 0.1 * buffs.staminaRecovery)
-          emp.stress = Math.min(100, emp.stress + 0.03 * buffs.stressGeneration)
-          const growthRate = 0.005 * buffs.skillGrowth
+          emp.stress = Math.min(100, emp.stress + EMPLOYEE_BALANCE.STRESS_ACCUMULATION_RATE * buffs.stressGeneration)
+          const growthRate = EMPLOYEE_BALANCE.SKILL_GROWTH_RATE * buffs.skillGrowth
           const skills = emp.skills as EmployeeSkills
           const roleGrowthFocus: Record<string, keyof EmployeeSkills> = {
             analyst: 'analysis',
@@ -340,29 +341,29 @@ export function updateOfficeSystem(
           Object.keys(skills).forEach((key) => {
             const k = key as keyof EmployeeSkills
             if (k !== focusSkill) {
-              skills[k] = Math.min(100, skills[k] + growthRate * 0.3)
+              skills[k] = Math.min(100, skills[k] + growthRate * EMPLOYEE_BALANCE.SKILL_SPILLOVER_RATIO)
             }
           })
         }
       }
     } else {
       // 미배치 직원: 기본 스트레스 감소, 스태미너 천천히 회복
-      emp.stamina = Math.min(emp.maxStamina, emp.stamina + 0.05)
-      emp.stress = Math.max(0, emp.stress - 0.02)
+      emp.stamina = Math.min(emp.maxStamina, emp.stamina + EMPLOYEE_BALANCE.IDLE_STAMINA_RECOVERY)
+      emp.stress = Math.max(0, emp.stress - EMPLOYEE_BALANCE.IDLE_STRESS_REDUCTION)
     }
 
     // 만족도 계산 (스트레스 기반) — 행동 AI가 없을 때 폴백
     if (!time) {
-      const targetStress = 30
+      const targetStress = EMPLOYEE_BALANCE.SATISFACTION_STRESS_BASELINE
       const stressDiff = emp.stress - targetStress
       emp.satisfaction = Math.max(
         0,
-        Math.min(100, (emp.satisfaction ?? 80) - stressDiff * 0.005),
+        Math.min(100, (emp.satisfaction ?? EMPLOYEE_BALANCE.DEFAULT_SATISFACTION) - stressDiff * EMPLOYEE_BALANCE.SATISFACTION_PENALTY_RATE),
       )
     }
 
     // 퇴사 경고
-    if ((emp.satisfaction ?? 80) < 20 && (emp.satisfaction ?? 80) >= 10) {
+    if ((emp.satisfaction ?? EMPLOYEE_BALANCE.DEFAULT_SATISFACTION) < EMPLOYEE_BALANCE.RESIGN_WARNING_THRESHOLD && (emp.satisfaction ?? EMPLOYEE_BALANCE.DEFAULT_SATISFACTION) >= EMPLOYEE_BALANCE.AUTO_RESIGN_THRESHOLD) {
       warnings.push({
         employeeId: emp.id,
         name: emp.name,
@@ -377,8 +378,8 @@ export function updateOfficeSystem(
       })
     }
 
-    // 자동 퇴사 (만족도 10 미만)
-    if ((emp.satisfaction ?? 80) < 10) {
+    // 자동 퇴사 (만족도 AUTO_RESIGN_THRESHOLD 미만)
+    if ((emp.satisfaction ?? EMPLOYEE_BALANCE.DEFAULT_SATISFACTION) < EMPLOYEE_BALANCE.AUTO_RESIGN_THRESHOLD) {
       resignedIds.push(emp.id)
       officeEvents.push({
         timestamp: absoluteTick,
@@ -399,7 +400,7 @@ export function updateOfficeSystem(
 
     const updated = { ...emp }
     if (updated.stress === undefined) updated.stress = 0
-    if (updated.satisfaction === undefined) updated.satisfaction = 80
+    if (updated.satisfaction === undefined) updated.satisfaction = EMPLOYEE_BALANCE.DEFAULT_SATISFACTION
 
     for (const interaction of targetInteractions) {
       updated.stress = Math.min(100, Math.max(0, updated.stress + interaction.effects.target.stressDelta))

@@ -70,7 +70,7 @@ export function OfficeWindow() {
   useEffect(() => {
     const timeouts = bubbleTimeoutsRef.current
     const interval = setInterval(() => {
-      const currentTick = time.tick + time.day * 3600
+      const currentTick = (time.hour - 9) + time.day * 10
       const newBubbles: Record<string, string> = {}
       player.employees.forEach((emp) => {
         if (emp.seatIndex != null) {
@@ -97,7 +97,7 @@ export function OfficeWindow() {
       timeouts.forEach((tid) => clearTimeout(tid))
       timeouts.clear()
     }
-  }, [player.employees, time.tick, time.day])
+  }, [player.employees, time.hour, time.day])
 
   // Initialize grid if not exists
   if (!player.officeGrid) {

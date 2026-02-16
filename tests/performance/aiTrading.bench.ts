@@ -211,22 +211,22 @@ describe('성능 벤치마크: AI 경쟁자 거래 (AI Trading)', () => {
       advanceNTicks(store, 1000)
     })
 
-    bench('10명 경쟁자 시뮬레이션 (1일 = 3600틱)', () => {
+    bench('10명 경쟁자 시뮬레이션 (1일 = 10시간)', () => {
       store.initializeCompetitors(10, 50_000_000)
       // 1일 시뮬레이션
-      advanceNTicks(store, 3600)
+      advanceNTicks(store, 10)
     })
 
-    bench('5명 경쟁자 1주일 시뮬레이션 (25200틱)', () => {
+    bench('5명 경쟁자 1주일 시뮬레이션 (70시간)', () => {
       store.initializeCompetitors(5, 50_000_000)
-      // 1주일 (7일 × 3600틱)
-      advanceNTicks(store, 25200)
+      // 1주일 (7일 × 10시간)
+      advanceNTicks(store, 70)
     })
 
-    bench('3명 경쟁자 1개월 시뮬레이션 (108000틱)', () => {
+    bench('3명 경쟁자 1개월 시뮬레이션 (300시간)', () => {
       store.initializeCompetitors(3, 50_000_000)
-      // 1개월 (30일 × 3600틱)
-      advanceNTicks(store, 108000)
+      // 1개월 (30일 × 10시간)
+      advanceNTicks(store, 300)
     })
   })
 
@@ -283,10 +283,10 @@ describe('성능 벤치마크: AI 경쟁자 거래 (AI Trading)', () => {
   describe('장기 경쟁 시뮬레이션', () => {
     bench('5명 경쟁자 1년 시뮬레이션 (메모리 효율)', () => {
       store.initializeCompetitors(5, 50_000_000)
-      // 1년 = 365일 × 3600틱 = 1,314,000틱
-      // 일부 틱만 처리 (성능 벤치마크용)
-      for (let day = 0; day < 365; day++) {
-        advanceNTicks(store, 3600)
+      // 1년 = 360일 × 10시간 = 3,600시간
+      // 일부 시간만 처리 (성능 벤치마크용)
+      for (let day = 0; day < 360; day++) {
+        advanceNTicks(store, 10)
         // 매일 순위 계산
         if (day % 30 === 0) {
           store.calculateRankings()
@@ -298,8 +298,8 @@ describe('성능 벤치마크: AI 경쟁자 거래 (AI Trading)', () => {
       store.initializeCompetitors(3, 50_000_000)
       // 5년 (단계적 처리)
       for (let year = 0; year < 5; year++) {
-        for (let day = 0; day < 365; day++) {
-          advanceNTicks(store, 3600)
+        for (let day = 0; day < 360; day++) {
+          advanceNTicks(store, 10)
           // 월간 순위 계산
           if (day % 30 === 0) {
             store.calculateRankings()
@@ -312,7 +312,7 @@ describe('성능 벤치마크: AI 경쟁자 거래 (AI Trading)', () => {
       store.initializeCompetitors(10, 50_000_000)
       // 3개월 시뮬레이션
       for (let day = 0; day < 90; day++) {
-        advanceNTicks(store, 3600)
+        advanceNTicks(store, 10)
         // 주간 순위 계산
         if (day % 7 === 0) {
           store.calculateRankings()

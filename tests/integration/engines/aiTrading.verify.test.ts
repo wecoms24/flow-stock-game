@@ -35,7 +35,7 @@ function makeUptrend(ticks: number): Company[] {
   return COMPANIES.map((c) => {
     const history: number[] = [c.price * 0.8]
     for (let i = 1; i < ticks; i++) {
-      history.push(history[i - 1] * 1.005) // 매틱 +0.5%
+      history.push(history[i - 1] * 1.005) // 매시간 +0.5%
     }
     return {
       ...c,
@@ -50,7 +50,7 @@ function makeDowntrend(ticks: number): Company[] {
   return COMPANIES.map((c) => {
     const history: number[] = [c.price * 1.3]
     for (let i = 1; i < ticks; i++) {
-      history.push(history[i - 1] * 0.993) // 매틱 -0.7%
+      history.push(history[i - 1] * 0.993) // 매시간 -0.7%
     }
     return {
       ...c,
@@ -160,13 +160,13 @@ describe('AI 거래 실제 동작 검증', () => {
       if (buy) {
         expect(buy.quantity).toBeGreaterThan(0)
         expect(buy.price).toBeGreaterThan(0)
-        expect(buy.symbol).toBeTruthy()
+        expect(buy.companyId).toBeTruthy()
         expect(buy.competitorId).toBe(shark.id)
 
         // 매수 비용이 현금 이내여야 한다
         const cost = buy.quantity * buy.price
         expect(cost).toBeLessThanOrEqual(shark.cash)
-        console.log(`[Buy 검증] ${buy.symbol} x${buy.quantity} @ ₩${buy.price.toLocaleString()} = ₩${cost.toLocaleString()}`)
+        console.log(`[Buy 검증] ${buy.companyId} x${buy.quantity} @ ₩${buy.price.toLocaleString()} = ₩${cost.toLocaleString()}`)
         return // 하나 찾으면 충분
       }
     }
@@ -216,7 +216,7 @@ describe('AI 거래 실제 동작 검증', () => {
     const target = companies[0]
 
     // -15% 손실 포지션 설정
-    comp.portfolio[target.ticker] = {
+    comp.portfolio[target.id] = {
       companyId: target.id,
       shares: 100,
       avgBuyPrice: target.price * 1.18, // 현재가 대비 18% 비싸게 매수 → -15% 손실
@@ -243,7 +243,7 @@ describe('AI 거래 실제 동작 검증', () => {
     const companies = makeCompaniesWithHistory(50)
     const target = companies[0]
 
-    comp.portfolio[target.ticker] = {
+    comp.portfolio[target.id] = {
       companyId: target.id,
       shares: 100,
       avgBuyPrice: target.price * 1.18,

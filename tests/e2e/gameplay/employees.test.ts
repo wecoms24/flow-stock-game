@@ -45,16 +45,16 @@ describe('E2E: 직원 생애주기 (Employee Lifecycle)', () => {
       expect(store.getState().player.employees[0].id).toBe(employee.id)
     })
 
-    it('직원 고용 시 월간 경비에 월급 1/3이 추가된다', () => {
+    it('직원 고용 시 월간 경비에 월급이 추가된다', () => {
       // Given: 초기 상태 (경비 0), 월급 300,000
       expect(store.getState().player.monthlyExpenses).toBe(0)
-      const employee = createTestEmployee({ salaryPerMonth: 300_000 })
+      const employee = createTestEmployee({ salary: 300_000 })
 
       // When: 직원 고용
       hireEmployee(store, employee)
 
-      // Then: 월간 경비 +100,000 (300,000 / 3)
-      expect(store.getState().player.monthlyExpenses).toBe(100_000)
+      // Then: 월간 경비 = salary
+      expect(store.getState().player.monthlyExpenses).toBe(300_000)
     })
 
     it('직원 고용 후 직원 정보가 올바르게 저장된다', () => {
@@ -79,9 +79,9 @@ describe('E2E: 직원 생애주기 (Employee Lifecycle)', () => {
 
     it('직원 해고 시 직원이 제거되고 월간 경비가 감소한다', () => {
       // Given: 고용된 직원 1명
-      const employee = createTestEmployee({ id: 'emp_1', salaryPerMonth: 300_000 })
+      const employee = createTestEmployee({ id: 'emp_1', salary: 300_000 })
       hireEmployee(store, employee)
-      expect(store.getState().player.monthlyExpenses).toBe(100_000)
+      expect(store.getState().player.monthlyExpenses).toBe(300_000)
 
       // When: 직원 해고
       const state = store.getState()
@@ -90,7 +90,7 @@ describe('E2E: 직원 생애주기 (Employee Lifecycle)', () => {
         player: {
           ...state.player,
           employees,
-          monthlyExpenses: state.player.monthlyExpenses - 100_000,
+          monthlyExpenses: state.player.monthlyExpenses - 300_000,
         },
       })
 
@@ -101,17 +101,17 @@ describe('E2E: 직원 생애주기 (Employee Lifecycle)', () => {
 
     it('복수 직원 고용으로 월간 경비가 누적된다', () => {
       // Given: 초기 상태
-      const emp1 = createTestEmployee({ id: 'emp_1', salaryPerMonth: 300_000 })
-      const emp2 = createTestEmployee({ id: 'emp_2', salaryPerMonth: 600_000 })
-      const emp3 = createTestEmployee({ id: 'emp_3', salaryPerMonth: 450_000 })
+      const emp1 = createTestEmployee({ id: 'emp_1', salary: 300_000 })
+      const emp2 = createTestEmployee({ id: 'emp_2', salary: 600_000 })
+      const emp3 = createTestEmployee({ id: 'emp_3', salary: 450_000 })
 
       // When: 3명 고용
       hireEmployee(store, emp1)
       hireEmployee(store, emp2)
       hireEmployee(store, emp3)
 
-      // Then: 총 월간 경비 450,000 (100k + 200k + 150k)
-      expect(store.getState().player.monthlyExpenses).toBe(450_000)
+      // Then: 총 월간 경비 1,350,000 (300k + 600k + 450k)
+      expect(store.getState().player.monthlyExpenses).toBe(1_350_000)
     })
   })
 
@@ -317,7 +317,7 @@ describe('E2E: 직원 생애주기 (Employee Lifecycle)', () => {
 
   describe('스트레스 시스템 (Stress)', () => {
     /**
-     * 스트레스 누적: 업무 10 틱당 +1
+     * 스트레스 누적: 업무 10시간당 +1
      * 스트레스 케어: -15 (50K 비용, HR 매니저)
      * 상담 후 회복: 스트레스 감소 → 만족도 회복
      */
@@ -326,7 +326,7 @@ describe('E2E: 직원 생애주기 (Employee Lifecycle)', () => {
       const employee = createTestEmployee({ stress: 0 })
       hireEmployee(store, employee)
 
-      // When: 10틱 근무 (스트레스 +1)
+      // When: 10시간 근무 (스트레스 +1)
       const state = store.getState()
       const employees = state.player.employees.map((e: any) => ({
         ...e,
@@ -626,12 +626,12 @@ describe('E2E: 직원 생애주기 (Employee Lifecycle)', () => {
       }))
       store.setState({ player: { ...state2.player, employees } })
 
-      // And: 레벨 30 달성 (마스터)
+      // And: 레벨 30 달성 (마스터) — xp는 레벨 유지를 위해 threshold 미만으로 설정
       const state3 = store.getState()
       employees = state3.player.employees.map((e: any) => ({
         ...e,
         level: 30,
-        xp: xpForLevel(30),
+        xp: xpForLevel(30) - 1,
       }))
       store.setState({ player: { ...state3.player, employees } })
 

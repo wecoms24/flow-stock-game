@@ -39,10 +39,10 @@ export default function App() {
 
   // Check ending conditions every new day
   useEffect(() => {
-    if (isGameStarted && !isGameOver && time.tick === 0) {
+    if (isGameStarted && !isGameOver && time.hour === 9) {
       checkEnding()
     }
-  }, [isGameStarted, isGameOver, time.year, time.month, time.day, time.tick, checkEnding])
+  }, [isGameStarted, isGameOver, time.year, time.month, time.day, time.hour, checkEnding])
 
   if (!isGameStarted) {
     return (
