@@ -12,6 +12,7 @@ const MENU_ITEMS = [
   { category: '거래', type: 'chart' as WindowType, icon: 'chart' as IconName, label: '차트', menuLabel: '차트' },
   { category: '거래', type: 'trading' as WindowType, icon: 'trading' as IconName, label: '매매', menuLabel: '매매' },
   { category: '거래', type: 'proposals' as WindowType, icon: 'document' as IconName, label: '제안서', menuLabel: 'AI 제안서' },
+  { category: '거래', type: 'acquisition' as WindowType, icon: 'office' as IconName, label: 'M&A', menuLabel: '기업 인수(M&A)' },
   { category: '정보', type: 'news' as WindowType, icon: 'news' as IconName, label: '뉴스', menuLabel: '뉴스' },
   { category: '정보', type: 'institutional' as WindowType, icon: 'institution' as IconName, label: '기관', menuLabel: '기관 투자자' },
   { category: '관리', type: 'office' as WindowType, icon: 'office' as IconName, label: '사무실', menuLabel: '사무실' },

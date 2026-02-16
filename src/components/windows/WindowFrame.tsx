@@ -19,6 +19,7 @@ const WINDOW_SIZE_CONSTRAINTS: Record<
   ending: { minWidth: 500, minHeight: 400 },
   institutional: { minWidth: 400, minHeight: 500 },
   proposals: { minWidth: 350, minHeight: 300 },
+  acquisition: { minWidth: 600, minHeight: 500 },
 }
 
 /* ── Resize Handle Directions ── */

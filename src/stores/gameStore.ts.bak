@@ -2477,12 +2477,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // M&A 뉴스 생성 (동적 import)
     import('../engines/newsEngine').then(({ createMnaNews }) => {
-      const currentState = get()
       const news = createMnaNews(
         deal,
         { id: playerAcquirerId, name: '당신', ticker: 'PLAYER', sector: target.sector },
-        target,
-        currentState.time,
+        state.time,
       )
       set((s) => ({
         news: [news, ...s.news],

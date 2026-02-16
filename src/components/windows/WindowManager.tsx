@@ -12,6 +12,7 @@ import { OfficeHistoryWindow } from './OfficeHistoryWindow'
 import { EmployeeDetailWindow } from './EmployeeDetailWindow'
 import { InstitutionalWindow } from './InstitutionalWindow'
 import { ProposalListWindow } from './ProposalListWindow'
+import { AcquisitionWindow } from './AcquisitionWindow'
 import type { WindowType } from '../../types'
 
 const WINDOW_COMPONENTS: Record<WindowType, React.ComponentType<unknown>> = {
@@ -27,6 +28,7 @@ const WINDOW_COMPONENTS: Record<WindowType, React.ComponentType<unknown>> = {
   ending: EndingScreen as React.ComponentType<unknown>,
   institutional: InstitutionalWindow as React.ComponentType<unknown>,
   proposals: ProposalListWindow as React.ComponentType<unknown>,
+  acquisition: AcquisitionWindow as React.ComponentType<unknown>,
 }
 
 export function WindowManager() {

@@ -381,6 +381,7 @@ export type WindowType =
   | 'ending'
   | 'institutional'
   | 'proposals'
+  | 'acquisition'
 
 export type WindowLayoutPreset =
   | 'trading'
@@ -548,4 +549,24 @@ export interface MnaHistoryEntry {
   tick: number
   dealPrice: number
   headcountImpact?: { before: number; after: number }
+}
+
+/* ── Player Acquisition Types ── */
+
+export interface AcquisitionTarget {
+  company: Company
+  premium: number // 최소 프리미엄 (0.3 = 30%)
+  totalCost: number // 인수 총 비용
+  riskScore: number // 리스크 점수 (0-100, 낮을수록 안전)
+  synergy: number // 시너지 점수 (0-100, 높을수록 좋음)
+  expectedLayoffRate: number // 예상 해고율
+}
+
+export interface PlayerAcquisitionHistory {
+  companyId: string
+  companyName: string
+  tick: number
+  cost: number
+  premium: number
+  layoffRate: number
 }
