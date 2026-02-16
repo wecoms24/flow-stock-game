@@ -4,7 +4,16 @@ import { RetroButton } from '../ui/RetroButton'
 import { soundManager } from '../../systems/soundManager'
 
 export function SettingsWindow() {
-  const { time, config, setSpeed, togglePause, startGame } = useGameStore()
+  const {
+    time,
+    config,
+    setSpeed,
+    togglePause,
+    startGame,
+    personalizationEnabled,
+    setPersonalizationEnabled,
+    playerProfile,
+  } = useGameStore()
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled)
   const [volume, setVolume] = useState(soundManager.volume)
 
@@ -92,6 +101,43 @@ export function SettingsWindow() {
             />
             <span className="text-[10px] w-8 text-right">{Math.round(volume * 100)}%</span>
           </div>
+        </div>
+      </div>
+
+      {/* Personalization */}
+      <div className="space-y-1">
+        <div className="font-bold">🎯 개인화 시스템</div>
+        <div className="win-inset bg-white p-2 space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-retro-gray">개인화 기능:</span>
+            <RetroButton
+              size="sm"
+              onClick={() => setPersonalizationEnabled(!personalizationEnabled)}
+              className={personalizationEnabled ? 'win-pressed' : ''}
+            >
+              {personalizationEnabled ? 'ON' : 'OFF'}
+            </RetroButton>
+          </div>
+          {personalizationEnabled && (
+            <div className="text-[10px] space-y-0.5 mt-1 border-t border-retro-gray/30 pt-1">
+              <div className="flex justify-between">
+                <span className="text-retro-gray">위험 선호:</span>
+                <span>{(playerProfile.riskTolerance * 100).toFixed(0)}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-retro-gray">플레이 속도:</span>
+                <span>{(playerProfile.playPace * 100).toFixed(0)}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-retro-gray">집중도:</span>
+                <span>{(playerProfile.attention * 100).toFixed(0)}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-retro-gray">학습 단계:</span>
+                <span className="uppercase">{playerProfile.learningStage}</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

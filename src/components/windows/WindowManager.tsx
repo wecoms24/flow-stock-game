@@ -10,19 +10,23 @@ import { SettingsWindow } from './SettingsWindow'
 import { EndingScreen } from './EndingScreen'
 import { OfficeHistoryWindow } from './OfficeHistoryWindow'
 import { EmployeeDetailWindow } from './EmployeeDetailWindow'
+import { InstitutionalWindow } from './InstitutionalWindow'
+import { ProposalListWindow } from './ProposalListWindow'
 import type { WindowType } from '../../types'
 
-const WINDOW_COMPONENTS: Record<WindowType, React.ComponentType<Record<string, unknown>>> = {
-  portfolio: PortfolioWindow as React.ComponentType<Record<string, unknown>>,
-  chart: ChartWindow as React.ComponentType<Record<string, unknown>>,
-  trading: TradingWindow as React.ComponentType<Record<string, unknown>>,
-  news: NewsWindow as React.ComponentType<Record<string, unknown>>,
-  office: OfficeWindow as React.ComponentType<Record<string, unknown>>,
-  ranking: RankingWindow as React.ComponentType<Record<string, unknown>>,
-  office_history: OfficeHistoryWindow as React.ComponentType<Record<string, unknown>>,
-  employee_detail: EmployeeDetailWindow as React.ComponentType<Record<string, unknown>>,
-  settings: SettingsWindow as React.ComponentType<Record<string, unknown>>,
-  ending: EndingScreen as React.ComponentType<Record<string, unknown>>,
+const WINDOW_COMPONENTS: Record<WindowType, React.ComponentType<unknown>> = {
+  portfolio: PortfolioWindow as React.ComponentType<unknown>,
+  chart: ChartWindow as React.ComponentType<unknown>,
+  trading: TradingWindow as React.ComponentType<unknown>,
+  news: NewsWindow as React.ComponentType<unknown>,
+  office: OfficeWindow as React.ComponentType<unknown>,
+  ranking: RankingWindow as React.ComponentType<unknown>,
+  office_history: OfficeHistoryWindow as React.ComponentType<unknown>,
+  employee_detail: EmployeeDetailWindow as React.ComponentType<unknown>,
+  settings: SettingsWindow as React.ComponentType<unknown>,
+  ending: EndingScreen as React.ComponentType<unknown>,
+  institutional: InstitutionalWindow as React.ComponentType<unknown>,
+  proposals: ProposalListWindow as React.ComponentType<unknown>,
 }
 
 export function WindowManager() {

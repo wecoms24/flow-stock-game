@@ -35,9 +35,30 @@ export function RankingWindow() {
   const config = useGameStore((s) => s.config)
   const competitorCount = useGameStore((s) => s.competitorCount)
   const competitorActions = useGameStore((s) => s.competitorActions)
+  const playerProfile = useGameStore((s) => s.playerProfile)
+  const personalizationEnabled = useGameStore((s) => s.personalizationEnabled)
 
-  const [activeTab, setActiveTab] = useState<TabId>('ranking')
   const [selectedCompetitorId, setSelectedCompetitorId] = useState<string | null>(null)
+
+  // Personalization: default tab based on attention level
+  const defaultTab = useMemo<TabId>(() => {
+    if (!personalizationEnabled) return 'trades'
+    // High attention → detail tab (but only if there's a selected competitor)
+    if (playerProfile.attention > 0.7 && selectedCompetitorId) return 'detail'
+    // Low attention → ranking tab
+    if (playerProfile.attention < 0.3) return 'ranking'
+    // Medium attention → trades tab
+    return 'trades'
+  }, [personalizationEnabled, playerProfile.attention, selectedCompetitorId])
+
+  const [activeTab, setActiveTab] = useState<TabId>(defaultTab)
+
+  // Personalization: Taunt visibility state (default collapsed for conservative players)
+  const [tauntExpanded, setTauntExpanded] = useState(() => {
+    if (!personalizationEnabled) return true
+    // Conservative players (riskTolerance < 0.3) → collapsed by default
+    return playerProfile.riskTolerance >= 0.3
+  })
 
   // Only subscribe to companies when detail tab is active (avoids per-tick re-renders)
   const needsCompanies = activeTab === 'detail' && !!selectedCompetitorId
@@ -200,8 +221,14 @@ export function RankingWindow() {
           <RetroButton
             size="sm"
             variant={activeTab === 'detail' ? 'primary' : 'default'}
-            onClick={() => setActiveTab('detail')}
-            disabled={!selectedCompetitorId}
+            onClick={() => {
+              // 경쟁자가 선택되지 않았으면 첫 번째 경쟁자 자동 선택
+              if (!selectedCompetitorId && competitors.length > 0) {
+                setSelectedCompetitorId(competitors[0].id)
+              }
+              setActiveTab('detail')
+            }}
+            title={!selectedCompetitorId && competitors.length > 0 ? '첫 번째 경쟁자의 상세 정보 보기' : '선택한 경쟁자의 상세 정보'}
           >
             👤 상세
           </RetroButton>
@@ -233,6 +260,7 @@ export function RankingWindow() {
                       <th className="p-1 text-right">Assets</th>
                       <th className="p-1 text-right">ROI</th>
                       <th className="p-1 text-right">1-Day</th>
+                      <th className="p-1"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -280,6 +308,20 @@ export function RankingWindow() {
                           {entry.trend === 'down' && <span className="text-red-600">📉</span>}
                           {entry.trend === 'same' && <span className="text-retro-gray">—</span>}
                         </td>
+                        <td className="p-1">
+                          {!entry.isPlayer && (
+                            <RetroButton
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleCompetitorClick(entry.id)
+                              }}
+                              className="text-[9px] px-1 py-0.5"
+                            >
+                              상세
+                            </RetroButton>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -288,34 +330,43 @@ export function RankingWindow() {
 
               {/* Taunt Feed */}
               <div className="border-2 border-win-shadow bg-white p-2 shrink-0">
-                <div className="text-[10px] font-bold mb-1 flex items-center gap-1">
-                  💬 Rival Talk
+                <div className="text-[10px] font-bold mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1">💬 Rival Talk</span>
+                  <button
+                    onClick={() => setTauntExpanded(!tauntExpanded)}
+                    className="text-[9px] px-1 hover:bg-gray-100 rounded"
+                    title={tauntExpanded ? 'Collapse' : 'Expand'}
+                  >
+                    {tauntExpanded ? '▼' : '▶'}
+                  </button>
                 </div>
-                <div className="space-y-1">
-                  {taunts.length === 0 && (
-                    <div className="text-[9px] text-retro-gray italic">No messages yet...</div>
-                  )}
-                  {taunts
-                    .slice(-5)
-                    .reverse()
-                    .map((taunt) => (
-                      <div
-                        key={`${taunt.timestamp}-${taunt.competitorId}`}
-                        className={`text-[9px] p-1 rounded ${
-                          taunt.type === 'panic'
-                            ? 'bg-red-50 border-l-2 border-red-500'
-                            : taunt.type === 'champion'
-                              ? 'bg-yellow-50 border-l-2 border-yellow-500'
-                              : taunt.type === 'overtake_player'
-                                ? 'bg-purple-50 border-l-2 border-purple-500'
-                                : 'bg-blue-50 border-l-2 border-blue-500'
-                        }`}
-                      >
-                        <span className="font-semibold">{taunt.competitorName}:</span>
-                        <span className="ml-1 text-retro-gray">{taunt.message}</span>
-                      </div>
-                    ))}
-                </div>
+                {tauntExpanded && (
+                  <div className="space-y-1">
+                    {taunts.length === 0 && (
+                      <div className="text-[9px] text-retro-gray italic">No messages yet...</div>
+                    )}
+                    {taunts
+                      .slice(-5)
+                      .reverse()
+                      .map((taunt, index) => (
+                        <div
+                          key={`${taunt.timestamp}-${taunt.competitorId}-${taunt.type}-${index}`}
+                          className={`text-[9px] p-1 rounded ${
+                            taunt.type === 'panic'
+                              ? 'bg-red-50 border-l-2 border-red-500'
+                              : taunt.type === 'champion'
+                                ? 'bg-yellow-50 border-l-2 border-yellow-500'
+                                : taunt.type === 'overtake_player'
+                                  ? 'bg-purple-50 border-l-2 border-purple-500'
+                                  : 'bg-blue-50 border-l-2 border-blue-500'
+                          }`}
+                        >
+                          <span className="font-semibold">{taunt.competitorName}:</span>
+                          <span className="ml-1 text-retro-gray">{taunt.message}</span>
+                        </div>
+                      ))}
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -339,7 +390,7 @@ export function RankingWindow() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedActions.map((action) => {
+                    {sortedActions.map((action, index) => {
                       const display = ACTION_DISPLAY[action.action] ?? {
                         label: action.action,
                         color: '',
@@ -348,7 +399,7 @@ export function RankingWindow() {
                       const isPanic = action.action === 'panic_sell'
                       return (
                         <tr
-                          key={`${action.timestamp}-${action.competitorId}-${action.companyId}`}
+                          key={`${action.timestamp}-${action.competitorId}-${action.companyId}-${index}`}
                           className={`border-b border-win-shadow ${isPanic ? 'bg-red-50' : 'hover:bg-win-face'}`}
                         >
                           <td className="p-1 font-medium">
@@ -481,7 +532,7 @@ export function RankingWindow() {
                             </tr>
                           </thead>
                           <tbody>
-                            {competitorTradeHistory.map((action) => {
+                            {competitorTradeHistory.map((action, index) => {
                               const display = ACTION_DISPLAY[action.action] ?? {
                                 label: action.action,
                                 color: '',
@@ -489,7 +540,7 @@ export function RankingWindow() {
                               }
                               return (
                                 <tr
-                                  key={`${action.timestamp}-${action.companyId}`}
+                                  key={`${action.timestamp}-${selectedCompetitorId}-${action.companyId}-${index}`}
                                   className={`border-b border-win-shadow ${action.action === 'panic_sell' ? 'bg-red-50' : ''}`}
                                 >
                                   <td className={`p-0.5 font-bold ${display.color}`}>
@@ -521,9 +572,9 @@ export function RankingWindow() {
                         {competitorTaunts
                           .slice(-10)
                           .reverse()
-                          .map((taunt) => (
+                          .map((taunt, index) => (
                             <div
-                              key={`${taunt.timestamp}-${taunt.type}`}
+                              key={`${taunt.timestamp}-${taunt.competitorId}-${taunt.type}-${index}`}
                               className={`text-[9px] p-1 rounded ${
                                 taunt.type === 'panic'
                                   ? 'bg-red-50 border-l-2 border-red-500'

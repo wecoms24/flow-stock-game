@@ -1,4 +1,4 @@
-import type { Company, Sector } from '../types'
+import type { Company, Sector, Financials, InstitutionalFlow } from '../types'
 
 /* ── 섹터별 이벤트 감응도 기본값 ── */
 // 이벤트 타입별 감응도 (1.0 = 기본, >1.0 = 민감, <1.0 = 둔감)
@@ -13,6 +13,50 @@ const SECTOR_SENSITIVITY: Record<Sector, Record<string, number>> = {
   materials: { policy: 0.9, global: 1.3, boom: 1.1, crash: 1.2, macro: 1.4, regulation: 0.8 },
   utilities: { policy: 1.4, global: 0.6, boom: 0.5, crash: 0.6, regulation: 1.8, macro: 0.7 },
   realestate: { policy: 1.6, global: 1.0, boom: 1.3, crash: 1.4, regulation: 1.5, macro: 1.5 },
+}
+
+/* ── 섹터별 재무 특성 템플릿 ── */
+const SECTOR_FINANCIALS: Record<Sector, Partial<Financials>> = {
+  tech: {
+    growthRate: 0.15, // 고성장
+    debtRatio: 1.8, // 고부채 (투자 활발)
+  },
+  finance: {
+    growthRate: 0.05, // 안정 성장
+    debtRatio: 1.2, // 중간 부채
+  },
+  energy: {
+    growthRate: 0.02, // 저성장
+    debtRatio: 1.5, // 중간 부채
+  },
+  healthcare: {
+    growthRate: 0.12, // 중고성장
+    debtRatio: 1.6, // 중고부채 (R&D 투자)
+  },
+  consumer: {
+    growthRate: 0.06, // 중간 성장
+    debtRatio: 1.3, // 중간 부채
+  },
+  industrial: {
+    growthRate: 0.04, // 저중성장
+    debtRatio: 1.4, // 중간 부채
+  },
+  telecom: {
+    growthRate: 0.03, // 저성장
+    debtRatio: 1.7, // 중고부채 (인프라 투자)
+  },
+  materials: {
+    growthRate: 0.03, // 저성장
+    debtRatio: 1.5, // 중간 부채
+  },
+  utilities: {
+    growthRate: 0.02, // 저성장
+    debtRatio: 1.1, // 저부채 (안정적)
+  },
+  realestate: {
+    growthRate: 0.05, // 중간 성장
+    debtRatio: 2.2, // 고부채 (레버리지 활용)
+  },
 }
 
 /* ── 100 Virtual Companies: 10 sectors x 10 companies ── */
@@ -34,17 +78,38 @@ function makeCompany(
     sector,
     price,
     previousPrice: price,
-    basePrice: price, // Initial/reference price for GBM
+    basePrice: price, // Initial/reference price for GBM (IPO price)
+    sessionOpenPrice: price, // Initial session open price
     priceHistory: [price],
     volatility,
     drift,
     marketCap: price * 1_000_000,
     description,
     eventSensitivity: SECTOR_SENSITIVITY[sector],
+    // Regime-based volatilities
+    regimeVolatilities: {
+      CALM: volatility * 0.5, // 평시: 기존의 50%
+      VOLATILE: volatility, // 고변동: 기존 값 유지
+      CRISIS: volatility * 2.0, // 위기: 기존의 2배
+    },
+    // Default values - will be overridden by initializeCompanyFinancials
+    financials: {
+      revenue: 0,
+      netIncome: 0,
+      debtRatio: 0,
+      growthRate: 0,
+      eps: 0,
+    },
+    institutionFlow: {
+      netBuyVolume: 0,
+      topBuyers: [],
+      topSellers: [],
+      institutionalOwnership: 0,
+    },
   }
 }
 
-export { SECTOR_SENSITIVITY }
+export { SECTOR_SENSITIVITY, SECTOR_FINANCIALS }
 
 export const COMPANIES: Company[] = [
   // ── Tech (10) ──
@@ -176,3 +241,38 @@ export const COMPANIES: Company[] = [
   makeCompany('re-09', '주차솔루션', 'PKS', 'realestate', 15000, 0.18, 0.04, '주차 인프라'),
   makeCompany('re-10', '공유오피스넷', 'CON', 'realestate', 33000, 0.32, 0.08, '공유오피스 운영'),
 ]
+
+/* ── Company 재무 데이터 초기화 함수 ── */
+export function initializeCompanyFinancials(company: Company): Company {
+  const template = SECTOR_FINANCIALS[company.sector] || {}
+
+  // 재무 데이터 생성
+  const financials: Financials = {
+    revenue: 1000 + Math.random() * 9000, // 1000억 ~ 1조
+    netIncome:
+      Math.random() > 0.2
+        ? 100 + Math.random() * 900 // 80% 확률로 흑자
+        : -(Math.random() * 200), // 20% 확률로 적자
+    debtRatio: (template.debtRatio ?? 1.5) * (0.8 + Math.random() * 0.4), // ±20% 변동
+    growthRate: (template.growthRate ?? 0.05) * (0.5 + Math.random() * 1.5), // ±50% 변동
+    eps: Math.random() * 10000,
+  }
+
+  // 기관 수급 초기화
+  const institutionFlow: InstitutionalFlow = {
+    netBuyVolume: 0,
+    topBuyers: [],
+    topSellers: [],
+    institutionalOwnership: 0.3 + Math.random() * 0.4, // 30% ~ 70%
+  }
+
+  return {
+    ...company,
+    financials,
+    institutionFlow,
+    // Initialize VI (Volatility Interruption) fields
+    viTriggered: false,
+    viCooldown: 0,
+    viRecentPrices: [],
+  }
+}

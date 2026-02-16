@@ -50,6 +50,7 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
     isCustomAum: false,
   })
   const [selectedGoalIdx, setSelectedGoalIdx] = useState(1) // default: 억만장자 (10억)
+  const [customInitialCash, setCustomInitialCash] = useState<string>('') // 커스텀 초기 자본 (빈 문자열 = 난이도 기본값 사용)
 
   // Boot animation: reveal lines one by one
   useEffect(() => {
@@ -83,8 +84,13 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
   ]
 
   const handleStartGame = (difficulty: Difficulty) => {
+    // Parse custom initial cash (빈 문자열이면 undefined → 난이도 기본값 사용)
+    const parsedCustomCash = customInitialCash.trim()
+      ? parseInt(customInitialCash.replace(/[^0-9]/g, ''), 10)
+      : undefined
+    const initialCash = parsedCustomCash ?? DIFFICULTY_TABLE[difficulty].initialCash
+
     if (competitorSetup.enabled) {
-      const initialCash = DIFFICULTY_TABLE[difficulty].initialCash
       // Use custom AUM if manually adjusted, otherwise use difficulty default
       const multiplier = competitorSetup.isCustomAum
         ? competitorSetup.aumMultiplier
@@ -95,7 +101,7 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
       initializeCompetitors(competitorSetup.count, perCompetitorCash)
     }
 
-    startGame(difficulty, VICTORY_GOALS[selectedGoalIdx].targetAsset)
+    startGame(difficulty, VICTORY_GOALS[selectedGoalIdx].targetAsset, parsedCustomCash)
   }
 
   const competitorNames = [
@@ -278,28 +284,76 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
             </div>
           </RetroPanel>
 
+          {/* Custom Initial Cash Input */}
+          <RetroPanel variant="inset" className="p-3 space-y-2">
+            <div className="text-sm font-bold">💰 초기 자본 설정:</div>
+            <div className="space-y-1">
+              <label className="block text-xs text-retro-gray">
+                커스텀 초기 자본 (비워두면 난이도별 기본값 사용)
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={customInitialCash}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/[^0-9]/g, '')
+                    setCustomInitialCash(value)
+                  }}
+                  placeholder="예: 50000000"
+                  className="flex-1 px-2 py-1 text-sm border-2 border-win-shadow bg-white focus:border-win-highlight outline-none"
+                />
+                <button
+                  onClick={() => setCustomInitialCash('')}
+                  className="px-2 py-1 text-xs bg-win-face border border-win-shadow hover:bg-win-highlight/10"
+                >
+                  초기화
+                </button>
+              </div>
+              {customInitialCash && (
+                <div className="text-xs text-stock-up font-bold">
+                  설정된 초기 자본: {parseInt(customInitialCash).toLocaleString()}원
+                </div>
+              )}
+            </div>
+          </RetroPanel>
+
           <div className="space-y-2">
             <div className="text-sm font-bold">새 게임 시작:</div>
-            {difficulties.map((d) => (
-              <RetroPanel key={d.key} variant="inset" className="p-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-sm">{d.label}</div>
-                    <div className="text-[10px] text-retro-gray">{d.desc}</div>
-                    <div className="text-[10px]">
-                      초기자본: <span className="text-retro-darkblue font-bold">{d.cash}</span>
-                      {' · '}목표:{' '}
-                      <span className="text-stock-up font-bold">
-                        {VICTORY_GOALS[selectedGoalIdx].description}
-                      </span>
+            {difficulties.map((d) => {
+              const effectiveCash = customInitialCash.trim()
+                ? parseInt(customInitialCash)
+                : DIFFICULTY_TABLE[d.key].initialCash
+              return (
+                <RetroPanel key={d.key} variant="inset" className="p-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-bold text-sm">{d.label}</div>
+                      <div className="text-[10px] text-retro-gray">{d.desc}</div>
+                      <div className="text-[10px]">
+                        초기자본:{' '}
+                        <span className="text-retro-darkblue font-bold">
+                          {customInitialCash.trim() ? (
+                            <>
+                              {effectiveCash.toLocaleString()}원{' '}
+                              <span className="text-retro-gray">(커스텀)</span>
+                            </>
+                          ) : (
+                            d.cash
+                          )}
+                        </span>
+                        {' · '}목표:{' '}
+                        <span className="text-stock-up font-bold">
+                          {VICTORY_GOALS[selectedGoalIdx].description}
+                        </span>
+                      </div>
                     </div>
+                    <RetroButton variant="primary" onClick={() => handleStartGame(d.key)}>
+                      {competitorSetup.enabled ? '⚔️ Battle!' : '시작'}
+                    </RetroButton>
                   </div>
-                  <RetroButton variant="primary" onClick={() => handleStartGame(d.key)}>
-                    {competitorSetup.enabled ? '⚔️ Battle!' : '시작'}
-                  </RetroButton>
-                </div>
-              </RetroPanel>
-            ))}
+                </RetroPanel>
+              )
+            })}
           </div>
 
           <div className="text-[10px] text-retro-gray text-center">

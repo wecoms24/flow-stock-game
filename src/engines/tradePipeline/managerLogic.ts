@@ -2,6 +2,7 @@
 
 import type { Employee, PortfolioPosition } from '../../types'
 import type { TradeProposal } from '../../types/trade'
+import type { PlayerProfile } from '../../types/personalization'
 import { TRADE_AI_CONFIG } from '../../config/tradeAIConfig'
 
 /**
@@ -13,6 +14,10 @@ import { TRADE_AI_CONFIG } from '../../config/tradeAIConfig'
  * - perfectionist: +5 confidence weight
  * - tech_savvy: +10% accuracy (fewer mistakes)
  *
+ * Personalization modifiers (v3.1):
+ * - riskTolerance < 0.3: +7 threshold (more conservative)
+ * - riskTolerance > 0.7: -5 threshold (more aggressive)
+ *
  * No manager fallback: auto-approve with 30% mistake rate
  * Insufficient funds for buy: auto-reject
  */
@@ -21,7 +26,9 @@ export function evaluateRisk(
   manager: Employee | null,
   playerCash: number,
   portfolio: Record<string, PortfolioPosition>,
-): { approved: boolean; reason?: string; isMistake?: boolean } {
+  playerProfile?: PlayerProfile,
+  personalizationEnabled?: boolean,
+): { approved: boolean; reason?: string; isMistake?: boolean; approvalBias?: number } {
   // Insufficient funds check for buy orders
   if (proposal.direction === 'buy') {
     const estimatedCost = proposal.targetPrice * proposal.quantity * 1.02 // 2% buffer for slippage
@@ -72,6 +79,17 @@ export function evaluateRisk(
     }
   }
 
+  // Personalization: Apply approval bias based on player's risk tolerance
+  let approvalBias = 0
+  if (personalizationEnabled && playerProfile) {
+    if (playerProfile.riskTolerance < 0.3) {
+      approvalBias = +7 // Conservative: raise threshold (harder to approve)
+    } else if (playerProfile.riskTolerance > 0.7) {
+      approvalBias = -5 // Aggressive: lower threshold (easier to approve)
+    }
+    threshold += approvalBias
+  }
+
   const approved = effectiveConfidence >= threshold
 
   // Mistake calculation: lower-skill managers make more mistakes
@@ -84,5 +102,6 @@ export function evaluateRisk(
     approved,
     reason: approved ? undefined : 'risk_too_high',
     isMistake,
+    approvalBias: personalizationEnabled ? approvalBias : undefined,
   }
 }

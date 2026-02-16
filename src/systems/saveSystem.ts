@@ -7,7 +7,7 @@ const DB_NAME = 'retro-stock-os'
 const DB_VERSION = 1
 const STORE_NAME = 'saves'
 const AUTO_SAVE_KEY = 'autosave'
-const SAVE_VERSION = 3
+const SAVE_VERSION = 4
 
 /** Build ticker→companyId lookup from COMPANIES data */
 const TICKER_TO_ID: Record<string, string> = {}
@@ -49,6 +49,20 @@ function migrateSaveData(data: Record<string, unknown>): SaveData {
       }
     }
     data.version = 3
+  }
+
+  // v3 → v4: add sessionOpenPrice to companies
+  if ((data.version as number) < 4) {
+    const companies = data.companies as Array<Record<string, unknown>> | undefined
+    if (companies && Array.isArray(companies)) {
+      for (const company of companies) {
+        // If sessionOpenPrice doesn't exist, set it to current price
+        if (!('sessionOpenPrice' in company)) {
+          company.sessionOpenPrice = company.price
+        }
+      }
+    }
+    data.version = 4
   }
 
   return data as unknown as SaveData

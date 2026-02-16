@@ -107,11 +107,11 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
         {/* Traits */}
         {emp.traits && emp.traits.length > 0 && (
           <div className="mt-1 flex gap-1 flex-wrap">
-            {emp.traits.map((trait) => {
+            {emp.traits.map((trait, traitIndex) => {
               const def = TRAIT_DEFINITIONS[trait]
               return (
                 <span
-                  key={trait}
+                  key={`${emp.id}-${trait}-${traitIndex}`}
                   className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[9px] ${
                     def.rarity === 'rare'
                       ? 'bg-yellow-50 border-yellow-400 text-yellow-800'
@@ -278,7 +278,7 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
           <div className="font-bold text-[10px] mb-1">최근 활동</div>
           <div className="space-y-0.5">
             {recentLog.map((log, i) => (
-              <div key={i} className="text-[9px] flex items-center gap-1">
+              <div key={`${log.day}-${log.event}-${i}`} className="text-[9px] flex items-center gap-1">
                 <span className="text-retro-gray">Day {log.day}</span>
                 <span
                   className={

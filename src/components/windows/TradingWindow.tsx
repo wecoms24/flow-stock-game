@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
+import { isPriceLimitHit } from '../../config/priceLimit'
+import { isVIHalted, getVIRemainingTicks } from '../../engines/viEngine'
 
 interface TradingWindowProps {
   companyId?: string
@@ -14,6 +16,8 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
   const buyStock = useGameStore((s) => s.buyStock)
   const sellStock = useGameStore((s) => s.sellStock)
   const updateWindowProps = useGameStore((s) => s.updateWindowProps)
+  const canTrade = useGameStore((s) => s.canTrade)
+  const circuitBreaker = useGameStore((s) => s.circuitBreaker)
 
   const [selectedId, setSelectedId] = useState(companyId ?? companies[0]?.id ?? '')
   const [shares, setShares] = useState(1)
@@ -248,8 +252,32 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
             <span className={`ml-1 ${isUp ? 'text-stock-up' : 'text-stock-down'}`}>
               {isUp ? '▲' : '▼'}{Math.abs(changePercent).toFixed(1)}%
             </span>
+            {/* Price Limit Indicator */}
+            {(() => {
+              const limitHit = isPriceLimitHit(company.price, company.sessionOpenPrice)
+              if (limitHit === 'upper') {
+                return <span className="ml-2 text-xs text-red-600 font-bold">▲상한가</span>
+              }
+              if (limitHit === 'lower') {
+                return <span className="ml-2 text-xs text-blue-600 font-bold">▼하한가</span>
+              }
+              return null
+            })()}
+            {/* VI Indicator */}
+            {isVIHalted(company) && (
+              <span className="ml-2 text-xs text-yellow-600 font-bold animate-pulse">
+                ⚠️ VI 발동 중 ({getVIRemainingTicks(company)}h)
+              </span>
+            )}
           </div>
         </div>
+
+        {/* Circuit Breaker Warning */}
+        {circuitBreaker.isActive && circuitBreaker.remainingTicks > 0 && (
+          <div className="bg-red-600 text-white text-xs px-2 py-1 text-center font-bold">
+            🚨 서킷브레이커 발동 - 전 종목 거래 정지
+          </div>
+        )}
 
         {/* 매수/매도 토글 */}
         <div className="flex gap-0.5">
@@ -348,13 +376,19 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
             size="md"
             onClick={handleTrade}
             disabled={
-              mode === 'buy'
+              !canTrade(selectedId) || // Trading halted (circuit breaker or VI)
+              (mode === 'buy'
                 ? totalCost > player.cash || shares <= 0
-                : shares > maxSellable || shares <= 0
+                : shares > maxSellable || shares <= 0)
             }
             className={mode === 'buy' ? 'text-stock-up' : ''}
           >
-            {mode === 'buy' ? `${shares}주 매수` : `${shares}주 매도`}
+            {!canTrade(selectedId)
+              ? '거래정지'
+              : mode === 'buy'
+                ? `${shares}주 매수`
+                : `${shares}주 매도`
+            }
           </RetroButton>
         </div>
 

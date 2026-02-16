@@ -99,14 +99,14 @@ export function OfficeWindow() {
     }
   }, [player.employees, time.hour, time.day])
 
-  // Initialize grid if not exists
-  if (!player.officeGrid) {
-    initializeOfficeGrid()
-  }
+  // Initialize grid if not exists (must be in useEffect to avoid setState during render)
+  useEffect(() => {
+    if (!player.officeGrid) {
+      initializeOfficeGrid()
+    }
+  }, [player.officeGrid, initializeOfficeGrid])
 
-  const grid = player.officeGrid!
-
-  // ESC key to cancel placement
+  // ESC key to cancel placement (must be before early return to maintain hook order)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && placementMode) {
@@ -117,9 +117,9 @@ export function OfficeWindow() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [placementMode])
 
-  // Calculate placement preview
+  // Calculate placement preview (must be before early return to maintain hook order)
   const placementPreview = useMemo(() => {
-    if (!hoveredCell || !selectedFurnitureType) return null
+    if (!player.officeGrid || !hoveredCell || !selectedFurnitureType) return null
     const catalog = FURNITURE_CATALOG[selectedFurnitureType]
     const cells: { x: number; y: number; valid: boolean }[] = []
 
@@ -128,15 +128,26 @@ export function OfficeWindow() {
         const x = hoveredCell.x + dx
         const y = hoveredCell.y + dy
         const valid =
-          x < grid.size.width &&
-          y < grid.size.height &&
-          grid.cells[y]?.[x]?.occupiedBy === null
+          x < player.officeGrid.size.width &&
+          y < player.officeGrid.size.height &&
+          player.officeGrid.cells[y]?.[x]?.occupiedBy === null
         cells.push({ x, y, valid })
       }
     }
 
     return { cells, allValid: cells.every((c) => c.valid) }
-  }, [hoveredCell, selectedFurnitureType, grid])
+  }, [hoveredCell, selectedFurnitureType, player.officeGrid])
+
+  // Early return if grid not initialized yet
+  if (!player.officeGrid) {
+    return (
+      <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+        사무실을 초기화하는 중...
+      </div>
+    )
+  }
+
+  const grid = player.officeGrid
 
   // Handle cell click
   const handleCellClick = (x: number, y: number) => {
@@ -507,8 +518,12 @@ export function OfficeWindow() {
                           >
                             {emp.name}
                           </span>
-                          {emp.traits?.map((trait) => (
-                            <span key={trait} className="text-[8px]" title={TRAIT_DEFINITIONS[trait].name}>
+                          {emp.traits?.map((trait, traitIndex) => (
+                            <span
+                              key={`${emp.id}-${trait}-${traitIndex}`}
+                              className="text-[8px]"
+                              title={TRAIT_DEFINITIONS[trait].name}
+                            >
                               {TRAIT_DEFINITIONS[trait].icon}
                             </span>
                           ))}

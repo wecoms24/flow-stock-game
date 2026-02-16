@@ -9,7 +9,7 @@ interface Toast {
   type: string
 }
 
-const MAX_TOASTS = 3
+const MAX_TOASTS = 2
 const TOAST_DURATION = 4000
 
 export function OfficeToast() {

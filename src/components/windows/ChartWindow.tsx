@@ -141,10 +141,14 @@ ChartJS.register(
 )
 
 const PERIOD_OPTIONS = [
-  { label: '30일', ticks: 300 }, // 30 days × 10 ticks
-  { label: '90일', ticks: 900 },
-  { label: '180일', ticks: 1800 },
-  { label: '전체', ticks: 0 }, // 0 = show all
+  { label: '1일', ticks: 10 },
+  { label: '1주', ticks: 70 },
+  { label: '2주', ticks: 140 },
+  { label: '1개월', ticks: 300 },
+  { label: '3개월', ticks: 900 },
+  { label: '6개월', ticks: 1800 },
+  { label: '1년', ticks: 3600 },
+  { label: '전체', ticks: 0 },
 ] as const
 
 type SortOption = 'name' | 'price' | 'change' | 'sector'
@@ -181,7 +185,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   const [sectorFilter, setSectorFilter] = useState<string>('all')
   const [sortBy, setSortBy] = useState<SortOption>('name')
   const [changeFilter, setChangeFilter] = useState<ChangeFilter>('all')
-  const [showFilters, setShowFilters] = useState(false)
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
 
   // Filter and sort companies
   const filteredCompanies = useMemo(() => {
@@ -227,6 +231,21 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
     return result
   }, [companies, searchTerm, sectorFilter, changeFilter, sortBy])
 
+  // Auto-select first company if current selection is filtered out
+  useEffect(() => {
+    if (filteredCompanies.length > 0 && !filteredCompanies.find((c) => c.id === selectedId)) {
+      setSelectedId(filteredCompanies[0].id)
+    }
+  }, [filteredCompanies, selectedId])
+
+  // Reset all filters
+  const resetFilters = () => {
+    setSearchTerm('')
+    setSectorFilter('all')
+    setChangeFilter('all')
+    setSortBy('name')
+  }
+
   const selected = companies.find((c) => c.id === selectedId)
 
   // Filter events relevant to selected company
@@ -253,7 +272,35 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
     if (!selected) return null
     const history =
       periodTicks > 0 ? selected.priceHistory.slice(-periodTicks) : selected.priceHistory
-    const labels = history.map((_, i) => `${i}`)
+
+    // Generate date labels based on period
+    const labels = history.map((_, i) => {
+      const ticksAgo = history.length - 1 - i
+      const daysAgo = Math.floor(ticksAgo / 10)
+      const hoursAgo = ticksAgo % 10
+
+      // 현재 시간에서 거슬러 올라가기
+      const year = currentTime.year
+      const month = currentTime.month
+      const day = currentTime.day - daysAgo
+      const hour = currentTime.hour - hoursAgo
+
+      // 기간에 따라 라벨 포맷 변경
+      if (periodTicks <= 10) {
+        // 1일: 시간 표시
+        return `${String(Math.max(0, hour)).padStart(2, '0')}시`
+      } else if (periodTicks <= 140) {
+        // 2주 이하: 일 단위
+        return `${Math.max(1, day)}일`
+      } else if (periodTicks <= 900) {
+        // 3개월 이하: 월.일
+        return `${month}.${Math.max(1, day)}`
+      } else {
+        // 그 이상: 년.월
+        return `${year}.${month}`
+      }
+    })
+
     return {
       labels,
       datasets: [
@@ -270,7 +317,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
         },
       ],
     }
-  }, [selected, periodTicks])
+  }, [selected, periodTicks, currentTime])
 
   // Calculate event markers for the chart (with band end positions)
   const eventMarkers = useMemo(() => {
@@ -335,7 +382,17 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
       animation: { duration: 0 } as const,
       scales: {
         x: {
-          display: false,
+          display: true,
+          ticks: {
+            font: { family: 'DungGeunMo', size: 9 },
+            maxRotation: 45,
+            minRotation: 45,
+            autoSkip: true,
+            maxTicksLimit: periodTicks <= 10 ? 10 : periodTicks <= 70 ? 7 : periodTicks <= 300 ? 10 : 12,
+          },
+          grid: {
+            display: false,
+          },
         },
         y: {
           ticks: {
@@ -360,7 +417,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
         },
       },
     }),
-    [eventMarkers, fearGreedIdx],
+    [eventMarkers, fearGreedIdx, periodTicks],
   )
 
   if (!selected || !chartData) {
@@ -371,31 +428,113 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   const changePercent = selected.previousPrice ? (change / selected.previousPrice) * 100 : 0
   const isUp = change >= 0
 
+  const sectors = [
+    { value: 'all', label: '전체', emoji: '📊' },
+    { value: 'tech', label: '기술', emoji: '💻' },
+    { value: 'finance', label: '금융', emoji: '🏦' },
+    { value: 'energy', label: '에너지', emoji: '⚡' },
+    { value: 'healthcare', label: '헬스', emoji: '🏥' },
+    { value: 'consumer', label: '소비재', emoji: '🛒' },
+  ]
+
+  const hasActiveFilters = searchTerm || sectorFilter !== 'all' || changeFilter !== 'all'
+
   return (
     <div className="flex flex-col h-full text-xs">
-      {/* Ticker selector + period toggle */}
-      <div className="flex items-center gap-1 mb-1 flex-wrap">
-        <select
-          className="win-inset bg-white px-1 py-0.5 text-xs"
-          value={selectedId}
-          onChange={(e) => setSelectedId(e.target.value)}
-        >
-          {filteredCompanies.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.ticker} - {c.name}
-            </option>
+      {/* 검색 및 빠른 필터 (항상 표시) */}
+      <div className="win-inset bg-white p-1 mb-1 space-y-1">
+        {/* 검색창 */}
+        <div className="flex items-center gap-1">
+          <input
+            type="text"
+            placeholder="🔍 티커/이름 검색..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="flex-1 win-inset bg-white px-1.5 py-0.5 text-xs"
+          />
+          {hasActiveFilters && (
+            <RetroButton size="sm" onClick={resetFilters} className="text-[10px]">
+              초기화
+            </RetroButton>
+          )}
+        </div>
+
+        {/* 빠른 섹터 필터 */}
+        <div className="flex gap-0.5 flex-wrap">
+          {sectors.map((sector) => (
+            <RetroButton
+              key={sector.value}
+              size="sm"
+              variant={sectorFilter === sector.value ? 'primary' : 'default'}
+              onClick={() => setSectorFilter(sector.value)}
+              className="text-[9px] px-1 py-0.5"
+            >
+              {sector.emoji} {sector.label}
+            </RetroButton>
           ))}
-        </select>
+        </div>
 
-        <RetroButton
-          size="sm"
-          variant={showFilters ? 'primary' : 'default'}
-          onClick={() => setShowFilters(!showFilters)}
-          className="text-[10px]"
-        >
-          필터 {showFilters ? 'ON' : 'OFF'}
-        </RetroButton>
+        {/* 등락률 필터 */}
+        <div className="flex gap-0.5">
+          <RetroButton
+            size="sm"
+            variant={changeFilter === 'all' ? 'primary' : 'default'}
+            onClick={() => setChangeFilter('all')}
+            className="text-[9px] px-1 py-0.5"
+          >
+            전체
+          </RetroButton>
+          <RetroButton
+            size="sm"
+            variant={changeFilter === 'up5' ? 'primary' : 'default'}
+            onClick={() => setChangeFilter('up5')}
+            className="text-[9px] px-1 py-0.5 text-stock-up"
+          >
+            ▲ +5% 이상
+          </RetroButton>
+          <RetroButton
+            size="sm"
+            variant={changeFilter === 'down5' ? 'primary' : 'default'}
+            onClick={() => setChangeFilter('down5')}
+            className="text-[9px] px-1 py-0.5 text-stock-down"
+          >
+            ▼ -5% 이하
+          </RetroButton>
+          <RetroButton
+            size="sm"
+            variant={changeFilter === 'stable' ? 'primary' : 'default'}
+            onClick={() => setChangeFilter('stable')}
+            className="text-[9px] px-1 py-0.5"
+          >
+            ±2% 이내
+          </RetroButton>
+        </div>
 
+        {/* 종목 선택 및 결과 개수 */}
+        <div className="flex items-center gap-1">
+          <select
+            className="flex-1 win-inset bg-white px-1 py-0.5 text-xs"
+            value={selectedId}
+            onChange={(e) => setSelectedId(e.target.value)}
+          >
+            {filteredCompanies.map((c) => {
+              const changePercent = ((c.price - c.previousPrice) / c.previousPrice) * 100
+              const arrow = changePercent >= 0 ? '▲' : '▼'
+              return (
+                <option key={c.id} value={c.id}>
+                  {c.ticker} {arrow} {changePercent.toFixed(1)}% - {c.name}
+                </option>
+              )
+            })}
+          </select>
+          <span className="text-[9px] text-retro-gray shrink-0">
+            {filteredCompanies.length}개
+          </span>
+        </div>
+      </div>
+
+      {/* 기간 및 컨트롤 */}
+      <div className="flex items-center gap-1 mb-1 flex-wrap">
         {/* Period toggle buttons */}
         {PERIOD_OPTIONS.map((opt) => (
           <RetroButton
@@ -408,12 +547,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
           </RetroButton>
         ))}
 
-        <RetroButton
-          size="sm"
-          onClick={() => useGameStore.getState().openWindow('trading', { companyId: selectedId })}
-        >
-          매매
-        </RetroButton>
+        <div className="w-px h-4 bg-win-shadow" />
 
         <RetroButton
           size="sm"
@@ -422,6 +556,22 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
           className="text-[10px]"
         >
           이벤트 {showEventMarkers ? 'ON' : 'OFF'}
+        </RetroButton>
+
+        <RetroButton
+          size="sm"
+          variant={showAdvancedFilters ? 'primary' : 'default'}
+          onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+          className="text-[10px]"
+        >
+          고급 필터
+        </RetroButton>
+
+        <RetroButton
+          size="sm"
+          onClick={() => useGameStore.getState().openWindow('trading', { companyId: selectedId })}
+        >
+          매매
         </RetroButton>
       </div>
 
@@ -434,83 +584,42 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
         </span>
       </div>
 
-      {/* Filter Panel */}
-      {showFilters && (
+      {/* 고급 필터 패널 */}
+      {showAdvancedFilters && (
         <div className="mb-1 win-inset bg-white p-1 space-y-1 text-[10px]">
-          {/* Search */}
+          {/* Sort */}
           <div className="flex items-center gap-1">
-            <span className="text-retro-gray">검색:</span>
-            <input
-              type="text"
-              placeholder="티커/이름"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+            <span className="text-retro-gray">정렬:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortOption)}
               className="flex-1 win-inset bg-white px-1 py-0.5"
-            />
-            {searchTerm && (
-              <RetroButton size="sm" onClick={() => setSearchTerm('')}>
-                X
+            >
+              <option value="name">이름순</option>
+              <option value="price">가격순</option>
+              <option value="change">등락률순</option>
+              <option value="sector">섹터순</option>
+            </select>
+          </div>
+
+          {/* 추가 섹터 */}
+          <div className="flex flex-wrap gap-0.5">
+            <span className="text-retro-gray w-full">추가 섹터:</span>
+            {['industrial', 'telecom', 'materials', 'utilities', 'realestate'].map((sector) => (
+              <RetroButton
+                key={sector}
+                size="sm"
+                variant={sectorFilter === sector ? 'primary' : 'default'}
+                onClick={() => setSectorFilter(sector)}
+                className="text-[9px] px-1 py-0.5"
+              >
+                {sector === 'industrial' && '산업재'}
+                {sector === 'telecom' && '통신'}
+                {sector === 'materials' && '원자재'}
+                {sector === 'utilities' && '유틸리티'}
+                {sector === 'realestate' && '부동산'}
               </RetroButton>
-            )}
-          </div>
-
-          <div className="flex gap-1 flex-wrap">
-            {/* Sector Filter */}
-            <div className="flex items-center gap-1">
-              <span className="text-retro-gray">섹터:</span>
-              <select
-                value={sectorFilter}
-                onChange={(e) => setSectorFilter(e.target.value)}
-                className="win-inset bg-white px-1 py-0.5"
-              >
-                <option value="all">전체</option>
-                <option value="tech">기술</option>
-                <option value="finance">금융</option>
-                <option value="energy">에너지</option>
-                <option value="healthcare">헬스케어</option>
-                <option value="consumer">소비재</option>
-                <option value="industrial">산업재</option>
-                <option value="telecom">통신</option>
-                <option value="materials">원자재</option>
-                <option value="utilities">유틸리티</option>
-                <option value="realestate">부동산</option>
-              </select>
-            </div>
-
-            {/* Change Filter */}
-            <div className="flex items-center gap-1">
-              <span className="text-retro-gray">등락:</span>
-              <select
-                value={changeFilter}
-                onChange={(e) => setChangeFilter(e.target.value as ChangeFilter)}
-                className="win-inset bg-white px-1 py-0.5"
-              >
-                <option value="all">전체</option>
-                <option value="up5">+5% 이상</option>
-                <option value="down5">-5% 이하</option>
-                <option value="stable">±2% 이내</option>
-              </select>
-            </div>
-
-            {/* Sort */}
-            <div className="flex items-center gap-1">
-              <span className="text-retro-gray">정렬:</span>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as SortOption)}
-                className="win-inset bg-white px-1 py-0.5"
-              >
-                <option value="name">이름순</option>
-                <option value="price">가격순</option>
-                <option value="change">등락률순</option>
-                <option value="sector">섹터순</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Result count */}
-          <div className="text-retro-gray text-center">
-            {filteredCompanies.length}개 종목 표시 중
+            ))}
           </div>
         </div>
       )}

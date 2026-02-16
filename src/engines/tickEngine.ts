@@ -14,7 +14,7 @@ import {
   resetSentiment,
 } from './sentimentEngine'
 import { SECTOR_CORRELATION, SPILLOVER_FACTOR } from '../data/sectorCorrelation'
-import type { Sector } from '../types'
+import type { Sector, MarketEvent } from '../types'
 import { getBusinessHourIndex, getAbsoluteTimestamp } from '../config/timeConfig'
 import { MARKET_IMPACT_CONFIG } from '../config/marketImpactConfig'
 
@@ -56,6 +56,24 @@ export function startTickLoop() {
     // Re-read state after time advancement
     const current = useGameStore.getState()
 
+    // Detect and update market regime (HMM-based)
+    current.detectAndUpdateRegime()
+
+    // Update circuit breaker every hour
+    current.updateCircuitBreaker()
+
+    // Update VI states every hour
+    current.updateVIStates()
+
+    // Update institutional flow every hour (섹터 순환 방식)
+    const sectorIndex = current.time.hour % 10
+    current.updateInstitutionalFlowForSector(sectorIndex)
+
+    // Update session open prices at market open (9:00) every day
+    if (current.time.hour === 9) {
+      current.updateSessionOpenPrices()
+    }
+
     // Monthly processing (salary, stamina) on day 1 at market open
     if (current.time.day === 1 && current.time.hour === 9) {
       current.processMonthly()
@@ -63,13 +81,23 @@ export function startTickLoop() {
 
     // Send companies data to worker for GBM price calculation
     const volatilityMul = current.difficultyConfig.volatilityMultiplier
-    const companyData = current.companies.map((c) => ({
-      id: c.id,
-      sector: c.sector,
-      price: c.price,
-      drift: c.drift,
-      volatility: c.volatility * volatilityMul,
-    }))
+    const currentRegime = current.marketRegime.current
+    const companyData = current.companies.map((c) => {
+      // Apply regime-based volatility if defined, otherwise use base volatility
+      const regimeVol = c.regimeVolatilities?.[currentRegime] ?? c.volatility
+      return {
+        id: c.id,
+        sector: c.sector,
+        price: c.price,
+        drift: c.drift,
+        volatility: regimeVol * volatilityMul,
+        financials: c.financials,
+        institutionFlow: c.institutionFlow,
+        sessionOpenPrice: c.sessionOpenPrice,
+        basePrice: c.basePrice,
+        marketCap: c.marketCap,
+      }
+    })
 
     // Build event modifiers with propagation delay + eventSensitivity
     const eventModifiers = current.events
@@ -159,7 +187,7 @@ export function startTickLoop() {
       }
     }
 
-    const dt = 1 / 10 // 하루 10시간, 1시간 = 1/10일
+    const dt = 1 / (10 * 365) // 1 tick = 1 hour = 1/(10*365) year (연간 비율로 전달)
 
     // Build order flow data for market impact
     const orderFlowEntries = Object.entries(current.orderFlowByCompany)
@@ -435,4 +463,24 @@ function checkRankChanges(rankings: Array<{ name: string; rank: number; isPlayer
     },
     {} as Record<string, number>,
   )
+}
+
+/* ── Market Sentiment Calculation ── */
+/**
+ * Calculate market sentiment based on active events
+ * Returns a value between 0.7 and 1.3
+ * 1.0 = neutral, >1.0 = bullish, <1.0 = bearish
+ */
+export function calculateMarketSentiment(events: MarketEvent[]): number {
+  let sentiment = 1.0
+
+  events.forEach((evt) => {
+    if (evt.type === 'boom' || (evt.type === 'global' && evt.impact.driftModifier > 0)) {
+      sentiment += 0.1
+    } else if (evt.type === 'crash') {
+      sentiment -= 0.2
+    }
+  })
+
+  return Math.max(0.7, Math.min(1.3, sentiment)) // 0.7 ~ 1.3 범위
 }

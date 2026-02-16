@@ -16,6 +16,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { LevelUpOverlay } from './components/effects/LevelUpOverlay'
 import { FloatingTextContainer } from './components/effects/FloatingText'
 import { OfficeToast } from './components/ui/OfficeToast'
+import { RegimeToast } from './components/ui/RegimeToast'
 import { hasSaveData } from './systems/saveSystem'
 
 export default function App() {
@@ -68,6 +69,7 @@ export default function App() {
         <FloatingTextContainer />
         <LevelUpOverlay />
         <OfficeToast />
+        <RegimeToast />
 
         {isGameOver && <EndingScreen />}
 

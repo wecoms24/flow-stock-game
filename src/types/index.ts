@@ -5,6 +5,36 @@ export interface PricePoint {
   price: number
 }
 
+/* ── Institutional Investor System Types ── */
+
+// 재무 데이터 (펀더멘털)
+export interface Financials {
+  revenue: number // 연 매출액 (억 원)
+  netIncome: number // 연 순이익 (억 원, 음수 가능)
+  debtRatio: number // 부채비율 (0.5 ~ 3.0, 높을수록 위험)
+  growthRate: number // 성장률 (-0.3 ~ 0.5, drift 조정에 사용)
+  eps: number // 주당순이익 (정보성)
+}
+
+// 기관 수급 데이터
+export interface InstitutionalFlow {
+  netBuyVolume: number // 순매수량 (양수: 매수우위, 음수: 매도우위)
+  topBuyers: string[] // 주요 매수 기관명 (최대 3개)
+  topSellers: string[] // 주요 매도 기관명 (최대 3개)
+  institutionalOwnership: number // 기관 보유 비중 (0.0 ~ 1.0, 정보성)
+}
+
+// 기관 투자자
+export interface Institution {
+  id: string
+  name: string
+  type: 'HedgeFund' | 'Pension' | 'Bank' | 'Algorithm'
+  riskAppetite: number // 위험 선호도 (0.0 ~ 1.0, 높을수록 변동성 큰 주식 선호)
+  capital: number // 운용 자산 (10억 ~ 100억)
+  algoStrategy?: 'momentum' | 'meanReversion' | 'volatility' // 알고리즘 전략 (Algorithm 타입만)
+  tradeCooldowns?: Record<string, number> // 거래 쿨다운 { companyId: expiryTick }
+}
+
 export interface Company {
   id: string
   name: string
@@ -12,13 +42,23 @@ export interface Company {
   sector: Sector
   price: number
   previousPrice: number
-  basePrice: number // Initial/reference price for GBM
+  basePrice: number // Initial/reference price for GBM (also used as IPO price for absolute bounds)
+  sessionOpenPrice: number // Session open price for daily price limits (updated at market open)
   priceHistory: number[]
   volatility: number // sigma for GBM
   drift: number // mu for GBM
   marketCap: number
   description: string
   eventSensitivity?: Record<string, number> // 이벤트 카테고리별 감응도 (1.0 = 기본)
+  financials: Financials // 재무 데이터
+  institutionFlow: InstitutionalFlow // 기관 수급
+  institutionFlowHistory?: number[] // 최근 10일 기관 순매수량 추이
+  accumulatedInstitutionalShares?: number // 누적 기관 매수 주식 수 (보유 비중 계산용)
+  regimeVolatilities?: RegimeVolatilities // 레짐별 변동성 (선택적 for backward compat)
+  // VI (Volatility Interruption) fields
+  viTriggered?: boolean // VI 발동 중 여부
+  viCooldown?: number // VI 쿨다운 (남은 틱 수)
+  viRecentPrices?: number[] // 최근 3 ticks 가격 (VI 감지용)
 }
 
 export type Sector =
@@ -332,8 +372,16 @@ export type WindowType =
   | 'ranking'
   | 'settings'
   | 'ending'
+  | 'institutional'
+  | 'proposals'
 
-export type WindowLayoutPreset = 'trading' | 'analysis' | 'dashboard'
+export type WindowLayoutPreset =
+  | 'trading'
+  | 'analysis'
+  | 'dashboard'
+  | 'ai-trading'
+  | 'institutional'
+  | 'comprehensive'
 
 export type NewsSentiment = 'positive' | 'negative' | 'neutral'
 
@@ -403,6 +451,7 @@ export interface SaveData {
   timestamp: number
   config: GameConfig
   time: GameTime
+  currentTick?: number // Game tick counter (optional for backward compat)
   player: PlayerState
   companies: Array<{ id: string; price: number; previousPrice: number; priceHistory: number[] }>
   events: MarketEvent[]
@@ -411,6 +460,16 @@ export interface SaveData {
   competitorCount?: number
   proposals?: import('./trade').TradeProposal[] // Trade AI Pipeline (optional for backward compat)
   lastProcessedMonth?: number // Monthly processing tracking
+  institutions?: Institution[] // Institutional investors (optional for backward compat)
+  // Market Regime System
+  marketRegime?: RegimeState
+  marketIndexHistory?: number[]
+  // Korean Price Limit System
+  circuitBreaker?: import('../engines/circuitBreakerEngine').CircuitBreakerState
+  // Personalization System (v3.1)
+  playerEventLog?: import('./personalization').PlayerEvent[]
+  playerProfile?: import('./personalization').PlayerProfile
+  personalizationEnabled?: boolean
 }
 
 /* ── Investment Battle Mode Types ── */
@@ -429,6 +488,7 @@ export interface Competitor {
   initialAssets: number
   lastDayChange: number // Yesterday's ROI - Today's ROI
   panicSellCooldown: number // Ticks until next panic sell possible
+  isMirrorRival?: boolean // True if this competitor mirrors player behavior
 }
 
 export interface CompetitorAction {
@@ -454,4 +514,19 @@ export interface TauntMessage {
   message: string
   type: 'rank_up' | 'rank_down' | 'overtake_player' | 'panic' | 'champion'
   timestamp: number
+}
+
+/* ── Market Regime System (HMM-based) ── */
+export type MarketRegime = 'CALM' | 'VOLATILE' | 'CRISIS'
+
+export interface RegimeState {
+  current: MarketRegime
+  duration: number // hours in current regime
+  transitionProb: Record<MarketRegime, number> // next regime probabilities
+}
+
+export interface RegimeVolatilities {
+  CALM: number // 평시 변동성 (기존의 50%)
+  VOLATILE: number // 고변동 구간 (기존 값 유지)
+  CRISIS: number // 위기 수준 (기존의 2배)
 }

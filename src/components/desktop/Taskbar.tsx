@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { PixelIcon } from '../ui/PixelIcon'
+import { NotificationCenter } from '../ui/NotificationCenter'
 import { formatHour } from '../../config/timeConfig'
 import type { WindowType, WindowLayoutPreset } from '../../types'
 
@@ -9,6 +10,8 @@ const TASKBAR_ITEMS: { type: WindowType; icon: string; label: string }[] = [
   { type: 'portfolio', icon: 'portfolio', label: '포트폴리오' },
   { type: 'chart', icon: 'chart', label: '차트' },
   { type: 'trading', icon: 'trading', label: '매매' },
+  { type: 'proposals', icon: 'trading', label: '제안서' },
+  { type: 'institutional', icon: 'news', label: '기관' },
   { type: 'news', icon: 'news', label: '뉴스' },
   { type: 'office', icon: 'office', label: '사무실' },
   { type: 'office_history', icon: 'office_history', label: '히스토리' },
@@ -20,6 +23,9 @@ const LAYOUT_PRESETS: { preset: WindowLayoutPreset; label: string; icon: string 
   { preset: 'trading', label: '트레이딩', icon: '📊' },
   { preset: 'analysis', label: '분석', icon: '📈' },
   { preset: 'dashboard', label: '대시보드', icon: '🎛️' },
+  { preset: 'ai-trading', label: 'AI 트레이딩', icon: '🤖' },
+  { preset: 'institutional', label: '기관 모니터링', icon: '🏦' },
+  { preset: 'comprehensive', label: '종합 분석', icon: '📋' },
 ]
 
 export function Taskbar() {
@@ -37,8 +43,18 @@ export function Taskbar() {
 
   const [showLayoutMenu, setShowLayoutMenu] = useState(false)
 
+  const companies = useGameStore((s) => s.companies)
+  const marketRegime = useGameStore((s) => s.marketRegime)
+  const circuitBreaker = useGameStore((s) => s.circuitBreaker)
+
   const handleOpenWindow = (type: WindowType) => {
-    openWindow(type)
+    // Institutional window needs a companyId prop
+    if (type === 'institutional') {
+      const firstCompany = companies[0]
+      openWindow(type, { companyId: firstCompany?.id || 'tech-01' })
+    } else {
+      openWindow(type)
+    }
     if (type === 'news') markNewsRead()
   }
 
@@ -144,6 +160,42 @@ export function Taskbar() {
           </RetroButton>
         ))}
       </div>
+
+      <div className="w-px h-5 bg-win-shadow mx-0.5" />
+
+      {/* Circuit Breaker Indicator */}
+      {circuitBreaker.isActive && circuitBreaker.remainingTicks > 0 && (
+        <div
+          className="win-inset px-2 py-0.5 text-[10px] shrink-0 flex items-center gap-1 bg-red-600 text-white font-bold animate-pulse"
+          title={`서킷브레이커 Level ${circuitBreaker.level} - KOSPI ${((circuitBreaker.kospiCurrent - circuitBreaker.kospiSessionOpen) / circuitBreaker.kospiSessionOpen * 100).toFixed(1)}%`}
+        >
+          <span>🚨</span>
+          <span>CB Lv{circuitBreaker.level}</span>
+          {circuitBreaker.level < 3 && <span>{circuitBreaker.remainingTicks}h</span>}
+        </div>
+      )}
+
+      {/* Market Regime Indicator */}
+      <div
+        className={`win-inset px-2 py-0.5 text-[10px] shrink-0 flex items-center gap-1 ${
+          marketRegime.current === 'CRISIS' ? 'animate-pulse' : ''
+        }`}
+        title={`시장 레짐: ${marketRegime.current} (${marketRegime.duration}시간)`}
+      >
+        {marketRegime.current === 'CALM' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />}
+        {marketRegime.current === 'VOLATILE' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-500" />}
+        {marketRegime.current === 'CRISIS' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-600" />}
+        <span className="font-bold">
+          {marketRegime.current === 'CALM' && '평온'}
+          {marketRegime.current === 'VOLATILE' && '변동'}
+          {marketRegime.current === 'CRISIS' && '위기'}
+        </span>
+      </div>
+
+      <div className="w-px h-5 bg-win-shadow mx-0.5" />
+
+      {/* Notification Center */}
+      <NotificationCenter />
 
       <div className="w-px h-5 bg-win-shadow mx-0.5" />
 

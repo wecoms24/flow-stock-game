@@ -1,4 +1,5 @@
 import type { Competitor, Company, TradingStyle, CompetitorAction } from '../types'
+import type { PlayerProfile } from '../types/personalization'
 import { PANIC_SELL_CONFIG, AI_STRATEGY_CONFIG, PERFORMANCE_CONFIG } from '../config/aiConfig'
 import { calculateMA, calculateRSI } from '../utils/technicalIndicators'
 
@@ -375,6 +376,8 @@ export function processAITrading(
   companies: Company[],
   tick: number,
   priceHistory: Record<string, number[]>,
+  playerProfile?: PlayerProfile,
+  personalizationEnabled?: boolean,
 ): CompetitorAction[] {
   const actions: CompetitorAction[] = []
 
@@ -392,7 +395,24 @@ export function processAITrading(
     const action = strategy(competitor, companies, tick, priceHistory)
 
     if (action) {
-      actions.push(action)
+      // 3. Mirror Rival: adjust parameters based on player profile
+      if (competitor.isMirrorRival && personalizationEnabled && playerProfile) {
+        const positionMultiplier = playerProfile.riskTolerance // 0.0-1.0
+        // Note: playerProfile.playPace affects frequency (handled in shouldTrade, not here)
+
+        // Adjust position size based on player's risk tolerance
+        const adjustedQuantity = Math.max(
+          1,
+          Math.floor(action.quantity * (0.5 + positionMultiplier)),
+        )
+
+        actions.push({
+          ...action,
+          quantity: adjustedQuantity,
+        })
+      } else {
+        actions.push(action)
+      }
     }
   })
 
@@ -426,7 +446,7 @@ export function generateCompetitors(count: number, startingCash: number): Compet
   const styles: TradingStyle[] = ['aggressive', 'conservative', 'trend-follower', 'contrarian']
   const shuffledNames = [...COMPETITOR_NAMES].sort(() => Math.random() - 0.5)
 
-  return Array.from({ length: count }, (_, i) => ({
+  const competitors = Array.from({ length: count }, (_, i) => ({
     id: `competitor-${i}`,
     name: shuffledNames[i % shuffledNames.length],
     avatar: AVATARS[i % AVATARS.length],
@@ -438,7 +458,16 @@ export function generateCompetitors(count: number, startingCash: number): Compet
     initialAssets: startingCash,
     lastDayChange: 0,
     panicSellCooldown: 0,
+    isMirrorRival: false,
   }))
+
+  // Designate one competitor as Mirror Rival (personalization feature)
+  if (competitors.length > 0) {
+    const mirrorIndex = Math.floor(Math.random() * competitors.length)
+    competitors[mirrorIndex].isMirrorRival = true
+  }
+
+  return competitors
 }
 
 // ===== Price History Helper =====

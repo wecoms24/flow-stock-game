@@ -20,16 +20,22 @@ import type {
   TauntMessage,
   LevelUpEvent,
   OrderFlow,
+  Institution,
+  Sector,
 } from '../types'
 import type { OfficeGrid, FurnitureType, FurnitureItem } from '../types/office'
 import type { TradeProposal, ProposalStatus } from '../types/trade'
+import type { PlayerEvent, PlayerProfile } from '../types/personalization'
+import { MAX_EVENT_LOG_SIZE, defaultProfile } from '../types/personalization'
+import { computeProfileFromEvents } from '../systems/personalization/profile'
 import { TRADE_AI_CONFIG } from '../config/tradeAIConfig'
 import { getAbsoluteTimestamp } from '../config/timeConfig'
 import { OFFICE_BALANCE } from '../config/balanceConfig'
 import { EMPLOYEE_ROLE_CONFIG } from '../types'
-import { COMPANIES } from '../data/companies'
+import { COMPANIES, initializeCompanyFinancials } from '../data/companies'
 import { DIFFICULTY_TABLE } from '../data/difficulty'
 import { generateEmployeeName, resetNamePool, generateRandomTraits, generateInitialSkills, generateAssignedSectors } from '../data/employees'
+import { calculateMarketSentiment } from '../engines/tickEngine'
 import { TRAIT_DEFINITIONS } from '../data/traits'
 import { FURNITURE_CATALOG, canBuyFurniture } from '../data/furniture'
 import { saveGame, loadGame, deleteSave } from '../systems/saveSystem'
@@ -38,6 +44,10 @@ import {
   processAITrading,
   getPriceHistory,
 } from '../engines/competitorEngine'
+import {
+  generateInstitutions,
+  simulateInstitutionalTrading,
+} from '../engines/institutionEngine'
 import { PANIC_SELL_CONFIG, PERFORMANCE_CONFIG } from '../config/aiConfig'
 import { xpForLevel, titleForLevel, badgeForLevel, SKILL_UNLOCKS, XP_AMOUNTS } from '../systems/growthSystem'
 import { soundManager } from '../systems/soundManager'
@@ -51,6 +61,24 @@ import { analyzeStock, generateProposal } from '../engines/tradePipeline/analyst
 import { evaluateRisk } from '../engines/tradePipeline/managerLogic'
 import { executeProposal } from '../engines/tradePipeline/traderLogic'
 import { calculateAdjacencyBonus } from '../engines/tradePipeline/adjacencyBonus'
+import {
+  initializeRegimeState,
+  calculateMarketIndex,
+  updateRegimeState,
+} from '../engines/regimeEngine'
+import {
+  calculateKOSPIIndex,
+  checkCircuitBreaker,
+  resetCircuitBreakerForNewDay,
+  isTradingHalted,
+} from '../engines/circuitBreakerEngine'
+import {
+  checkVITrigger,
+  updateVIState,
+  triggerVI,
+  isVIHalted,
+  resetVIForNewDay,
+} from '../engines/viEngine'
 
 /* ── Ending Scenarios ── */
 function getEndingScenarios(config: GameConfig): EndingScenario[] {
@@ -110,6 +138,7 @@ interface GameStore {
   // Time
   time: GameTime
   lastProcessedMonth: number
+  currentTick: number // 게임 시작 이후 경과 틱 (매 시간마다 증가)
 
   // Player
   player: PlayerState
@@ -118,6 +147,9 @@ interface GameStore {
   companies: Company[]
   events: MarketEvent[]
   news: NewsItem[]
+  marketRegime: import('../types').RegimeState
+  marketIndexHistory: number[] // last 20 hours for regime detection
+  circuitBreaker: import('../engines/circuitBreakerEngine').CircuitBreakerState
 
   // UI
   windows: WindowState[]
@@ -148,8 +180,22 @@ interface GameStore {
   // Order Flow (Deep Market)
   orderFlowByCompany: Record<string, OrderFlow>
 
+  // Institutional Investors
+  institutions: Institution[]
+
+  // Personalization System
+  playerEventLog: PlayerEvent[]
+  playerProfile: PlayerProfile
+  personalizationEnabled: boolean
+
+  // Actions - Personalization
+  logPlayerEvent: (kind: PlayerEvent['kind'], metadata: Record<string, any>) => void
+  updateProfileOnDayEnd: () => void
+  updateProfileOnMonthEnd: () => void
+  setPersonalizationEnabled: (enabled: boolean) => void
+
   // Actions - Game
-  startGame: (difficulty: Difficulty, targetAsset?: number) => void
+  startGame: (difficulty: Difficulty, targetAsset?: number, customInitialCash?: number) => void
   loadSavedGame: () => Promise<boolean>
   autoSave: () => void
   setSpeed: (speed: GameTime['speed']) => void
@@ -166,9 +212,15 @@ interface GameStore {
 
   // Actions - Market
   updatePrices: (prices: Record<string, number>) => void
+  updateSessionOpenPrices: () => void // Update session open prices at market open
   addEvent: (event: MarketEvent) => void
   addNews: (news: NewsItem) => void
   markNewsRead: () => void
+  detectAndUpdateRegime: () => void
+  calculateMarketIndex: () => number
+  updateCircuitBreaker: () => void
+  updateVIStates: () => void
+  canTrade: (companyId: string) => boolean // Check if trading is allowed (VI + circuit breaker)
 
   // Actions - Employees
   hireEmployee: (role: EmployeeRole) => void
@@ -182,6 +234,11 @@ interface GameStore {
   updateCompetitorAssets: () => void
   calculateRankings: () => Array<{ rank: number; name: string; roi: number; isPlayer: boolean }>
   addTaunt: (taunt: TauntMessage) => void
+
+  // Actions - Institutional Investors
+  initializeInstitutions: () => void
+  updateInstitutionalFlow: () => void
+  updateInstitutionalFlowForSector: (sectorIndex: number) => void
 
   // Actions - Growth System (Sprint 3)
   pendingLevelUp: LevelUpEvent | null
@@ -232,6 +289,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   time: { year: 1995, quarter: 1, month: 1, day: 1, hour: 9, speed: 1, isPaused: true },
   lastProcessedMonth: 0,
+  currentTick: 0,
 
   player: {
     cash: 50_000_000,
@@ -247,6 +305,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   companies: [],
   events: [],
   news: [],
+  marketRegime: initializeRegimeState(),
+  marketIndexHistory: [],
+  circuitBreaker: { level: 0, isActive: false, remainingTicks: 0, triggeredAt: null, kospiSessionOpen: 100, kospiCurrent: 100 },
 
   windows: [],
   nextZIndex: 1,
@@ -264,23 +325,36 @@ export const useGameStore = create<GameStore>((set, get) => ({
   employeeBehaviors: {},
   proposals: [],
   orderFlowByCompany: {},
+  institutions: [],
+
+  // Personalization System
+  playerEventLog: [],
+  playerProfile: defaultProfile(),
+  personalizationEnabled: false,
 
   /* ── Game Actions ── */
-  startGame: (difficulty, targetAsset) => {
+  startGame: (difficulty, targetAsset, customInitialCash) => {
     const dcfg = DIFFICULTY_TABLE[difficulty]
-    const companies = COMPANIES.map((c) => ({
-      ...c,
-      priceHistory: [c.price],
-    }))
+    const companies = COMPANIES.map((c) =>
+      initializeCompanyFinancials({
+        ...c,
+        priceHistory: [c.price],
+      })
+    )
+
+    // Initialize institutions
+    const institutions = generateInstitutions()
 
     resetNamePool()
     employeeIdCounter = 0
+
+    const initialCash = customInitialCash ?? dcfg.initialCash
 
     const cfg: GameConfig = {
       difficulty,
       startYear: dcfg.startYear,
       endYear: dcfg.endYear,
-      initialCash: dcfg.initialCash,
+      initialCash,
       maxCompanies: dcfg.maxCompanies,
       targetAsset: targetAsset ?? 1_000_000_000,
     }
@@ -293,15 +367,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       endingResult: null,
       time: { year: dcfg.startYear, quarter: 1, month: 1, day: 1, hour: 9, speed: 1, isPaused: false },
       lastProcessedMonth: 0,
+      currentTick: 0,
       player: {
-        cash: dcfg.initialCash,
-        totalAssetValue: dcfg.initialCash,
+        cash: initialCash,
+        totalAssetValue: initialCash,
         portfolio: {},
         monthlyExpenses: 0,
         employees: [],
         officeLevel: 1,
         lastDayChange: 0,
-        previousDayAssets: dcfg.initialCash,
+        previousDayAssets: initialCash,
       },
       companies,
       events: [],
@@ -320,6 +395,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       windowIdCounter: 0,
       unreadNewsCount: 1,
       proposals: [],
+      institutions,
+      // Personalization: sync lastUpdatedDay with game start day
+      playerProfile: { ...defaultProfile(), lastUpdatedDay: 1 },
     })
 
     deleteSave()
@@ -399,6 +477,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       isGameOver: false,
       endingResult: null,
       time: loadedTime,
+      currentTick: data.currentTick ?? 0,
       lastProcessedMonth,
       player: migratedPlayer,
       companies,
@@ -411,7 +490,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       officeEvents: [],
       employeeBehaviors: {},
       proposals: data.proposals ?? [],
+      institutions: data.institutions ?? [],
       orderFlowByCompany: {},
+      marketRegime: data.marketRegime ?? initializeRegimeState(),
+      marketIndexHistory: data.marketIndexHistory ?? [],
       windows: [],
       nextZIndex: 1,
       windowIdCounter: 0,
@@ -434,6 +516,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       timestamp: Date.now(),
       config: s.config,
       time: s.time,
+      currentTick: s.currentTick,
       player: s.player,
       companies: s.companies.map((c) => ({
         id: c.id,
@@ -447,6 +530,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       competitorCount: s.competitorCount,
       proposals: s.proposals,
       lastProcessedMonth: s.lastProcessedMonth,
+      institutions: s.institutions,
+      marketRegime: s.marketRegime,
+      marketIndexHistory: s.marketIndexHistory,
     }
     saveGame(data)
   },
@@ -494,6 +580,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ),
     })),
 
+  /**
+   * PIPELINE STAGE 1: Analyst creates PENDING proposals
+   *
+   * State Transition: (None) → PENDING
+   *
+   * Flow:
+   * 1. Find all Analysts with stress < 100 and assigned seats
+   * 2. For each Analyst's assigned sectors:
+   *    - Analyze stocks with RSI/MA indicators
+   *    - If signal strength >= confidence threshold (adjusted by adjacency bonus):
+   *      → Create TradeProposal with status = PENDING
+   * 3. Dedup: If multiple Analysts propose same stock, keep highest confidence only
+   * 4. Apply MAX_PENDING_PROPOSALS limit (FIFO expire)
+   *
+   * Call Frequency: Every 10 ticks (tick % 10 === 0)
+   *
+   * Edge Cases:
+   * - All pipeline employees stress >= 100 → Skip processing, emit warning
+   * - No Analysts seated → Early return
+   * - Manager adjacent → Lower confidence threshold (adjacency bonus)
+   */
   processAnalystTick: () => {
     const s = get()
     if (!s.player.officeGrid) return
@@ -611,6 +718,32 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
+  /**
+   * PIPELINE STAGE 2: Manager reviews PENDING proposals
+   *
+   * State Transitions:
+   * - PENDING → APPROVED (if risk evaluation passes)
+   * - PENDING → REJECTED (if risk too high, insufficient funds, or low confidence)
+   *
+   * Flow:
+   * 1. Find all PENDING proposals
+   * 2. Find Manager with stress < 100 (or null for auto-approval fallback)
+   * 3. For each proposal (1 or 2 if adjacency bonus):
+   *    - Evaluate risk score = confidence - risk factors
+   *    - Risk factors: skill level, fund availability, position concentration, personalization bias
+   *    - If score >= threshold: APPROVED
+   *    - If score < threshold: REJECTED (with specific reason)
+   * 4. If no Manager exists:
+   *    - Auto-approve with 30% mistake rate (isMistake = true)
+   * 5. Apply stress to Analyst on rejection (+5 stress)
+   *
+   * Call Frequency: Every 5 ticks (tick % 5 === 2)
+   *
+   * Edge Cases:
+   * - No Manager → Auto-approve with mistake rate
+   * - Manager adjacent to Analyst → Process 2 proposals per tick instead of 1
+   * - Personalization enabled → Adjust approval bias based on player risk tolerance
+   */
   processManagerTick: () => {
     const s = get()
     if (!s.player.officeGrid) return
@@ -635,7 +768,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     for (let i = 0; i < Math.min(processCount, pendingProposals.length); i++) {
       const proposal = pendingProposals[i]
-      const result = evaluateRisk(proposal, manager, s.player.cash, s.player.portfolio)
+      const result = evaluateRisk(
+        proposal,
+        manager,
+        s.player.cash,
+        s.player.portfolio,
+        s.playerProfile,
+        s.personalizationEnabled,
+      )
 
       updatedProposals = updatedProposals.map((p) => {
         if (p.id !== proposal.id) return p
@@ -669,6 +809,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
         message: `${managerName}: ${msg}`,
         employeeIds: [manager?.id ?? '', proposal.createdByEmployeeId].filter(Boolean),
       })
+
+      // Personalization: log approval bias if applied
+      if (result.approvalBias && result.approvalBias !== 0) {
+        managerEvents.push({
+          timestamp: absoluteTick,
+          type: 'personalization',
+          emoji: '🎯',
+          message: `개인화 정책: 승인 임계치 ${result.approvalBias > 0 ? '+' : ''}${result.approvalBias} 적용`,
+          employeeIds: [],
+        })
+      }
     }
 
     set((st) => ({
@@ -680,6 +831,32 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }))
   },
 
+  /**
+   * PIPELINE STAGE 3: Trader executes APPROVED proposals
+   *
+   * State Transitions:
+   * - APPROVED → EXECUTED (if trade succeeds)
+   * - APPROVED → FAILED (if insufficient funds or portfolio constraint)
+   *
+   * Flow:
+   * 1. Find all APPROVED proposals (FIFO order)
+   * 2. Find Trader with stress < 100 (or null for penalty fallback)
+   * 3. Execute first proposal:
+   *    - Calculate slippage based on Trader skill and adjacency bonus
+   *    - Execute actual trade (buyStock/sellStock)
+   *    - Apply fee (0.1% base, 2x if no Trader)
+   *    - If success: EXECUTED (record executedPrice, slippage)
+   *    - If failure: FAILED (record reason)
+   * 4. Increase satisfaction (+3) for all involved employees (Analyst, Manager, Trader)
+   * 5. Emit toast notification if trade is significant (>= 5% of total assets)
+   *
+   * Call Frequency: Every tick (1 tick)
+   *
+   * Edge Cases:
+   * - No Trader → Execute with 2x fee penalty
+   * - Trader adjacent to Manager → Reduced slippage
+   * - Insufficient funds → FAILED status
+   */
   processTraderTick: () => {
     const s = get()
     if (!s.player.officeGrid) return
@@ -814,9 +991,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
-  setSpeed: (speed) => set((s) => ({ time: { ...s.time, speed } })),
+  setSpeed: (speed) => {
+    set((s) => ({ time: { ...s.time, speed } }))
+    // Personalization: Log settings change
+    get().logPlayerEvent('SETTINGS', { speed })
+  },
 
-  togglePause: () => set((s) => ({ time: { ...s.time, isPaused: !s.time.isPaused } })),
+  togglePause: () => {
+    const wasPaused = get().time.isPaused
+    set((s) => ({ time: { ...s.time, isPaused: !s.time.isPaused } }))
+    // Personalization: Log settings change
+    get().logPlayerEvent('SETTINGS', { isPaused: !wasPaused })
+  },
 
   checkEnding: () => {
     const state = get()
@@ -836,9 +1022,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   /* ── Time ── */
-  advanceHour: () =>
+  advanceHour: () => {
+    const oldDay = get().time.day
+
     set((s) => {
-      const oldDay = s.time.day
       let { year, month, day, hour } = s.time
       hour += 1
       if (hour > 18) {
@@ -873,11 +1060,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       return {
         time: { ...s.time, year, month, day, hour },
+        currentTick: s.currentTick + 1,
         player: updatedPlayer,
         // Reset order flow on day change
         ...(dayChanged ? { orderFlowByCompany: {} } : {}),
       }
-    }),
+    })
+
+    // Personalization: Update profile on day end
+    const newDay = get().time.day
+    if (newDay !== oldDay && get().personalizationEnabled) {
+      get().updateProfileOnDayEnd()
+    }
+  },
 
   /* ── Monthly Processing: salary deduction + stamina drain ── */
   processMonthly: () => {
@@ -1008,10 +1203,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ...(firstLevelUp ? { pendingLevelUp: firstLevelUp } : {}),
       }
     })
+
+    // Personalization: Update profile on month end
+    if (get().personalizationEnabled) {
+      get().updateProfileOnMonthEnd()
+    }
   },
 
   /* ── Trading ── */
   buyStock: (companyId, shares) => {
+    // Check if trading is allowed
+    if (!get().canTrade(companyId)) {
+      soundManager.playClick() // Use available sound method
+      return
+    }
+
     set((s) => {
       if (shares <= 0) return s
       const company = s.companies.find((c) => c.id === companyId)
@@ -1050,6 +1256,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     })
 
+    // Personalization: Log trade event
+    const company = get().companies.find((c) => c.id === companyId)
+    if (company) {
+      get().logPlayerEvent('TRADE', {
+        action: 'buy',
+        companyId,
+        ticker: company.ticker,
+        qty: shares,
+        price: company.price,
+      })
+    }
+
     // Grant trade XP to a random working employee
     const emps = get().player.employees.filter((e) => e.stamina > 0)
     if (emps.length > 0) {
@@ -1059,6 +1277,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   sellStock: (companyId, shares) => {
+    // Check if trading is allowed
+    if (!get().canTrade(companyId)) {
+      soundManager.playClick() // Use available sound method
+      return
+    }
+
     set((s) => {
       if (shares <= 0) return s
       const company = s.companies.find((c) => c.id === companyId)
@@ -1094,6 +1318,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     })
 
+    // Personalization: Log trade event
+    const company = get().companies.find((c) => c.id === companyId)
+    const position = get().player.portfolio[companyId]
+    if (company && position) {
+      const pnl = (company.price - position.avgBuyPrice) * shares
+      get().logPlayerEvent('TRADE', {
+        action: 'sell',
+        companyId,
+        ticker: company.ticker,
+        qty: shares,
+        price: company.price,
+        pnl,
+      })
+    }
+
     // Grant trade XP to a random working employee
     const emps = get().player.employees.filter((e) => e.stamina > 0)
     if (emps.length > 0) {
@@ -1105,16 +1344,40 @@ export const useGameStore = create<GameStore>((set, get) => ({
   /* ── Market ── */
   updatePrices: (prices) =>
     set((s) => {
+      // Skip price updates if circuit breaker is active
+      if (s.circuitBreaker.isActive && s.circuitBreaker.remainingTicks > 0) {
+        return {} // No state change during circuit breaker halt
+      }
+
       const newCompanies = s.companies.map((c) => {
+        // Skip price update if VI is active for this company
+        if (isVIHalted(c)) {
+          return updateVIState(c, c.price) // Update VI state but keep price frozen
+        }
+
         const newPrice = prices[c.id]
         if (newPrice === undefined) return c
-        return {
+
+        // Check if VI should trigger BEFORE applying new price
+        const shouldTriggerVI = checkVITrigger({ ...c, price: newPrice })
+
+        let updatedCompany = {
           ...c,
           previousPrice: c.price,
           price: newPrice,
           priceHistory: [...c.priceHistory.slice(-299), newPrice],
           marketCap: newPrice * 1_000_000,
         }
+
+        // Update VI state with new price
+        updatedCompany = updateVIState(updatedCompany, newPrice)
+
+        // Trigger VI if needed
+        if (shouldTriggerVI) {
+          updatedCompany = triggerVI(updatedCompany)
+        }
+
+        return updatedCompany
       })
 
       // Update event impact tracking
@@ -1149,10 +1412,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return {
         companies: newCompanies,
         events: updatedEvents,
-        player: {
-          ...s.player,
-          totalAssetValue: s.player.cash + portfolioValue,
-        },
+        player: { ...s.player, totalAssetValue: s.player.cash + portfolioValue },
+      }
+    }),
+
+  updateSessionOpenPrices: () =>
+    set((s) => {
+      // Calculate KOSPI index at session open
+      const kospiIndex = calculateKOSPIIndex(s.companies)
+
+      return {
+        companies: s.companies.map((c) => {
+          const resetVI = resetVIForNewDay(c)
+          return {
+            ...resetVI,
+            sessionOpenPrice: c.price, // Set session open to current price
+          }
+        }),
+        circuitBreaker: resetCircuitBreakerForNewDay(kospiIndex),
       }
     }),
 
@@ -1165,6 +1442,118 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })),
 
   markNewsRead: () => set({ unreadNewsCount: 0 }),
+
+  /* ── Market Regime Detection ── */
+  calculateMarketIndex: () => {
+    const state = get()
+    return calculateMarketIndex(state.companies)
+  },
+
+  detectAndUpdateRegime: () =>
+    set((s) => {
+      // Calculate current market index
+      const currentIndex = calculateMarketIndex(s.companies)
+
+      // Update index history (keep last 20)
+      const newIndexHistory = [...s.marketIndexHistory, currentIndex].slice(-20)
+
+      // Update regime state based on volatility + HMM
+      const newRegimeState = updateRegimeState(s.marketRegime, newIndexHistory)
+
+      // Trigger toast notification on regime change
+      if (newRegimeState.current !== s.marketRegime.current) {
+        const messages = {
+          CALM: '시장 레짐: 평온 🟢',
+          VOLATILE: '시장 레짐: 변동성 증가 🟡',
+          CRISIS: '시장 레짐: 위기 상황 🔴',
+        }
+        setTimeout(() => {
+          window.dispatchEvent(
+            new CustomEvent('regimeChange', {
+              detail: {
+                regime: newRegimeState.current,
+                message: messages[newRegimeState.current],
+              },
+            }),
+          )
+        }, 0)
+      }
+
+      return {
+        marketIndexHistory: newIndexHistory,
+        marketRegime: newRegimeState,
+      }
+    }),
+
+  updateCircuitBreaker: () =>
+    set((s) => {
+      // Calculate KOSPI index
+      const kospiIndex = calculateKOSPIIndex(s.companies)
+
+      // Check circuit breaker
+      const newCircuitBreaker = checkCircuitBreaker(
+        kospiIndex,
+        s.circuitBreaker.kospiSessionOpen,
+        s.circuitBreaker,
+        s.time
+      )
+
+      // Trigger notification on circuit breaker activation
+      if (newCircuitBreaker.isActive && !s.circuitBreaker.isActive) {
+        setTimeout(() => {
+          window.dispatchEvent(
+            new CustomEvent('circuitBreaker', {
+              detail: {
+                level: newCircuitBreaker.level,
+                dailyReturn: ((kospiIndex - newCircuitBreaker.kospiSessionOpen) / newCircuitBreaker.kospiSessionOpen) * 100,
+              },
+            }),
+          )
+        }, 0)
+      }
+
+      return {
+        circuitBreaker: newCircuitBreaker,
+      }
+    }),
+
+  updateVIStates: () =>
+    set((s) => ({
+      companies: s.companies.map((c) => {
+        // Check if VI should trigger
+        if (checkVITrigger(c)) {
+          const triggered = triggerVI(c)
+          // Trigger notification
+          setTimeout(() => {
+            window.dispatchEvent(
+              new CustomEvent('viTriggered', {
+                detail: {
+                  companyName: c.name,
+                  ticker: c.ticker,
+                },
+              }),
+            )
+          }, 0)
+          return triggered
+        }
+        return c
+      }),
+    })),
+
+  canTrade: (companyId) => {
+    const s = get()
+
+    // Check circuit breaker
+    if (isTradingHalted(s.circuitBreaker)) {
+      return false
+    }
+
+    // Check VI for specific company
+    const company = s.companies.find((c) => c.id === companyId)
+    if (!company) return false
+
+    return !isVIHalted(company)
+  },
 
   /* ── Employees ── */
   hireEmployee: (role) =>
@@ -1358,6 +1747,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         employee_detail: '직원 상세',
         settings: '설정',
         ending: '게임 종료',
+        institutional: '기관 매매',
+        proposals: '제안서 목록',
       }
 
       const win: WindowState = {
@@ -1599,6 +1990,167 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }))
         break
       }
+
+      case 'ai-trading': {
+        // AI 트레이딩 레이아웃: 좌측(제안서 + 사무실), 우측(차트 + 랭킹)
+        const leftWidth = Math.floor(screenWidth * 0.4) - GAP * 2
+        const rightX = Math.floor(screenWidth * 0.4) + GAP
+        const rightWidth = screenWidth - rightX - GAP * 2
+        const topHeight = Math.floor(screenHeight * 0.55) - GAP * 2
+        const bottomY = Math.floor(screenHeight * 0.55) + GAP
+
+        windowsToCreate = [
+          {
+            id: `win-${nextId++}`,
+            type: 'proposals',
+            title: '제안서 목록',
+            x: GAP,
+            y: GAP,
+            width: leftWidth,
+            height: topHeight,
+            isMinimized: false,
+            isMaximized: false,
+            zIndex: nextZ++,
+          },
+          {
+            id: `win-${nextId++}`,
+            type: 'office',
+            title: '사무실',
+            x: GAP,
+            y: bottomY,
+            width: leftWidth,
+            height: screenHeight - bottomY - GAP,
+            isMinimized: false,
+            isMaximized: false,
+            zIndex: nextZ++,
+          },
+          {
+            id: `win-${nextId++}`,
+            type: 'chart',
+            title: '주가 차트',
+            x: rightX,
+            y: GAP,
+            width: rightWidth,
+            height: topHeight,
+            isMinimized: false,
+            isMaximized: false,
+            zIndex: nextZ++,
+          },
+          {
+            id: `win-${nextId++}`,
+            type: 'ranking',
+            title: '랭킹',
+            x: rightX,
+            y: bottomY,
+            width: rightWidth,
+            height: screenHeight - bottomY - GAP,
+            isMinimized: false,
+            isMaximized: false,
+            zIndex: nextZ++,
+          },
+        ]
+        break
+      }
+
+      case 'institutional': {
+        // 기관 모니터링 레이아웃: 좌측(기관 크게), 우측(차트 + 뉴스)
+        const leftWidth = Math.floor(screenWidth * 0.5) - GAP * 2
+        const rightX = Math.floor(screenWidth * 0.5) + GAP
+        const rightWidth = screenWidth - rightX - GAP * 2
+        const topHeight = Math.floor(screenHeight * 0.6) - GAP * 2
+        const bottomY = Math.floor(screenHeight * 0.6) + GAP
+
+        // 첫 번째 회사 ID 가져오기
+        const companies = get().companies
+        const firstCompanyId = companies[0]?.id || 'tech-01'
+
+        windowsToCreate = [
+          {
+            id: `win-${nextId++}`,
+            type: 'institutional',
+            title: '기관 매매 동향',
+            x: GAP,
+            y: GAP,
+            width: leftWidth,
+            height: screenHeight - GAP * 2,
+            isMinimized: false,
+            isMaximized: false,
+            zIndex: nextZ++,
+            props: { companyId: firstCompanyId },
+          },
+          {
+            id: `win-${nextId++}`,
+            type: 'chart',
+            title: '주가 차트',
+            x: rightX,
+            y: GAP,
+            width: rightWidth,
+            height: topHeight,
+            isMinimized: false,
+            isMaximized: false,
+            zIndex: nextZ++,
+          },
+          {
+            id: `win-${nextId++}`,
+            type: 'news',
+            title: '뉴스',
+            x: rightX,
+            y: bottomY,
+            width: rightWidth,
+            height: screenHeight - bottomY - GAP,
+            isMinimized: false,
+            isMaximized: false,
+            zIndex: nextZ++,
+          },
+        ]
+        break
+      }
+
+      case 'comprehensive': {
+        // 종합 분석 레이아웃: 2x3 그리드 (6개 창) - 새로운 윈도우 포함
+        const colWidth = Math.floor((screenWidth - GAP * 4) / 3)
+        const rowHeight = Math.floor((screenHeight - GAP * 3) / 2)
+
+        // 첫 번째 회사 ID 가져오기
+        const companies = get().companies
+        const firstCompanyId = companies[0]?.id || 'tech-01'
+
+        const layouts: Array<{
+          type: WindowState['type']
+          title: string
+          col: number
+          row: number
+          props?: Record<string, unknown>
+        }> = [
+          { type: 'portfolio', title: '내 포트폴리오', col: 0, row: 0 },
+          { type: 'chart', title: '주가 차트', col: 1, row: 0 },
+          { type: 'trading', title: '매매 창', col: 2, row: 0 },
+          { type: 'proposals', title: '제안서 목록', col: 0, row: 1 },
+          {
+            type: 'institutional',
+            title: '기관 매매',
+            col: 1,
+            row: 1,
+            props: { companyId: firstCompanyId },
+          },
+          { type: 'ranking', title: '랭킹', col: 2, row: 1 },
+        ]
+
+        windowsToCreate = layouts.map(({ type, title, col, row, props }) => ({
+          id: `win-${nextId++}`,
+          type,
+          title,
+          x: GAP + col * (colWidth + GAP),
+          y: GAP + row * (rowHeight + GAP),
+          width: colWidth,
+          height: rowHeight,
+          isMinimized: false,
+          isMaximized: false,
+          zIndex: nextZ++,
+          props,
+        }))
+        break
+      }
     }
 
     // 모든 윈도우를 한 번에 설정
@@ -1622,7 +2174,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   processCompetitorTick: () => {
-    const { competitors, companies, time } = get()
+    const { competitors, companies, time, playerProfile, personalizationEnabled } = get()
     if (competitors.length === 0) return
 
     // Decrease panic sell cooldowns (compensate for HOUR_DISTRIBUTION interval)
@@ -1639,12 +2191,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // Get price history for technical analysis
     const priceHistory = getPriceHistory(companies)
 
-    // Process AI trading
+    // Process AI trading (with Mirror Rival personalization)
     const actions = processAITrading(
       updatedState.competitors,
       companies,
       time.hour,
       priceHistory,
+      playerProfile,
+      personalizationEnabled,
     )
 
     // Execute batch actions
@@ -1802,6 +2356,127 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((state) => ({
       taunts: [...state.taunts, taunt].slice(-20), // Keep last 20
     }))
+  },
+
+  /* ── Institutional Investors ── */
+  initializeInstitutions: () => {
+    const institutions = generateInstitutions()
+    set({ institutions })
+  },
+
+  updateInstitutionalFlow: () => {
+    const { companies, institutions, events, currentTick } = get()
+
+    // Calculate market sentiment based on active events
+    const marketSentiment = calculateMarketSentiment(events)
+
+    // Track updated institutions across all companies
+    let latestInstitutions = institutions
+
+    const updatedCompanies = companies.map((company) => {
+      const { netVol, buyers, sellers, updatedInstitutions } = simulateInstitutionalTrading(
+        company,
+        latestInstitutions,
+        marketSentiment,
+        currentTick,
+      )
+
+      // Update institutions for next company
+      latestInstitutions = updatedInstitutions
+
+      // 누적 기관 보유 주식 수 계산 (감쇠 적용)
+      const previousAccumulated = company.accumulatedInstitutionalShares ?? 0
+      const decayFactor = 0.995 // 시간당 0.5% 자연 감소
+      const newAccumulated = Math.max(0, previousAccumulated * decayFactor + netVol)
+
+      // 기관 보유 비중 계산
+      const totalShares = company.marketCap / company.price
+      const ownershipRatio = Math.min(0.9, Math.max(0, newAccumulated / totalShares))
+
+      return {
+        ...company,
+        institutionFlow: {
+          netBuyVolume: netVol,
+          topBuyers: buyers,
+          topSellers: sellers,
+          institutionalOwnership: ownershipRatio,
+        },
+        institutionFlowHistory: [
+          ...(company.institutionFlowHistory ?? []).slice(-9),
+          netVol,
+        ],
+        accumulatedInstitutionalShares: newAccumulated,
+      }
+    })
+
+    set({ companies: updatedCompanies, institutions: latestInstitutions })
+  },
+
+  updateInstitutionalFlowForSector: (sectorIndex: number) => {
+    const { companies, institutions, events, currentTick } = get()
+
+    // 섹터 배열 정의 (10개)
+    const sectors: Sector[] = [
+      'tech',
+      'finance',
+      'energy',
+      'healthcare',
+      'consumer',
+      'industrial',
+      'telecom',
+      'materials',
+      'utilities',
+      'realestate',
+    ]
+
+    const targetSector = sectors[sectorIndex % sectors.length]
+    const marketSentiment = calculateMarketSentiment(events)
+
+    // Track updated institutions across all companies in sector
+    let latestInstitutions = institutions
+
+    const updatedCompanies = companies.map((company) => {
+      // 해당 섹터가 아니면 업데이트하지 않음
+      if (company.sector !== targetSector) {
+        return company
+      }
+
+      const { netVol, buyers, sellers, updatedInstitutions } = simulateInstitutionalTrading(
+        company,
+        latestInstitutions,
+        marketSentiment,
+        currentTick,
+      )
+
+      // Update institutions for next company in sector
+      latestInstitutions = updatedInstitutions
+
+      // 누적 기관 보유 주식 수 계산 (감쇠 적용: 시간이 지나면 보유 비중 자연 감소)
+      const previousAccumulated = company.accumulatedInstitutionalShares ?? 0
+      const decayFactor = 0.995 // 시간당 0.5% 자연 감소 (매도/희석)
+      const newAccumulated = Math.max(0, previousAccumulated * decayFactor + netVol)
+
+      // 기관 보유 비중 = 누적 보유량 / (시가총액 / 현재가)
+      const totalShares = company.marketCap / company.price
+      const ownershipRatio = Math.min(0.9, Math.max(0, newAccumulated / totalShares))
+
+      return {
+        ...company,
+        institutionFlow: {
+          netBuyVolume: netVol,
+          topBuyers: buyers,
+          topSellers: sellers,
+          institutionalOwnership: ownershipRatio,
+        },
+        institutionFlowHistory: [
+          ...(company.institutionFlowHistory ?? []).slice(-9),
+          netVol,
+        ],
+        accumulatedInstitutionalShares: newAccumulated,
+      }
+    })
+
+    set({ companies: updatedCompanies, institutions: latestInstitutions })
   },
 
   /* ── Growth System (Sprint 3) ── */
@@ -2223,6 +2898,53 @@ export const useGameStore = create<GameStore>((set, get) => ({
       employeeBehaviors: behaviorMap,
     }))
   },
+
+  /* ── Personalization Actions ── */
+  logPlayerEvent: (kind, metadata) =>
+    set((s) => {
+      const newEvent: PlayerEvent = {
+        kind,
+        timestamp: Date.now(),
+        day: s.time.day + (s.time.year - s.config.startYear) * 12 * 30, // 게임 내 총 일 수
+        metadata,
+      }
+
+      const updatedLog = [...s.playerEventLog, newEvent]
+
+      // FIFO: 상한 초과 시 앞에서 제거
+      if (updatedLog.length > MAX_EVENT_LOG_SIZE) {
+        updatedLog.shift()
+      }
+
+      return { playerEventLog: updatedLog }
+    }),
+
+  updateProfileOnDayEnd: () =>
+    set((s) => {
+      if (!s.personalizationEnabled) return {}
+
+      const currentDay = s.time.day + (s.time.year - s.config.startYear) * 12 * 30
+
+      // 중복 실행 방지
+      if (s.playerProfile.lastUpdatedDay === currentDay) return {}
+
+      // 프로필 계산
+      const newProfile = computeProfileFromEvents(s.playerEventLog, currentDay)
+
+      return {
+        playerProfile: newProfile,
+      }
+    }),
+
+  updateProfileOnMonthEnd: () => {
+    const state = get()
+    state.updateProfileOnDayEnd()
+  },
+
+  setPersonalizationEnabled: (enabled) =>
+    set({
+      personalizationEnabled: enabled,
+    }),
 
   recalculateGridBuffs: () => {
     set((s) => {

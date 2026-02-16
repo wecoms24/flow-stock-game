@@ -17,6 +17,8 @@ const WINDOW_SIZE_CONSTRAINTS: Record<
   employee_detail: { minWidth: 280, minHeight: 350 },
   settings: { minWidth: 320, minHeight: 280 },
   ending: { minWidth: 500, minHeight: 400 },
+  institutional: { minWidth: 400, minHeight: 500 },
+  proposals: { minWidth: 350, minHeight: 300 },
 }
 
 /* ── Resize Handle Directions ── */
