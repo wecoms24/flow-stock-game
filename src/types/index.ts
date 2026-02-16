@@ -59,6 +59,13 @@ export interface Company {
   viTriggered?: boolean // VI 발동 중 여부
   viCooldown?: number // VI 쿨다운 (남은 틱 수)
   viRecentPrices?: number[] // 최근 3 ticks 가격 (VI 감지용)
+  // M&A 시스템 필드
+  status?: 'active' | 'acquired' | 'delisted' // 회사 상태
+  parentCompanyId?: string | null // 인수한 회사 ID (없으면 null)
+  acquiredAtTick?: number | null // 인수된 게임 틱
+  headcount?: number // 회사 전체 직원 수 (대략적 규모)
+  layoffRateOnAcquisition?: number // 인수 시 해고 비율 (0~1)
+  mnaHistory?: MnaHistoryEntry[] // M&A 이력
 }
 
 export type Sector =
@@ -470,6 +477,9 @@ export interface SaveData {
   playerEventLog?: import('./personalization').PlayerEvent[]
   playerProfile?: import('./personalization').PlayerProfile
   personalizationEnabled?: boolean
+  // M&A System (v5)
+  lastMnaQuarter?: number
+  pendingIPOs?: Array<{ slotIndex: number; spawnTick: number; newCompany: Company }>
 }
 
 /* ── Investment Battle Mode Types ── */
@@ -529,4 +539,13 @@ export interface RegimeVolatilities {
   CALM: number // 평시 변동성 (기존의 50%)
   VOLATILE: number // 고변동 구간 (기존 값 유지)
   CRISIS: number // 위기 수준 (기존의 2배)
+}
+
+/* ── M&A System Types ── */
+export interface MnaHistoryEntry {
+  type: 'acquirer' | 'target'
+  otherCompanyId: string
+  tick: number
+  dealPrice: number
+  headcountImpact?: { before: number; after: number }
 }

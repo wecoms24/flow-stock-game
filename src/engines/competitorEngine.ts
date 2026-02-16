@@ -38,6 +38,7 @@ function sharkStrategy(
 
   // Find high volatility stocks
   const highVolStocks = companies
+    .filter((c) => c.status !== 'acquired')
     .filter((c) => c.volatility > config.MIN_VOLATILITY)
     .filter((c) => config.PREFERRED_SECTORS.includes(c.sector as any))
     .sort((a, b) => b.volatility - a.volatility)
@@ -107,6 +108,7 @@ function turtleStrategy(
   if (!shouldTrade(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX)) return null
 
   const safeStocks = companies
+    .filter((c) => c.status !== 'acquired')
     .filter((c) => config.BLUE_CHIPS.some((chip) => c.ticker.includes(chip)))
     .filter((c) => c.volatility < config.MAX_VOLATILITY)
 
@@ -174,6 +176,8 @@ function surferStrategy(
 
   // Find stocks in uptrend
   const trendingStocks = companies.filter((c) => {
+    if (c.status === 'acquired') return false
+
     const prices = priceHistory[c.id] || []
     if (prices.length < config.MA_PERIOD) return false
 
@@ -284,6 +288,8 @@ function bearStrategy(
 
   // Find oversold stocks
   const oversoldStocks = companies.filter((c) => {
+    if (c.status === 'acquired') return false
+
     const prices = priceHistory[c.id] || []
     if (prices.length < config.RSI_PERIOD + 1) return false
 

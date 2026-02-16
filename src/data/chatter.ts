@@ -229,6 +229,23 @@ export const CHATTER_TEMPLATES: ChatterTemplate[] = [
     priority: 1,
     cooldownTicks: 3600,
   },
+
+  // M&A 시장 관련 (일반 시장 대화)
+  {
+    id: 'mna_market',
+    category: 'market',
+    condition: () => Math.random() < 0.05, // 5% 확률로 발생
+    messages: [
+      '요즘 M&A 소식이 많네요... 우리 회사는 괜찮겠죠?',
+      '대규모 구조조정 뉴스를 보니 불안하네요.',
+      '인수합병 시장이 활발해지는 건 호재일까요?',
+      '저 회사도 인수되는구나... 직원들은 어떻게 될까...',
+      '우리도 큰 회사에 인수되면 좋겠어요',
+      '합병 소식 들었어요? 시장이 들썩이네요',
+    ],
+    priority: 2,
+    cooldownTicks: 7200, // 12시간
+  },
 ]
 
 /* ── Chatter Selection ── */

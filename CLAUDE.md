@@ -151,6 +151,38 @@ PENDING → APPROVED → EXECUTED (success)
 
 **Key Store Actions**: `addProposal`, `updateProposalStatus`, `expireOldProposals`, `processAnalystTick`, `processManagerTick`, `processTraderTick`
 
+### M&A System (`src/engines/mnaEngine.ts`, `src/config/mnaConfig.ts`)
+
+Corporate mergers and acquisitions system with quarterly evaluation, automatic IPOs, and portfolio exchanges.
+
+**Quarterly Evaluation** (분기 말 3/6/9/12월 30일 18시):
+- Cooldown: Minimum 2 years between M&A deals
+- Probability: 15% per quarter (when cooldown expired)
+- Acquirer selection: Top 40% companies by market cap
+- Target selection: Bottom 50% by market cap + 20%+ price drop from base
+- Premium: 20-40% random premium over current price
+- Layoff rate: 10-60% (per-company `layoffRateOnAcquisition`)
+
+**Deal Execution** (`gameStore.executeAcquisition`):
+- Target status → `'acquired'`, `parentCompanyId` set to acquirer
+- Acquirer headcount increases by retained employees
+- Player/AI portfolios: target shares → forced cash-out at deal price
+- M&A news generated (`createMnaNews`)
+- Market sentiment impact (`onMnaOccurred`): large layoffs increase fear
+
+**IPO Scheduling** (`gameStore.scheduleIPO`):
+- Delay: 180-360 ticks (6-12 months) after acquisition
+- New company generation: 12 prefixes × 11 suffixes (e.g., "Neo Tech", "Quantum Industries")
+- Sector preserved, random price/volatility/drift
+- IPO executes when `currentTick >= spawnTick`, replaces slot
+
+**Company Status**:
+- `'active'`: Normal trading
+- `'acquired'`: Delisted, trading halted, visible in UI as "인수됨" badge
+- Worker filters: `companies.filter(c => c.status !== 'acquired')` for price updates
+
+**Key Store Actions**: `executeAcquisition`, `scheduleIPO`, `processScheduledIPOs`, `applyAcquisitionExchange`
+
 ### Data Layer (`src/data/`)
 
 - `companies.ts`: 20 companies across 5 sectors (Tech, Finance, Energy, Consumer, Healthcare)
@@ -229,4 +261,5 @@ All windows use `WindowFrame` for consistent drag/resize/close behavior. `window
 - Dexie (IndexedDB) - 기존 세이브 시스템 확장 (001-employee-trade-ai)
 
 ## Recent Changes
+- M&A System: Corporate mergers, acquisitions, IPOs with quarterly evaluation and forced portfolio exchanges
 - 001-employee-trade-ai: Added TypeScript 5.9 (strict mode) + React 19, Zustand 5, Vite 7, TailwindCSS v4

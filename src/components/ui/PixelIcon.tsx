@@ -1,12 +1,6 @@
 /* ── [Design Track] SVG 16x16 Pixel Icons ── */
 /* All icons are pure SVG rendered inline, no external assets needed */
 
-interface PixelIconProps {
-  name: string
-  size?: number
-  className?: string
-}
-
 const ICONS: Record<string, string> = {
   portfolio: `<rect x="2" y="1" width="12" height="14" fill="#C0C0C0" stroke="#000" stroke-width="1"/>
     <rect x="4" y="3" width="8" height="2" fill="#000080"/>
@@ -66,6 +60,28 @@ const ICONS: Record<string, string> = {
   employee: `<circle cx="8" cy="4" r="3" fill="#FFE0BD"/>
     <rect x="4" y="7" width="8" height="7" fill="#000080"/>
     <rect x="6" y="1" width="4" height="2" fill="#8B6914"/>`,
+
+  document: `<rect x="2" y="1" width="12" height="14" fill="#FFF" stroke="#000" stroke-width="1"/>
+    <rect x="4" y="3" width="8" height="1" fill="#000080"/>
+    <rect x="4" y="5" width="8" height="1" fill="#808080"/>
+    <rect x="4" y="7" width="6" height="1" fill="#808080"/>
+    <rect x="4" y="9" width="7" height="1" fill="#808080"/>
+    <rect x="4" y="11" width="5" height="1" fill="#808080"/>`,
+
+  institution: `<rect x="1" y="4" width="14" height="11" fill="#C0C0C0" stroke="#000" stroke-width="1"/>
+    <rect x="1" y="1" width="14" height="4" fill="#000080"/>
+    <rect x="3" y="6" width="3" height="4" fill="#000080"/>
+    <rect x="7" y="6" width="3" height="4" fill="#000080"/>
+    <rect x="11" y="6" width="3" height="4" fill="#000080"/>
+    <rect x="6" y="11" width="4" height="4" fill="#8B6914"/>`,
+}
+
+export type IconName = keyof typeof ICONS
+
+interface PixelIconProps {
+  name: IconName
+  size?: number
+  className?: string
 }
 
 export function PixelIcon({ name, size = 16, className = '' }: PixelIconProps) {

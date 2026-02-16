@@ -1,23 +1,43 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
-import { PixelIcon } from '../ui/PixelIcon'
+import { PixelIcon, type IconName } from '../ui/PixelIcon'
 import { NotificationCenter } from '../ui/NotificationCenter'
 import { formatHour } from '../../config/timeConfig'
 import type { WindowType, WindowLayoutPreset } from '../../types'
 
-const TASKBAR_ITEMS: { type: WindowType; icon: string; label: string }[] = [
-  { type: 'portfolio', icon: 'portfolio', label: '포트폴리오' },
-  { type: 'chart', icon: 'chart', label: '차트' },
-  { type: 'trading', icon: 'trading', label: '매매' },
-  { type: 'proposals', icon: 'trading', label: '제안서' },
-  { type: 'institutional', icon: 'news', label: '기관' },
-  { type: 'news', icon: 'news', label: '뉴스' },
-  { type: 'office', icon: 'office', label: '사무실' },
-  { type: 'office_history', icon: 'office_history', label: '히스토리' },
-  { type: 'ranking', icon: 'ranking', label: '랭킹' },
-  { type: 'settings', icon: 'settings', label: '설정' },
-]
+// 단일 진실의 원천: 모든 메뉴 항목 정의
+const MENU_ITEMS = [
+  { category: '거래', type: 'portfolio' as WindowType, icon: 'portfolio' as IconName, label: '포트폴리오', menuLabel: '포트폴리오' },
+  { category: '거래', type: 'chart' as WindowType, icon: 'chart' as IconName, label: '차트', menuLabel: '차트' },
+  { category: '거래', type: 'trading' as WindowType, icon: 'trading' as IconName, label: '매매', menuLabel: '매매' },
+  { category: '거래', type: 'proposals' as WindowType, icon: 'document' as IconName, label: '제안서', menuLabel: 'AI 제안서' },
+  { category: '정보', type: 'news' as WindowType, icon: 'news' as IconName, label: '뉴스', menuLabel: '뉴스' },
+  { category: '정보', type: 'institutional' as WindowType, icon: 'institution' as IconName, label: '기관', menuLabel: '기관 투자자' },
+  { category: '관리', type: 'office' as WindowType, icon: 'office' as IconName, label: '사무실', menuLabel: '사무실' },
+  { category: '관리', type: 'office_history' as WindowType, icon: 'office_history' as IconName, label: '히스토리', menuLabel: '사무실 히스토리' },
+  { category: '관리', type: 'employee_detail' as WindowType, icon: 'employee' as IconName, label: '직원 정보', menuLabel: '직원 정보' },
+  { category: '관리', type: 'ranking' as WindowType, icon: 'ranking' as IconName, label: '랭킹', menuLabel: '랭킹' },
+  { category: '시스템', type: 'settings' as WindowType, icon: 'settings' as IconName, label: '설정', menuLabel: '설정' },
+] as const
+
+// 파생 데이터: Taskbar 빠른 실행 아이콘
+const TASKBAR_ITEMS = MENU_ITEMS.map(({ type, icon, label }) => ({ type, icon, label }))
+
+// 파생 데이터: 시작 메뉴 카테고리 구조
+const START_MENU_CATEGORIES = Array.from(
+  MENU_ITEMS.reduce((acc, item) => {
+    if (!acc.has(item.category)) {
+      acc.set(item.category, [])
+    }
+    acc.get(item.category)!.push({
+      type: item.type,
+      icon: item.icon,
+      label: item.menuLabel,
+    })
+    return acc
+  }, new Map<string, Array<{ type: WindowType; icon: IconName; label: string }>>())
+).map(([name, items]) => ({ name, items }))
 
 const LAYOUT_PRESETS: { preset: WindowLayoutPreset; label: string; icon: string }[] = [
   { preset: 'trading', label: '트레이딩', icon: '📊' },
@@ -42,16 +62,29 @@ export function Taskbar() {
   } = useGameStore()
 
   const [showLayoutMenu, setShowLayoutMenu] = useState(false)
+  const [showStartMenu, setShowStartMenu] = useState(false)
+  const startMenuRef = useRef<HTMLDivElement>(null)
+  const layoutMenuRef = useRef<HTMLDivElement>(null)
 
-  const companies = useGameStore((s) => s.companies)
+  // 성능 최적화: 필요한 것만 구독
+  const firstCompanyId = useGameStore((s) => s.companies[0]?.id ?? 'tech-01')
+  const firstEmployeeId = useGameStore((s) => s.player.employees[0]?.id)
+  const hasEmployees = useGameStore((s) => s.player.employees.length > 0)
   const marketRegime = useGameStore((s) => s.marketRegime)
   const circuitBreaker = useGameStore((s) => s.circuitBreaker)
 
   const handleOpenWindow = (type: WindowType) => {
     // Institutional window needs a companyId prop
     if (type === 'institutional') {
-      const firstCompany = companies[0]
-      openWindow(type, { companyId: firstCompany?.id || 'tech-01' })
+      openWindow(type, { companyId: firstCompanyId })
+    } else if (type === 'employee_detail') {
+      // Employee detail window needs an employeeId prop
+      if (hasEmployees && firstEmployeeId) {
+        openWindow(type, { employeeId: firstEmployeeId })
+      } else {
+        // 직원이 없으면 office 윈도우를 대신 열기
+        openWindow('office')
+      }
     } else {
       openWindow(type)
     }
@@ -63,15 +96,91 @@ export function Taskbar() {
     setShowLayoutMenu(false)
   }
 
+  // 시작 메뉴 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!showStartMenu) return
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (startMenuRef.current && !startMenuRef.current.contains(e.target as Node)) {
+        setShowStartMenu(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showStartMenu])
+
+  // 레이아웃 메뉴 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!showLayoutMenu) return
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (layoutMenuRef.current && !layoutMenuRef.current.contains(e.target as Node)) {
+        setShowLayoutMenu(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showLayoutMenu])
+
   return (
     <div className="fixed bottom-0 left-0 right-0 h-8 bg-win-face win-outset flex items-center px-1 gap-0.5 z-[10000]">
-      {/* Start button */}
-      <RetroButton variant="primary" size="sm" className="font-bold text-xs shrink-0">
-        <span className="flex items-center gap-1">
-          <PixelIcon name="chart" size={12} />
-          Stock-OS
-        </span>
-      </RetroButton>
+      {/* Start button with menu */}
+      <div className="relative shrink-0" ref={startMenuRef}>
+        <RetroButton
+          variant="primary"
+          size="sm"
+          className={`font-bold text-xs ${showStartMenu ? 'win-pressed' : ''}`}
+          onClick={() => setShowStartMenu(!showStartMenu)}
+        >
+          <span className="flex items-center gap-1">
+            <PixelIcon name="chart" size={12} />
+            Stock-OS
+          </span>
+        </RetroButton>
+
+        {/* Windows 95 Start Menu */}
+        {showStartMenu && (
+          <div className="absolute bottom-full left-0 mb-1 win-outset bg-win-face flex z-50 shadow-lg">
+            {/* Left vertical bar */}
+            <div className="w-6 bg-gradient-to-b from-blue-700 to-blue-900 flex items-end justify-center py-2 px-1">
+              <div
+                className="text-white font-bold text-xs whitespace-nowrap"
+                style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+              >
+                Stock-OS
+              </div>
+            </div>
+
+            {/* Right menu content */}
+            <div className="p-1 min-w-[180px]">
+              {START_MENU_CATEGORIES.map((category, idx) => (
+                <div key={category.name}>
+                  {idx > 0 && <div className="h-px bg-win-shadow my-1" />}
+                  <div className="text-[10px] font-bold text-gray-600 px-2 py-1">{category.name}</div>
+                  {category.items.map((item) => (
+                    <RetroButton
+                      key={item.type}
+                      size="sm"
+                      onClick={() => {
+                        handleOpenWindow(item.type)
+                        setShowStartMenu(false)
+                      }}
+                      className="text-xs w-full justify-start mb-0.5"
+                    >
+                      <span className="flex items-center gap-2">
+                        <PixelIcon name={item.icon} size={14} />
+                        {item.label}
+                      </span>
+                    </RetroButton>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="w-px h-5 bg-win-shadow mx-0.5" />
 
@@ -113,7 +222,7 @@ export function Taskbar() {
       <div className="w-px h-5 bg-win-shadow mx-0.5" />
 
       {/* Layout Presets */}
-      <div className="relative shrink-0">
+      <div className="relative shrink-0" ref={layoutMenuRef}>
         <RetroButton
           size="sm"
           onClick={() => setShowLayoutMenu(!showLayoutMenu)}

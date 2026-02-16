@@ -3,6 +3,7 @@ import {
   generateRandomEvent,
   processNewsEngine,
   resetNewsEngine,
+  createMnaNews,
 } from './newsEngine'
 import {
   onEventOccurred,
@@ -12,7 +13,9 @@ import {
   getSentimentVolatilityMultiplier,
   isSentimentActive,
   resetSentiment,
+  onMnaOccurred,
 } from './sentimentEngine'
+import { evaluateMnaOpportunity, generateNewCompany } from './mnaEngine'
 import { SECTOR_CORRELATION, SPILLOVER_FACTOR } from '../data/sectorCorrelation'
 import type { Sector, MarketEvent } from '../types'
 import { getBusinessHourIndex, getAbsoluteTimestamp } from '../config/timeConfig'
@@ -79,10 +82,56 @@ export function startTickLoop() {
       current.processMonthly()
     }
 
+    // M&A Processing: 분기 종료 체크 (3, 6, 9, 12월 말일 18시)
+    if ([3, 6, 9, 12].includes(current.time.month) && current.time.day === 30 && current.time.hour === 18) {
+      // Process scheduled IPOs first
+      current.processScheduledIPOs()
+
+      // Then evaluate M&A opportunities
+      const currentQuarter = Math.floor((current.time.month - 1) / 3) + 1 + (current.time.year - current.config.startYear) * 4
+      const result = evaluateMnaOpportunity(current.companies, currentQuarter, current.lastMnaQuarter)
+
+      // Update lastMnaQuarter in store
+      useGameStore.setState({ lastMnaQuarter: result.newLastMnaQuarter })
+
+      if (result.deal) {
+        const deal = result.deal
+        const acquirer = current.companies.find((c) => c.id === deal.acquirerId)
+        const target = current.companies.find((c) => c.id === deal.targetId)
+
+        if (acquirer && target) {
+          console.log(`[M&A] ${acquirer.name} acquires ${target.name} at ${deal.dealPrice.toFixed(0)} (${(deal.premium*100).toFixed(0)}% premium)`)
+
+          // Execute acquisition
+          current.executeAcquisition(deal.acquirerId, deal.targetId, deal)
+
+          // Schedule IPO for the target slot
+          const targetIndex = current.companies.findIndex((c) => c.id === deal.targetId)
+          if (targetIndex >= 0) {
+            const delayTicks = 180 + Math.random() * 180 // 180-360 hours
+            const newCompany = generateNewCompany(target)
+            current.scheduleIPO(targetIndex, delayTicks, newCompany)
+          }
+
+          // Create M&A news
+          const news = createMnaNews(deal, acquirer, target, current.time)
+          useGameStore.setState((s) => ({
+            news: [news, ...s.news],
+            unreadNewsCount: s.unreadNewsCount + 1,
+          }))
+
+          // Update sentiment
+          onMnaOccurred(target.sector, deal.layoffRate > 0.4)
+        }
+      }
+    }
+
     // Send companies data to worker for GBM price calculation
     const volatilityMul = current.difficultyConfig.volatilityMultiplier
     const currentRegime = current.marketRegime.current
-    const companyData = current.companies.map((c) => {
+    const companyData = current.companies
+      .filter((c) => c.status !== 'acquired')
+      .map((c) => {
       // Apply regime-based volatility if defined, otherwise use base volatility
       const regimeVol = c.regimeVolatilities?.[currentRegime] ?? c.volatility
       return {

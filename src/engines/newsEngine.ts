@@ -559,3 +559,40 @@ export function resetNewsEngine(): void {
   triggeredHistoricalEvents.clear()
   pendingChainEvents.length = 0
 }
+
+/* ── M&A News Generation ── */
+
+/**
+ * M&A 뉴스 생성
+ */
+export function createMnaNews(
+  deal: { dealPrice: number; premium: number; layoffRate: number; estimatedHeadcountLaidOff: number; estimatedHeadcountRetained: number },
+  acquirer: { id: string; name: string; ticker: string; sector: import('../types').Sector },
+  target: { id: string; name: string; ticker: string; sector: import('../types').Sector },
+  currentTime: import('../types').GameTime,
+): import('../types').NewsItem {
+  const premiumPct = (deal.premium * 100).toFixed(0)
+  const layoffPct = (deal.layoffRate * 100).toFixed(0)
+
+  const headline = `${acquirer.name}, ${target.name} 인수 완료`
+
+  const body =
+    `${acquirer.name}(${acquirer.ticker})이(가) ${target.name}(${target.ticker})을(를) ` +
+    `주당 ${deal.dealPrice.toFixed(0)}원(${premiumPct}% 프리미엄)에 인수했습니다.\n\n` +
+    `이번 인수로 ${target.name}의 직원 약 ${deal.estimatedHeadcountLaidOff}명(${layoffPct}%)이 ` +
+    `구조조정될 예정이며, ${deal.estimatedHeadcountRetained}명은 ${acquirer.name}으로 승계됩니다.\n\n` +
+    `${target.sector} 섹터에 ${deal.layoffRate > 0.4 ? '큰 충격' : '영향'}을 줄 것으로 예상됩니다.`
+
+  const sentiment: import('../types').NewsSentiment = deal.layoffRate > 0.4 ? 'negative' : 'neutral'
+
+  return {
+    id: `mna-${acquirer.id}-${target.id}-${currentTime.year}Q${Math.floor((currentTime.month - 1) / 3) + 1}`,
+    timestamp: currentTime,
+    headline,
+    body,
+    isBreaking: true,
+    sentiment,
+    relatedCompanies: [acquirer.id, target.id],
+    impactSummary: `${acquirer.name} 시총 확대, ${target.name} 상장폐지`,
+  }
+}

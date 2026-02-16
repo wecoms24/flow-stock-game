@@ -7,7 +7,7 @@ const DB_NAME = 'retro-stock-os'
 const DB_VERSION = 1
 const STORE_NAME = 'saves'
 const AUTO_SAVE_KEY = 'autosave'
-const SAVE_VERSION = 4
+const SAVE_VERSION = 5
 
 /** Build ticker→companyId lookup from COMPANIES data */
 const TICKER_TO_ID: Record<string, string> = {}
@@ -65,7 +65,50 @@ function migrateSaveData(data: Record<string, unknown>): SaveData {
     data.version = 4
   }
 
+  // v4 → v5: M&A 필드 추가
+  if ((data.version as number) < 5) {
+    const companies = data.companies as Array<Record<string, unknown>> | undefined
+    if (companies && Array.isArray(companies)) {
+      for (const company of companies) {
+        company.status ??= 'active'
+        company.parentCompanyId ??= null
+        company.acquiredAtTick ??= null
+        company.headcount ??= calculateInitialHeadcount(company)
+        company.layoffRateOnAcquisition ??= 0.2 + Math.random() * 0.4 // 20-60% 랜덤
+        company.mnaHistory ??= []
+      }
+    }
+    // M&A 시스템 상태 필드
+    data.lastMnaQuarter ??= 0
+    data.pendingIPOs ??= []
+    data.version = 5
+  }
+
   return data as unknown as SaveData
+}
+
+/** Calculate initial headcount based on sector and marketCap */
+function calculateInitialHeadcount(company: Record<string, unknown>): number {
+  const sector = company.sector as string
+  const marketCap = (company.marketCap as number) ?? 1_000_000_000
+
+  const baseHeadcount: Record<string, number> = {
+    tech: 5000,
+    finance: 3000,
+    energy: 4000,
+    healthcare: 6000,
+    consumer: 2000,
+    industrial: 7000,
+    telecom: 4500,
+    materials: 3500,
+    utilities: 2500,
+    realestate: 1500,
+  }
+
+  // 시가총액 기반 스케일링 (간단한 로그 스케일)
+  const base = baseHeadcount[sector] ?? 4000
+  const scale = Math.log10(marketCap / 1_000_000) * 0.5 + 0.5
+  return Math.round(base * scale)
 }
 
 function openDB(): Promise<IDBDatabase> {

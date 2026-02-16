@@ -121,7 +121,7 @@ function applyTickSize(price: number): number {
  * Apply price safety limits to prevent extreme price movements
  *
  * Three layers of protection:
- * 1. Single-tick limit (±30%) - already in computeGBM
+ * 1. Single-tick limit x(±30%) - already in computeGBM
  * 2. Daily price limit (±30% from session open, KRX standard)
  * 3. Absolute bounds (±1000x from IPO price)
  * 4. Tick size rounding (KRX standard)
@@ -146,17 +146,6 @@ function applyPriceSafetyLimits(
 
   // Layer 3: Apply tick size rounding (KRX standard)
   safePrice = applyTickSize(safePrice)
-
-  // Log warnings for price limits hit
-  if (Math.abs(safePrice - newPrice) > 1) {
-    const limitType = safePrice === dailyMax || safePrice === dailyMin ? 'DAILY' : 'ABSOLUTE'
-    console.warn(`[PRICE LIMIT ${limitType}]`, {
-      attempted: newPrice,
-      limited: safePrice,
-      sessionOpen: sessionOpenPrice,
-      basePrice,
-    })
-  }
 
   return safePrice
 }

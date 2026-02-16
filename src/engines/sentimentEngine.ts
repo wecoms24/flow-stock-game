@@ -184,6 +184,38 @@ export function resetSentiment(): void {
   isActive = false
 }
 
+/* ── M&A Sentiment Impact ── */
+
+/**
+ * M&A 이벤트 발생 시 센티먼트 업데이트
+ */
+export function onMnaOccurred(
+  targetSector: Sector,
+  isLargeLayoff: boolean, // layoffRate > 0.4
+): void {
+  isActive = true
+
+  if (isLargeLayoff) {
+    // 대규모 해고: 공포 증가
+    sentiment.global = clamp(sentiment.global - 0.1, -1.0, 1.0)
+    sentiment.sectors[targetSector] = clamp(
+      (sentiment.sectors[targetSector] ?? 0) - 0.15,
+      -1.0,
+      1.0,
+    )
+    sentiment.momentum = clamp(sentiment.momentum - 0.05, -0.1, 0.1)
+  } else {
+    // 소규모 해고/효율적 합병: 중립~약간 긍정
+    sentiment.sectors[targetSector] = clamp(
+      (sentiment.sectors[targetSector] ?? 0) + 0.05,
+      -1.0,
+      1.0,
+    )
+  }
+
+  updateFearGreedIndex()
+}
+
 /* ── Utility ── */
 
 function clamp(value: number, min: number, max: number): number {

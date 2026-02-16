@@ -71,6 +71,10 @@ function makeCompany(
   drift: number,
   description: string,
 ): Company {
+  const marketCap = price * 1_000_000
+  const headcount = calculateHeadcountBySector(sector, marketCap)
+  const layoffRate = 0.2 + Math.random() * 0.4 // 20-60%
+
   return {
     id,
     name,
@@ -83,7 +87,7 @@ function makeCompany(
     priceHistory: [price],
     volatility,
     drift,
-    marketCap: price * 1_000_000,
+    marketCap,
     description,
     eventSensitivity: SECTOR_SENSITIVITY[sector],
     // Regime-based volatilities
@@ -106,7 +110,34 @@ function makeCompany(
       topSellers: [],
       institutionalOwnership: 0,
     },
+    // M&A 시스템 필드
+    status: 'active',
+    parentCompanyId: null,
+    acquiredAtTick: null,
+    headcount,
+    layoffRateOnAcquisition: layoffRate,
+    mnaHistory: [],
   }
+}
+
+/** Calculate initial headcount based on sector and marketCap */
+function calculateHeadcountBySector(sector: Sector, marketCap: number): number {
+  const baseHeadcount: Record<Sector, number> = {
+    tech: 5000,
+    finance: 3000,
+    energy: 4000,
+    healthcare: 6000,
+    consumer: 2000,
+    industrial: 7000,
+    telecom: 4500,
+    materials: 3500,
+    utilities: 2500,
+    realestate: 1500,
+  }
+
+  // 시가총액 기반 스케일링 (간단한 로그 스케일)
+  const scale = Math.log10(marketCap / 1_000_000) * 0.5 + 0.5
+  return Math.round(baseHeadcount[sector] * scale)
 }
 
 export { SECTOR_SENSITIVITY, SECTOR_FINANCIALS }

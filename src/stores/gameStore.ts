@@ -26,6 +26,7 @@ import type {
 import type { OfficeGrid, FurnitureType, FurnitureItem } from '../types/office'
 import type { TradeProposal, ProposalStatus } from '../types/trade'
 import type { PlayerEvent, PlayerProfile } from '../types/personalization'
+import type { MnaDeal } from '../engines/mnaEngine'
 import { MAX_EVENT_LOG_SIZE, defaultProfile } from '../types/personalization'
 import { computeProfileFromEvents } from '../systems/personalization/profile'
 import { TRADE_AI_CONFIG } from '../config/tradeAIConfig'
@@ -267,6 +268,18 @@ interface GameStore {
   updateWindowProps: (type: WindowState['type'], props: Record<string, unknown>) => void
   applyWindowLayout: (preset: WindowLayoutPreset) => void
 
+  // M&A System
+  lastMnaQuarter: number
+  pendingIPOs: Array<{ slotIndex: number; spawnTick: number; newCompany: Company }>
+
+  // Actions - M&A
+  getActiveCompanies: () => Company[]
+  getCompanyById: (id: string) => Company | undefined
+  executeAcquisition: (acquirerId: string, targetId: string, deal: MnaDeal) => void
+  scheduleIPO: (slotIndex: number, delayTicks: number, newCompany: Company) => void
+  processScheduledIPOs: () => void
+  applyAcquisitionExchange: (deal: MnaDeal) => void
+
   // Flash
   triggerFlash: () => void
 }
@@ -316,6 +329,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   unreadNewsCount: 0,
 
   pendingLevelUp: null,
+  lastMnaQuarter: 0,
+  pendingIPOs: [],
 
   competitors: [],
   competitorCount: 0,
@@ -646,8 +661,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       const sectors = analyst.assignedSectors ?? []
       const targetCompanies = sectors.length > 0
-        ? s.companies.filter((c) => sectors.includes(c.sector))
-        : s.companies.slice(0, 5) // fallback: first 5 if no sector assigned
+        ? s.companies.filter((c) => c.status !== 'acquired' && sectors.includes(c.sector))
+        : s.companies.filter((c) => c.status !== 'acquired').slice(0, 5) // fallback: first 5 if no sector assigned
 
       for (const company of targetCompanies) {
         const result = analyzeStock(company, company.priceHistory, analyst, adjBonus)
@@ -1461,27 +1476,41 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const newRegimeState = updateRegimeState(s.marketRegime, newIndexHistory)
 
       // Trigger toast notification on regime change
+      const regimeEvents: typeof s.officeEvents = []
       if (newRegimeState.current !== s.marketRegime.current) {
-        const messages = {
-          CALM: '시장 레짐: 평온 🟢',
-          VOLATILE: '시장 레짐: 변동성 증가 🟡',
-          CRISIS: '시장 레짐: 위기 상황 🔴',
+        const regimeInfo = {
+          CALM: { emoji: '🟢', message: '시장 레짐: 평온 🟢' },
+          VOLATILE: { emoji: '🟡', message: '시장 레짐: 변동성 증가 🟡' },
+          CRISIS: { emoji: '🔴', message: '시장 레짐: 위기 상황 🔴' },
         }
-        setTimeout(() => {
-          window.dispatchEvent(
-            new CustomEvent('regimeChange', {
-              detail: {
-                regime: newRegimeState.current,
-                message: messages[newRegimeState.current],
-              },
-            }),
-          )
-        }, 0)
+        const { emoji, message } = regimeInfo[newRegimeState.current]
+
+        // Toast 이벤트 발생
+        window.dispatchEvent(
+          new CustomEvent('regimeChange', {
+            detail: {
+              regime: newRegimeState.current,
+              message,
+            },
+          }),
+        )
+
+        // 알림 센터에도 추가
+        const absoluteTick = getAbsoluteTimestamp(s.time, s.config.startYear)
+        regimeEvents.push({
+          timestamp: absoluteTick,
+          type: 'regime_change',
+          emoji,
+          message,
+          employeeIds: [],
+        })
       }
 
       return {
         marketIndexHistory: newIndexHistory,
         marketRegime: newRegimeState,
+        officeEvents:
+          regimeEvents.length > 0 ? [...s.officeEvents, ...regimeEvents].slice(-200) : s.officeEvents,
       }
     }),
 
@@ -1551,6 +1580,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // Check VI for specific company
     const company = s.companies.find((c) => c.id === companyId)
     if (!company) return false
+
+    // Check if company is acquired
+    if (company.status === 'acquired') {
+      return false
+    }
 
     return !isVIHalted(company)
   },
@@ -2165,6 +2199,174 @@ export const useGameStore = create<GameStore>((set, get) => ({
   triggerFlash: () => {
     set({ isFlashing: true })
     setTimeout(() => set({ isFlashing: false }), 500)
+  },
+
+  /* ── M&A System ── */
+  getActiveCompanies: () => {
+    return get().companies.filter((c) => c.status === 'active')
+  },
+
+  getCompanyById: (id) => {
+    return get().companies.find((c) => c.id === id)
+  },
+
+  executeAcquisition: (acquirerId: string, targetId: string, deal: MnaDeal) => {
+    const currentTick = get().currentTick
+
+    set((s) => ({
+      companies: s.companies.map((c) => {
+        // 타깃 회사 상태 변경
+        if (c.id === targetId) {
+          return {
+            ...c,
+            status: 'acquired' as const,
+            parentCompanyId: acquirerId,
+            acquiredAtTick: currentTick,
+            headcount: 0, // 직원은 인수자로 이동
+            mnaHistory: [
+              ...(c.mnaHistory ?? []),
+              {
+                type: 'target' as const,
+                otherCompanyId: acquirerId,
+                tick: currentTick,
+                dealPrice: deal.dealPrice,
+                headcountImpact: {
+                  before: c.headcount ?? 0,
+                  after: 0,
+                },
+              },
+            ],
+          }
+        }
+
+        // 인수자 회사 headcount 증가
+        if (c.id === acquirerId) {
+          const newHeadcount = (c.headcount ?? 0) + deal.estimatedHeadcountRetained
+          return {
+            ...c,
+            headcount: newHeadcount,
+            mnaHistory: [
+              ...(c.mnaHistory ?? []),
+              {
+                type: 'acquirer' as const,
+                otherCompanyId: targetId,
+                tick: currentTick,
+                dealPrice: deal.dealPrice,
+                headcountImpact: {
+                  before: c.headcount ?? 0,
+                  after: newHeadcount,
+                },
+              },
+            ],
+          }
+        }
+
+        return c
+      }),
+    }))
+
+    // 포트폴리오 교환
+    get().applyAcquisitionExchange(deal)
+  },
+
+  scheduleIPO: (slotIndex, delayTicks, newCompany) => {
+    set((s) => ({
+      pendingIPOs: [
+        ...s.pendingIPOs,
+        { slotIndex, spawnTick: s.currentTick + delayTicks, newCompany },
+      ],
+    }))
+  },
+
+  processScheduledIPOs: () => {
+    set((s) => {
+      const now = s.currentTick
+      const ready = s.pendingIPOs.filter((ipo) => ipo.spawnTick <= now)
+      const remaining = s.pendingIPOs.filter((ipo) => ipo.spawnTick > now)
+
+      if (ready.length === 0) return { pendingIPOs: remaining }
+
+      const newCompanies = [...s.companies]
+
+      ready.forEach((ipo) => {
+        // 슬롯의 회사를 새 회사로 교체
+        newCompanies[ipo.slotIndex] = ipo.newCompany
+
+        console.log(
+          `[IPO] ${ipo.newCompany.name} (${ipo.newCompany.ticker}) listed at slot ${ipo.slotIndex}`,
+        )
+      })
+
+      return {
+        companies: newCompanies,
+        pendingIPOs: remaining,
+      }
+    })
+  },
+
+  applyAcquisitionExchange: (deal: MnaDeal) => {
+    set((s) => {
+      const target = s.companies.find((c) => c.id === deal.targetId)
+      if (!target) return s
+
+      // 1. 플레이어 포트폴리오 교환
+      const playerPosition = s.player.portfolio[deal.targetId]
+      let newPlayerCash = s.player.cash
+      const newPlayerPortfolio = { ...s.player.portfolio }
+      const newOfficeEvents = [...s.officeEvents]
+
+      if (playerPosition) {
+        const payout = playerPosition.shares * deal.dealPrice
+        const profit = payout - playerPosition.shares * playerPosition.avgBuyPrice
+        const profitRate = (profit / (playerPosition.shares * playerPosition.avgBuyPrice)) * 100
+
+        newPlayerCash += payout
+        delete newPlayerPortfolio[deal.targetId]
+
+        console.log(
+          `[M&A Exchange] Player: ${playerPosition.shares} shares → ${payout.toFixed(0)} cash`,
+        )
+
+        // Toast 이벤트 추가
+        newOfficeEvents.push({
+          timestamp: s.currentTick,
+          type: 'mna_exchange',
+          emoji: '💰',
+          message: `${target.name} M&A 정산: ${payout.toLocaleString()}원 (${profit >= 0 ? '+' : ''}${profitRate.toFixed(1)}%)`,
+          employeeIds: [],
+        })
+      }
+
+      // 2. AI 경쟁자 포트폴리오 교환
+      const newCompetitors = s.competitors.map((comp) => {
+        const position = comp.portfolio[deal.targetId]
+        if (!position) return comp
+
+        const payout = position.shares * deal.dealPrice
+        const newPortfolio = { ...comp.portfolio }
+        delete newPortfolio[deal.targetId]
+
+        console.log(
+          `[M&A Exchange] ${comp.name}: ${position.shares} shares → ${payout.toFixed(0)} cash`,
+        )
+
+        return {
+          ...comp,
+          cash: comp.cash + payout,
+          portfolio: newPortfolio,
+        }
+      })
+
+      return {
+        player: {
+          ...s.player,
+          cash: newPlayerCash,
+          portfolio: newPlayerPortfolio,
+        },
+        competitors: newCompetitors,
+        officeEvents: newOfficeEvents,
+      }
+    })
   },
 
   /* ── Competitor Actions ── */

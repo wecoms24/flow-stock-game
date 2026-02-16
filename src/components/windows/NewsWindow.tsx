@@ -25,12 +25,20 @@ export function NewsWindow() {
         <>
           {visibleNews.map((item) => {
             const badge = item.sentiment ? SENTIMENT_BADGE[item.sentiment] : null
+            const isMnaNews = item.headline.includes('인수')
+            const companies = useGameStore.getState().companies
+
             return (
               <div
                 key={item.id}
-                className={`p-1.5 ${item.isBreaking ? 'bg-retro-yellow/20 win-outset' : 'border-b border-win-shadow'}`}
+                className={`p-1.5 ${isMnaNews ? 'border-l-4 border-orange-500 bg-orange-50/10' : ''} ${item.isBreaking ? 'bg-retro-yellow/20 win-outset' : 'border-b border-win-shadow'}`}
               >
                 <div className="flex items-center gap-1">
+                  {isMnaNews && (
+                    <span className="bg-orange-500 text-retro-white px-1 text-[10px] font-bold">
+                      M&A
+                    </span>
+                  )}
                   {item.isBreaking && (
                     <span className="bg-stock-up text-retro-white px-1 text-[10px] font-bold">
                       속보
@@ -48,6 +56,19 @@ export function NewsWindow() {
                 </div>
                 <div className="font-bold mt-0.5">{item.headline}</div>
                 <div className="text-retro-gray mt-0.5">{item.body}</div>
+                {isMnaNews && item.relatedCompanies && (
+                  <div className="mt-1 text-[10px] text-retro-gray">
+                    관련 기업: {item.relatedCompanies.map((id) => {
+                      const company = companies.find((c) => c.id === id)
+                      return company ? `${company.name} (${company.ticker})` : ''
+                    }).filter(Boolean).join(', ')}
+                  </div>
+                )}
+                {item.impactSummary && (
+                  <div className="mt-1 text-[10px] text-retro-darkblue">
+                    📊 {item.impactSummary}
+                  </div>
+                )}
               </div>
             )
           })}
