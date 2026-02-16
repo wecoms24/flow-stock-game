@@ -155,3 +155,13 @@ export const DIFFICULTY_MULTIPLIERS = {
 
 // Type exports for TypeScript inference
 export type AIDifficulty = keyof typeof DIFFICULTY_MULTIPLIERS
+
+// ===== AUM (Assets Under Management) Battle Mode =====
+
+export const AUM_CONFIG = {
+  /** Default AUM multiplier per difficulty (increases by 5x) */
+  DEFAULT_MULTIPLIERS: { easy: 5, normal: 10, hard: 15 } as Record<string, number>,
+  /** Slider range */
+  MIN_MULTIPLIER: 1,
+  MAX_MULTIPLIER: 100,
+} as const

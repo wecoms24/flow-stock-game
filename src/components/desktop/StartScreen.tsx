@@ -4,6 +4,7 @@ import { RetroButton } from '../ui/RetroButton'
 import { RetroPanel } from '../ui/RetroPanel'
 import type { Difficulty } from '../../types'
 import { DIFFICULTY_TABLE, VICTORY_GOALS } from '../../data/difficulty'
+import { AUM_CONFIG } from '../../config/aiConfig'
 
 interface StartScreenProps {
   hasSave: boolean
@@ -32,6 +33,8 @@ const BOOT_LINES = [
 interface CompetitorSetup {
   enabled: boolean
   count: number
+  aumMultiplier: number
+  isCustomAum: boolean
 }
 
 export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
@@ -43,6 +46,8 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
   const [competitorSetup, setCompetitorSetup] = useState<CompetitorSetup>({
     enabled: false,
     count: 3,
+    aumMultiplier: AUM_CONFIG.DEFAULT_MULTIPLIERS.normal,
+    isCustomAum: false,
   })
   const [selectedGoalIdx, setSelectedGoalIdx] = useState(1) // default: 억만장자 (10억)
 
@@ -79,13 +84,17 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
 
   const handleStartGame = (difficulty: Difficulty) => {
     if (competitorSetup.enabled) {
-      const startingCash = DIFFICULTY_TABLE[difficulty].initialCash
+      const initialCash = DIFFICULTY_TABLE[difficulty].initialCash
+      // Use custom AUM if manually adjusted, otherwise use difficulty default
+      const multiplier = competitorSetup.isCustomAum
+        ? competitorSetup.aumMultiplier
+        : (AUM_CONFIG.DEFAULT_MULTIPLIERS[difficulty] ?? AUM_CONFIG.DEFAULT_MULTIPLIERS.normal)
+      const totalAUM = initialCash * multiplier
+      const perCompetitorCash = Math.floor(totalAUM / competitorSetup.count)
 
-      // Initialize competitors first
-      initializeCompetitors(competitorSetup.count, startingCash)
+      initializeCompetitors(competitorSetup.count, perCompetitorCash)
     }
 
-    // Start the game with selected victory goal
     startGame(difficulty, VICTORY_GOALS[selectedGoalIdx].targetAsset)
   }
 
@@ -185,6 +194,41 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
                   <div className="flex justify-between text-[10px] text-retro-gray mt-1">
                     <span>Easy (1)</span>
                     <span>Hard (5)</span>
+                  </div>
+                </div>
+
+                {/* AUM Multiplier Slider */}
+                <div>
+                  <label className="block text-xs mb-1">
+                    AUM: <strong>x{competitorSetup.aumMultiplier}</strong>
+                    <span className="text-retro-gray ml-1">
+                      (경쟁자당{' '}
+                      {(
+                        (DIFFICULTY_TABLE.normal.initialCash * competitorSetup.aumMultiplier) /
+                        competitorSetup.count /
+                        10000
+                      ).toLocaleString()}
+                      만원)
+                    </span>
+                  </label>
+                  <input
+                    type="range"
+                    min={AUM_CONFIG.MIN_MULTIPLIER}
+                    max={AUM_CONFIG.MAX_MULTIPLIER}
+                    step={1}
+                    value={competitorSetup.aumMultiplier}
+                    onChange={(e) =>
+                      setCompetitorSetup({
+                        ...competitorSetup,
+                        aumMultiplier: Number(e.target.value),
+                        isCustomAum: true,
+                      })
+                    }
+                    className="w-full h-1 bg-win-shadow rounded appearance-none cursor-pointer accent-win-highlight"
+                  />
+                  <div className="flex justify-between text-[10px] text-retro-gray mt-1">
+                    <span>x1 (동등)</span>
+                    <span>x100 (압도적)</span>
                   </div>
                 </div>
 
