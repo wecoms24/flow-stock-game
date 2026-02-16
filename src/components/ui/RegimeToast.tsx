@@ -7,13 +7,17 @@ interface RegimeToast {
 }
 
 const TOAST_DURATION = 5000
+const MAX_TOASTS = 2 // 최대 2개의 토스트만 표시
 
 export function RegimeToast() {
   const [toasts, setToasts] = useState<RegimeToast[]>([])
   const toastIdRef = useRef(0)
-  const timeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+  const timeoutsRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
 
   useEffect(() => {
+    // cleanup 함수에서 사용할 로컬 변수로 복사 (ESLint 규칙 준수)
+    const timeouts = timeoutsRef.current
+
     const handleRegimeChange = (e: CustomEvent) => {
       const { regime, message } = e.detail
       const id = ++toastIdRef.current
@@ -24,21 +28,36 @@ export function RegimeToast() {
         message,
       }
 
-      setToasts((prev) => [...prev, toast])
+      setToasts((prev) => {
+        // 최대 2개까지만 표시, 오래된 것부터 제거
+        const newToasts = [...prev, toast]
+        if (newToasts.length > MAX_TOASTS) {
+          const removedToast = newToasts.shift()
+          if (removedToast) {
+            // 제거된 토스트의 타이머만 정리
+            const removedTimerId = timeouts.get(removedToast.id)
+            if (removedTimerId) {
+              clearTimeout(removedTimerId)
+              timeouts.delete(removedToast.id)
+            }
+          }
+        }
+        return newToasts
+      })
 
       const tid = setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id))
-        timeoutsRef.current.delete(tid)
+        timeouts.delete(id)
       }, TOAST_DURATION)
-      timeoutsRef.current.add(tid)
+      timeouts.set(id, tid)
     }
 
     window.addEventListener('regimeChange', handleRegimeChange as EventListener)
 
     return () => {
       window.removeEventListener('regimeChange', handleRegimeChange as EventListener)
-      timeoutsRef.current.forEach((tid) => clearTimeout(tid))
-      timeoutsRef.current.clear()
+      timeouts.forEach((tid) => clearTimeout(tid))
+      timeouts.clear()
     }
   }, [])
 

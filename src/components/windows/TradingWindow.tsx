@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { isPriceLimitHit } from '../../config/priceLimit'
@@ -25,10 +25,14 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
   const [tab, setTab] = useState<Tab>('market')
 
   // 차트 창에서 기업 변경 시 동기화 (외부 prop 변경만 추적)
+  // 조건문으로 무한 루프 방지됨 - controlled component 패턴
+  const prevCompanyIdRef = useRef<string | undefined>(companyId)
   useEffect(() => {
-    if (companyId) {
+    if (companyId && companyId !== prevCompanyIdRef.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedId(companyId)
       setShares(1)
+      prevCompanyIdRef.current = companyId
     }
   }, [companyId])
 
@@ -144,10 +148,15 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
             const ch = c.price - c.previousPrice
             const chPct = c.previousPrice ? (ch / c.previousPrice) * 100 : 0
             const isHolding = player.portfolio[c.id]?.shares > 0
+            const isAcquired = c.status === 'acquired'
+            const parent = isAcquired ? companies.find(co => co.id === c.parentCompanyId) : null
+
             return (
               <div
                 key={c.id}
                 className={`flex items-center px-1.5 py-1 cursor-pointer border-b border-retro-gray/20 ${
+                  isAcquired ? 'opacity-50 bg-gray-100' : ''
+                } ${
                   c.id === selectedId
                     ? 'bg-win-title-active text-white'
                     : 'hover:bg-retro-gray/10'
@@ -157,7 +166,12 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1">
                     <span className="font-bold truncate">{c.ticker}</span>
-                    {isHolding && (
+                    {isAcquired && (
+                      <span className="text-[9px] px-0.5 bg-orange-500 text-white">
+                        인수됨
+                      </span>
+                    )}
+                    {isHolding && !isAcquired && (
                       <span
                         className={`text-[9px] px-0.5 ${
                           c.id === selectedId
@@ -175,6 +189,9 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
                     }`}
                   >
                     {c.name}
+                    {isAcquired && parent && (
+                      <span className="ml-1 text-[9px]">→ {parent.name}</span>
+                    )}
                   </div>
                 </div>
                 <div className="text-right ml-2">

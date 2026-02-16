@@ -2,30 +2,31 @@ import { useState, useMemo } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { formatHour } from '../../config/timeConfig'
 
+// 중요한 이벤트 타입 (컴포넌트 외부에 정의하여 재생성 방지)
+const IMPORTANT_TYPES = [
+  'interaction',
+  'level_up',
+  'resignation_warning',
+  'resignation',
+  'hire',
+  'counseling',
+  'conflict',
+  'mentoring',
+  'collaboration',
+  'trade_executed',
+  'trade_failed',
+  'stressed_out',
+  'regime_change', // 시장 레짐 변경 알림
+]
+
 export function NotificationCenter() {
   const officeEvents = useGameStore((s) => s.officeEvents)
   const hour = useGameStore((s) => s.time.hour)
   const [isOpen, setIsOpen] = useState(false)
 
-  // 중요한 이벤트만 필터링
-  const importantTypes = [
-    'interaction',
-    'level_up',
-    'resignation_warning',
-    'resignation',
-    'hire',
-    'counseling',
-    'conflict',
-    'mentoring',
-    'collaboration',
-    'trade_executed',
-    'trade_failed',
-    'stressed_out',
-  ]
-
   const notifications = useMemo(() => {
     return officeEvents
-      .filter((evt) => importantTypes.some((t) => evt.type.includes(t)))
+      .filter((evt) => IMPORTANT_TYPES.some((t) => evt.type.includes(t)))
       .slice(-50) // 최근 50개만
       .reverse() // 최신순
   }, [officeEvents])

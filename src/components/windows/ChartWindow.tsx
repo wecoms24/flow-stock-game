@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Line } from 'react-chartjs-2'
 import {
   Chart as ChartJS,
@@ -166,9 +166,13 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   const [selectedId, setSelectedIdLocal] = useState(companyId ?? companies[0]?.id ?? '')
 
   // 매매 창에서 기업 변경 시 동기화 (외부 prop 변경만 추적)
+  // 조건문으로 무한 루프 방지됨 - controlled component 패턴
+  const prevCompanyIdRef = useRef<string | undefined>(companyId)
   useEffect(() => {
-    if (companyId) {
+    if (companyId && companyId !== prevCompanyIdRef.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedIdLocal(companyId)
+      prevCompanyIdRef.current = companyId
     }
   }, [companyId])
 
@@ -232,11 +236,18 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   }, [companies, searchTerm, sectorFilter, changeFilter, sortBy])
 
   // Auto-select first company if current selection is filtered out
+  // 조건문으로 무한 루프 방지됨 - 필터 변경 시 유효한 선택 유지
   useEffect(() => {
-    if (filteredCompanies.length > 0 && !filteredCompanies.find((c) => c.id === selectedId)) {
-      setSelectedId(filteredCompanies[0].id)
-    }
-  }, [filteredCompanies, selectedId])
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedIdLocal((current) => {
+      if (filteredCompanies.length > 0 && !filteredCompanies.find((c) => c.id === current)) {
+        const newId = filteredCompanies[0].id
+        updateWindowProps('trading', { companyId: newId })
+        return newId
+      }
+      return current
+    })
+  }, [filteredCompanies, updateWindowProps])
 
   // Reset all filters
   const resetFilters = () => {

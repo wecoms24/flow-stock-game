@@ -54,30 +54,3 @@ export function RankChangeNotification({ oldRank, newRank }: RankChangeNotificat
     document.body,
   )
 }
-
-// Hook to listen for rank changes
-export function useRankChangeNotification() {
-  const [notification, setNotification] = useState<{ oldRank: number; newRank: number } | null>(
-    null,
-  )
-
-  useEffect(() => {
-    const handleRankChange = (e: Event) => {
-      const customEvent = e as CustomEvent<{ oldRank: number; newRank: number }>
-      setNotification(customEvent.detail)
-
-      // Clear after animation
-      setTimeout(() => {
-        setNotification(null)
-      }, 3500)
-    }
-
-    window.addEventListener('rankChange', handleRankChange)
-
-    return () => {
-      window.removeEventListener('rankChange', handleRankChange)
-    }
-  }, [])
-
-  return notification
-}

@@ -11,7 +11,7 @@ import { TRAIT_DEFINITIONS } from '../../data/traits'
 import { selectChatter } from '../../data/chatter'
 import { TITLE_LABELS, BADGE_COLORS, badgeForLevel, titleForLevel } from '../../systems/growthSystem'
 import { soundManager } from '../../systems/soundManager'
-import { emitFloatingText } from '../effects/FloatingText'
+import { emitFloatingText } from '../../utils/floatingTextEmitter'
 import { ROLE_EMOJI, BEHAVIOR_EMOJI, getMoodFace } from '../../data/employeeEmoji'
 
 const HIRE_ROLES: EmployeeRole[] = ['intern', 'analyst', 'trader', 'manager', 'ceo', 'hr_manager']

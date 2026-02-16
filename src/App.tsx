@@ -8,10 +8,8 @@ import { WindowManager } from './components/windows/WindowManager'
 import { EndingScreen } from './components/windows/EndingScreen'
 import { CRTOverlay } from './components/effects/CRTOverlay'
 import { StockParticles } from './components/effects/StockParticles'
-import {
-  RankChangeNotification,
-  useRankChangeNotification,
-} from './components/effects/RankChangeNotification'
+import { RankChangeNotification } from './components/effects/RankChangeNotification'
+import { useRankChangeNotification } from './hooks/useRankChangeNotification'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { LevelUpOverlay } from './components/effects/LevelUpOverlay'
 import { FloatingTextContainer } from './components/effects/FloatingText'

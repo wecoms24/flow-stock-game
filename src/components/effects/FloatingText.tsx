@@ -1,28 +1,14 @@
 import { useEffect, useState } from 'react'
-
-interface FloatingTextItem {
-  id: number
-  text: string
-  x: number
-  y: number
-  color: string
-}
+import type { FloatingTextItem } from '../../utils/floatingTextEmitter'
+import { addFloatingTextListener } from '../../utils/floatingTextEmitter'
 
 let nextId = 0
-
-// Global event bus for floating text
-type FloatingTextListener = (item: Omit<FloatingTextItem, 'id'>) => void
-const listeners: FloatingTextListener[] = []
-
-export function emitFloatingText(text: string, x: number, y: number, color = '#FFD700') {
-  listeners.forEach((fn) => fn({ text, x, y, color }))
-}
 
 export function FloatingTextContainer() {
   const [items, setItems] = useState<FloatingTextItem[]>([])
 
   useEffect(() => {
-    const handler: FloatingTextListener = (item) => {
+    const removeListener = addFloatingTextListener((item) => {
       const id = nextId++
       setItems((prev) => [...prev, { ...item, id }])
 
@@ -30,13 +16,9 @@ export function FloatingTextContainer() {
       setTimeout(() => {
         setItems((prev) => prev.filter((i) => i.id !== id))
       }, 1200)
-    }
+    })
 
-    listeners.push(handler)
-    return () => {
-      const idx = listeners.indexOf(handler)
-      if (idx >= 0) listeners.splice(idx, 1)
-    }
+    return removeListener
   }, [])
 
   return (

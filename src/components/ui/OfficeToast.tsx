@@ -15,7 +15,6 @@ const TOAST_DURATION = 4000
 export function OfficeToast() {
   const officeEvents = useGameStore((s) => s.officeEvents)
   const isGameStarted = useGameStore((s) => s.isGameStarted)
-  const hour = useGameStore((s) => s.time.hour)
   const [toasts, setToasts] = useState<Toast[]>([])
   const lastSeenRef = useRef(0)
   const toastIdRef = useRef(0)
@@ -56,10 +55,12 @@ export function OfficeToast() {
     // 가장 최근 이벤트만 (최대 1개씩 추가)
     const latest = important[important.length - 1]
     const id = ++toastIdRef.current
+    // 현재 시간을 useEffect 내부에서 직접 가져옴 (의존성 배열에 추가하지 않기 위해)
+    const currentHour = useGameStore.getState().time.hour
     const toast: Toast = {
       id,
       emoji: latest.emoji,
-      message: `${formatHour(hour)} | ${latest.message}`,
+      message: `${formatHour(currentHour)} | ${latest.message}`,
       type: latest.type,
     }
 

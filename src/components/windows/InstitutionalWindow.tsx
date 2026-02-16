@@ -22,6 +22,13 @@ export const InstitutionalWindow: React.FC<Props> = ({ companyId }) => {
   const events = useGameStore((s) => s.events)
   const [showAllList, setShowAllList] = useState(false)
 
+  // Hook은 조건부 return 이전에 호출되어야 함 (Rules of Hooks)
+  const marketSentiment = useMemo(() => calculateMarketSentiment(events), [events])
+  const isPanicSell = useMemo(
+    () => (company ? checkInstitutionalPanicSell(company, marketSentiment) : false),
+    [company, marketSentiment],
+  )
+
   if (!company) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-gray-200 font-pixel">
@@ -32,13 +39,6 @@ export const InstitutionalWindow: React.FC<Props> = ({ companyId }) => {
 
   const { institutionFlow, financials, institutionFlowHistory } = company
   const isBuyPressure = institutionFlow?.netBuyVolume > 0
-
-  // 패닉 셀 체크 (useMemo로 최적화)
-  const marketSentiment = useMemo(() => calculateMarketSentiment(events), [events])
-  const isPanicSell = useMemo(
-    () => checkInstitutionalPanicSell(company, marketSentiment),
-    [company, marketSentiment],
-  )
 
   return (
     <div className="w-full h-full bg-gray-200 border-2 border-white border-r-gray-600 border-b-gray-600 p-3 font-pixel overflow-auto">
