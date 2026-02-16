@@ -202,7 +202,7 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
                   <label className="block text-xs mb-1">
                     AUM: <strong>x{competitorSetup.aumMultiplier}</strong>
                     <span className="text-retro-gray ml-1">
-                      (경쟁자당{' '}
+                      (Normal 기준 경쟁자당{' '}
                       {(
                         (DIFFICULTY_TABLE.normal.initialCash * competitorSetup.aumMultiplier) /
                         competitorSetup.count /

@@ -32,7 +32,7 @@ export function evaluateRisk(
 
   // Sell validation: check if we have enough shares
   if (proposal.direction === 'sell') {
-    const position = portfolio[proposal.ticker]
+    const position = portfolio[proposal.companyId]
     if (!position || position.shares < proposal.quantity) {
       return { approved: false, reason: 'insufficient_shares' }
     }
@@ -65,7 +65,7 @@ export function evaluateRisk(
 
   // Portfolio concentration check: reject if >30% in one stock (including proposed buy)
   if (proposal.direction === 'buy') {
-    const position = portfolio[proposal.ticker]
+    const position = portfolio[proposal.companyId]
     const totalShares = (position?.shares ?? 0) + proposal.quantity
     if (totalShares * proposal.targetPrice > playerCash * 0.3) {
       threshold += 15 // more cautious with concentrated positions
