@@ -441,6 +441,13 @@ export interface CompetitorAction {
   timestamp: number
 }
 
+export interface OrderFlow {
+  buyNotional: number
+  sellNotional: number
+  netNotional: number // buy - sell
+  tradeCount: number
+}
+
 export interface TauntMessage {
   competitorId: string
   competitorName: string

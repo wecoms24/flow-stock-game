@@ -16,6 +16,7 @@ import {
 import { SECTOR_CORRELATION, SPILLOVER_FACTOR } from '../data/sectorCorrelation'
 import type { Sector } from '../types'
 import { getBusinessHourIndex, getAbsoluteTimestamp } from '../config/timeConfig'
+import { MARKET_IMPACT_CONFIG } from '../config/marketImpactConfig'
 
 /* ── Tick Engine: 1-hour time control system ── */
 
@@ -160,12 +161,31 @@ export function startTickLoop() {
 
     const dt = 1 / 10 // 하루 10시간, 1시간 = 1/10일
 
+    // Build order flow data for market impact
+    const orderFlowEntries = Object.entries(current.orderFlowByCompany)
+      .filter(([, flow]) => flow.tradeCount > 0)
+      .map(([companyId, flow]) => ({
+        companyId,
+        netNotional: flow.netNotional,
+        tradeCount: flow.tradeCount,
+      }))
+
     worker.postMessage({
       type: 'tick',
       companies: companyData,
       dt,
       events: eventModifiers,
       sentiment: sentimentData,
+      orderFlow: orderFlowEntries.length > 0 ? orderFlowEntries : undefined,
+      marketImpact: orderFlowEntries.length > 0
+        ? {
+            impactCoefficient: MARKET_IMPACT_CONFIG.IMPACT_COEFFICIENT,
+            liquidityScale: MARKET_IMPACT_CONFIG.LIQUIDITY_SCALE,
+            imbalanceSigmaFactor: MARKET_IMPACT_CONFIG.IMBALANCE_SIGMA_FACTOR,
+            maxDriftImpact: MARKET_IMPACT_CONFIG.MAX_DRIFT_IMPACT,
+            maxSigmaAmplification: MARKET_IMPACT_CONFIG.MAX_SIGMA_AMPLIFICATION,
+          }
+        : undefined,
     })
 
     // Tick sentiment engine (natural decay)

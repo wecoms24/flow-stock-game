@@ -19,6 +19,7 @@ import type {
   CompetitorAction,
   TauntMessage,
   LevelUpEvent,
+  OrderFlow,
 } from '../types'
 import type { OfficeGrid, FurnitureType, FurnitureItem } from '../types/office'
 import type { TradeProposal, ProposalStatus } from '../types/trade'
@@ -144,6 +145,9 @@ interface GameStore {
   officeEvents: Array<{ timestamp: number; type: string; emoji: string; message: string; employeeIds: string[] }>
   employeeBehaviors: Record<string, string> // employeeId → action type (WORKING, IDLE, etc.)
 
+  // Order Flow (Deep Market)
+  orderFlowByCompany: Record<string, OrderFlow>
+
   // Actions - Game
   startGame: (difficulty: Difficulty, targetAsset?: number) => void
   loadSavedGame: () => Promise<boolean>
@@ -259,6 +263,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   officeEvents: [],
   employeeBehaviors: {},
   proposals: [],
+  orderFlowByCompany: {},
 
   /* ── Game Actions ── */
   startGame: (difficulty, targetAsset) => {
@@ -406,6 +411,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       officeEvents: [],
       employeeBehaviors: {},
       proposals: data.proposals ?? [],
+      orderFlowByCompany: {},
       windows: [],
       nextZIndex: 1,
       windowIdCounter: 0,
@@ -868,6 +874,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return {
         time: { ...s.time, year, month, day, hour },
         player: updatedPlayer,
+        // Reset order flow on day change
+        ...(dayChanged ? { orderFlowByCompany: {} } : {}),
       }
     }),
 
@@ -1025,6 +1033,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const newCash = s.player.cash - cost
       const newPortfolio = { ...s.player.portfolio, [companyId]: newPosition }
 
+      // Accumulate order flow
+      const prev = s.orderFlowByCompany[companyId]
+      const flow: OrderFlow = prev
+        ? { buyNotional: prev.buyNotional + cost, sellNotional: prev.sellNotional, netNotional: prev.netNotional + cost, tradeCount: prev.tradeCount + 1 }
+        : { buyNotional: cost, sellNotional: 0, netNotional: cost, tradeCount: 1 }
+
       return {
         player: {
           ...s.player,
@@ -1032,6 +1046,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           portfolio: newPortfolio,
           totalAssetValue: newCash + calcPortfolioValue(newPortfolio, s.companies),
         },
+        orderFlowByCompany: { ...s.orderFlowByCompany, [companyId]: flow },
       }
     })
 
@@ -1062,6 +1077,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       const newCash = s.player.cash + revenue
 
+      // Accumulate order flow
+      const prev = s.orderFlowByCompany[companyId]
+      const flow: OrderFlow = prev
+        ? { buyNotional: prev.buyNotional, sellNotional: prev.sellNotional + revenue, netNotional: prev.netNotional - revenue, tradeCount: prev.tradeCount + 1 }
+        : { buyNotional: 0, sellNotional: revenue, netNotional: -revenue, tradeCount: 1 }
+
       return {
         player: {
           ...s.player,
@@ -1069,6 +1090,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           portfolio: newPortfolio,
           totalAssetValue: newCash + calcPortfolioValue(newPortfolio, s.companies),
         },
+        orderFlowByCompany: { ...s.orderFlowByCompany, [companyId]: flow },
       }
     })
 
@@ -1702,10 +1724,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       })
 
+      // Accumulate order flow from competitor trades
+      const newOrderFlow = { ...state.orderFlowByCompany }
+      actions.forEach((action) => {
+        const notional = action.quantity * action.price
+        const prev = newOrderFlow[action.companyId]
+        if (action.action === 'buy') {
+          newOrderFlow[action.companyId] = prev
+            ? { buyNotional: prev.buyNotional + notional, sellNotional: prev.sellNotional, netNotional: prev.netNotional + notional, tradeCount: prev.tradeCount + 1 }
+            : { buyNotional: notional, sellNotional: 0, netNotional: notional, tradeCount: 1 }
+        } else {
+          newOrderFlow[action.companyId] = prev
+            ? { buyNotional: prev.buyNotional, sellNotional: prev.sellNotional + notional, netNotional: prev.netNotional - notional, tradeCount: prev.tradeCount + 1 }
+            : { buyNotional: 0, sellNotional: notional, netNotional: -notional, tradeCount: 1 }
+        }
+      })
+
       return {
         competitors: newCompetitors,
         taunts: newTaunts.slice(-20), // Keep last 20
         competitorActions: [...state.competitorActions, ...actions].slice(-100), // Keep last 100
+        orderFlowByCompany: newOrderFlow,
       }
     })
   },

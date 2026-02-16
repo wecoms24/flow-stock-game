@@ -24,12 +24,28 @@ interface SentimentData {
   sectorDrifts: Record<string, number> // 섹터별 센티먼트 drift
 }
 
+interface OrderFlowEntry {
+  companyId: string
+  netNotional: number
+  tradeCount: number
+}
+
+interface MarketImpactParams {
+  impactCoefficient: number
+  liquidityScale: number
+  imbalanceSigmaFactor: number
+  maxDriftImpact: number
+  maxSigmaAmplification: number
+}
+
 interface TickMessage {
   type: 'tick'
   companies: CompanyData[]
   dt: number // time step (fraction of year)
   events: EventModifier[]
   sentiment?: SentimentData // 시장 센티먼트 데이터
+  orderFlow?: OrderFlowEntry[] // 주문흐름 → 시장충격
+  marketImpact?: MarketImpactParams // market impact 설정
 }
 
 interface PriceUpdate {
@@ -85,12 +101,13 @@ function doesEventAffect(evt: EventModifier, company: CompanyData): boolean {
 self.onmessage = (e: MessageEvent<TickMessage>) => {
   if (e.data.type !== 'tick') return
 
-  const { companies, dt, events, sentiment } = e.data
+  const { companies, dt, events, sentiment, orderFlow, marketImpact } = e.data
   const prices: Record<string, number> = {}
 
   for (const company of companies) {
     let mu = company.drift
     let sigma = company.volatility
+    const baseSigma = sigma
 
     // Apply active event modifiers with propagation delay + sensitivity
     for (const evt of events) {
@@ -107,6 +124,26 @@ self.onmessage = (e: MessageEvent<TickMessage>) => {
       mu += sentiment.globalDrift
       mu += sentiment.sectorDrifts[company.sector] ?? 0
       sigma *= sentiment.volatilityMultiplier
+    }
+
+    // Apply market impact from order flow
+    if (orderFlow && marketImpact) {
+      const flow = orderFlow.find((f) => f.companyId === company.id)
+      if (flow && flow.tradeCount > 0) {
+        const K = marketImpact.impactCoefficient
+        const scale = marketImpact.liquidityScale
+        const maxDrift = marketImpact.maxDriftImpact
+        const maxSigmaAmp = marketImpact.maxSigmaAmplification
+
+        // Drift impact: directional pressure from net order flow
+        const driftImpact = K * Math.tanh(flow.netNotional / scale)
+        mu += Math.max(-maxDrift, Math.min(maxDrift, driftImpact))
+
+        // Volatility amplification: large imbalance increases uncertainty
+        const imbalanceRatio = Math.abs(flow.netNotional) / (Math.abs(flow.netNotional) + scale)
+        sigma *= 1 + marketImpact.imbalanceSigmaFactor * imbalanceRatio
+        sigma = Math.min(sigma, baseSigma * maxSigmaAmp)
+      }
     }
 
     // Clamp sigma to prevent negative volatility from extreme events
