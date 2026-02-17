@@ -8,14 +8,17 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest",
+    "test": "vitest run",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
-    "test:unit": "vitest tests/unit",
-    "test:integration": "vitest tests/integration",
-    "test:e2e": "vitest tests/e2e",
-    "test:bench": "vitest bench tests/performance",
-    "test:watch": "vitest --watch"
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:e2e": "vitest run tests/e2e",
+    "test:sim": "vitest run tests/simulation --testTimeout=120000 --exclude='**/cashFlow5YearStress*' --exclude='**/twentyYearTradeAI*' --exclude='**/tenYearSimulation*'",
+    "test:sim:heavy": "vitest run tests/simulation --testTimeout=1200000",
+    "test:perf": "vitest run tests/performance",
+    "test:watch": "vitest --watch",
+    "test:all": "vitest run --config vitest.config.all.ts"
   },
   "dependencies": {
     "@subframe7536/sqlite-wasm": "^0.5.8",

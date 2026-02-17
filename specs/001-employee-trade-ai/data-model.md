@@ -54,12 +54,12 @@ PENDING → APPROVED → EXECUTED
 
 | Field                    | Type   | Default | Description                          |
 | ------------------------ | ------ | ------- | ------------------------------------ |
-| ANALYST_TICK_INTERVAL    | number | 10      | Analyst 분석 주기 (틱)               |
-| MANAGER_TICK_INTERVAL    | number | 5       | Manager 검토 주기 (틱)               |
-| TRADER_TICK_INTERVAL     | number | 1       | Trader 체결 주기 (틱)                |
+| ANALYST_HOUR_INTERVAL    | number | 10      | Analyst 분석 주기 (시간)             |
+| MANAGER_HOUR_INTERVAL    | number | 5       | Manager 검토 주기 (시간)             |
+| TRADER_HOUR_INTERVAL     | number | 1       | Trader 체결 주기 (시간)              |
 | CONFIDENCE_THRESHOLD     | number | 70      | 제안서 생성 최소 Confidence          |
 | MAX_PENDING_PROPOSALS    | number | 10      | 최대 PENDING 제안서 수               |
-| PROPOSAL_EXPIRE_TICKS    | number | 100     | PENDING 자동 만료 틱 수              |
+| PROPOSAL_EXPIRE_HOURS    | number | 100     | PENDING 자동 만료 시간 수            |
 | BASE_SLIPPAGE            | number | 0.01    | 기본 슬리피지 비율 (1%)              |
 | NO_MANAGER_MISTAKE_RATE  | number | 0.30    | Manager 부재 시 실수 확률            |
 | NO_TRADER_FEE_MULTIPLIER | number | 2.0     | Trader 부재 시 수수료 배율           |
@@ -131,6 +131,46 @@ SaveData {
   proposals?: TradeProposal[]  // 옵셔널 (하위 호환)
 }
 ```
+
+## Phase 2 Extensions (Post-Spec Systems)
+
+Implementation exceeded original spec scope. The following systems were added during Phase 2 development and integrate with the trade pipeline through `AggregatedCorporateEffects` parameter injection.
+
+### Enhanced Function Signatures
+
+Original spec defined 3-4 parameter functions. Actual implementation uses 6-7 parameters due to system integration:
+
+| Function | Spec Params | Actual Params | Added |
+|----------|-------------|---------------|-------|
+| `analyzeStock` | 4 (company, history, analyst, adjacency) | 6 | +marketEvents, +corporateEffects |
+| `generateProposal` | 5 | 7 | +playerCash, +corporateEffects |
+| `evaluateProposal` | 4 | 7 | +playerCash, +portfolio, +corporateEffects |
+| `executeProposal` | 5 | 7 | +volatility, +corporateEffects |
+
+### AggregatedCorporateEffects (Integration Interface)
+
+Computed by `corporateSkillEngine.aggregateCorporateEffects()`, passed to all pipeline functions:
+
+| Field | Type | Range | Pipeline Impact |
+|-------|------|-------|-----------------|
+| signalAccuracyBonus | number | 0-0.5 | +confidence in analyzeStock |
+| slippageReduction | number | 0-0.8 | ×(1-value) on slippage in executeProposal |
+| commissionDiscount | number | 0-0.5 | ×(1-value) on fee in executeProposal |
+| riskReductionBonus | number | 0+ | ×(1-value) on cashRatio in generateProposal |
+| maxPendingProposals | number | 0+ | Added to MAX_PENDING_PROPOSALS limit |
+| stopLossThreshold | number? | -0.03~-0.10 | Auto-sell trigger in checkPortfolioExits |
+| takeProfitThreshold | number? | 0.05~0.20 | Auto-sell trigger in checkPortfolioExits |
+| maxSinglePositionPercent | number? | 0.05~0.30 | Position size cap in generateProposal |
+
+### Additional Systems (Not in Original Spec)
+
+1. **Corporate Skill Engine** (`corporateSkillEngine.ts`): 12 company-level skills with global/conditional effects
+2. **Training Engine** (`trainingEngine.ts`): Education programs connecting corporate skills → employee RPG abilities
+3. **Signal Generation Engine** (`signalGenerationEngine.ts`): Badge-enhanced signals with noise filtering
+4. **RPG Skill System** (`skillSystem.ts`): 30-node passive skill tree (Analysis/Trading/Research)
+5. **Trade Execution Engine** (`tradeExecutionEngine.ts`): Badge-aware order execution with market impact
+6. **Stop Loss/Take Profit** (`analystLogic.checkPortfolioExits`): Automatic exit triggers
+7. **Badge System** (`badgeConverter.ts`): Employee badges → trade modifier effects
 
 ## Validation Rules
 

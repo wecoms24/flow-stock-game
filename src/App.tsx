@@ -14,6 +14,7 @@ import { useRankChangeNotification } from './hooks/useRankChangeNotification'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { LevelUpOverlay } from './components/effects/LevelUpOverlay'
 import { FloatingTextContainer } from './components/effects/FloatingText'
+import { TradeAnimationSequence } from './components/effects/TradeAnimationSequence'
 import { OfficeToast } from './components/ui/OfficeToast'
 import { RegimeToast } from './components/ui/RegimeToast'
 import { hasSaveData } from './systems/saveSystem'
@@ -33,27 +34,46 @@ export default function App() {
   // Check for existing save on mount + show migration prompt if needed
   useEffect(() => {
     const initializeApp = async () => {
-      // Check for save data first
-      const saveExists = await hasSaveData()
-      setHasSave(saveExists)
+      try {
+        // Check for save data first
+        const saveExists = await hasSaveData()
+        setHasSave(saveExists)
 
-      // Check if migration prompt should be shown
-      const sqliteEnabled = getFeatureFlag('sqlite_enabled')
-      const migrationDismissed = localStorage.getItem('migration_dismissed') === 'true'
+        // Check if migration prompt should be shown
+        const sqliteEnabled = getFeatureFlag('sqlite_enabled')
+        const migrationDismissed = localStorage.getItem('migration_dismissed') === 'true'
 
-      if (sqliteEnabled && saveExists && !migrationDismissed) {
-        // Check if migration already completed
-        try {
-          const db = await initializeDB()
-          const hasSQLiteSave = await saveSlotExists(db, 'autosave')
-          setShowMigrationBanner(!hasSQLiteSave)
-        } catch {
-          setShowMigrationBanner(true)
+        if (sqliteEnabled && saveExists && !migrationDismissed) {
+          // Check if migration already completed
+          // Use extra caution: SQLite init can fail on first page load
+          try {
+            const db = await initializeDB()
+            const hasSQLiteSave = await saveSlotExists(db, 'autosave')
+            setShowMigrationBanner(!hasSQLiteSave)
+          } catch (error) {
+            console.error(
+              '[App] SQLite 초기화 실패. IndexedDB로 폴백합니다.',
+              error instanceof Error ? error.message : String(error),
+            )
+            // Auto-disable SQLite on initialization failure
+            setFeatureFlag('sqlite_enabled', false)
+            setShowMigrationBanner(false)
+            // Show alert to user
+            console.warn(
+              '⚠️ SQLite를 사용할 수 없습니다. IndexedDB 저장 방식을 사용합니다.\n' +
+                '게임은 정상적으로 작동하지만, SQLite 기능은 비활성화됩니다.',
+            )
+          }
         }
+      } catch (error) {
+        console.error('[App] 초기화 중 오류:', error)
+        // Graceful degradation: Continue with IndexedDB fallback
+        setHasSave(false)
+        setShowMigrationBanner(false)
       }
     }
 
-    initializeApp().catch(console.error)
+    initializeApp()
   }, [])
 
   useEffect(() => {
@@ -154,6 +174,7 @@ export default function App() {
         <LevelUpOverlay />
         <OfficeToast />
         <RegimeToast />
+        <TradeAnimationSequence />
 
         {isGameOver && <EndingScreen />}
 
