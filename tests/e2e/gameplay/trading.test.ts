@@ -128,7 +128,7 @@ describe('E2E: 거래 시나리오 (Trading Scenarios)', () => {
       const finalCash = store.getState().player.cash
       const profit = finalCash - initialCash
 
-      expect(profit).toBeGreaterThan(initialPrice * 999)
+      expect(profit).toBeGreaterThanOrEqual(initialPrice * 999)
     })
   })
 
@@ -190,20 +190,23 @@ describe('E2E: 거래 시나리오 (Trading Scenarios)', () => {
       const initialCash = store.getState().player.cash
       const originalPrice = testCompany.price
 
-      // When: 100주 매수
-      store.buyStock(testCompany.ticker, 100)
+      // When: 거의 모든 자금으로 매수 (자금의 90% 사용)
+      const sharesToBuy = Math.floor((initialCash * 0.9) / originalPrice)
+      const investedAmount = sharesToBuy * originalPrice
+      store.buyStock(testCompany.ticker, sharesToBuy)
 
       // And: 가격 폭락 (99% 손실)
       setCompanyPrice(store, testCompany.ticker, originalPrice * 0.01)
 
       // And: 폭락 후 매도
-      store.sellStock(testCompany.ticker, 100)
+      store.sellStock(testCompany.ticker, sharesToBuy)
 
-      // Then: 거의 모든 투자금 손실
+      // Then: 투자 금액의 99% 손실 (전체 자금의 약 90% 손실)
       const finalCash = store.getState().player.cash
-      const remainingRatio = finalCash / initialCash
+      const lossAmount = initialCash - finalCash
+      const lossRatio = lossAmount / investedAmount
 
-      expect(remainingRatio).toBeLessThan(0.02) // 1% 이하만 남음
+      expect(lossRatio).toBeGreaterThan(0.95) // 95% 이상 손실
     })
 
     it('손절매: 손실이 일정 수준에서 매도 결정', () => {

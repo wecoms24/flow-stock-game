@@ -212,8 +212,8 @@ describe('데이터: 사무실 가구(Furniture)', () => {
   })
 
   describe('가구 타입 검증', () => {
-    it('책상(desk)이 정의되어 있다', () => {
-      expect(FURNITURE_CATALOG.desk).toBeDefined()
+    it('책상(basic)이 정의되어 있다', () => {
+      expect(FURNITURE_CATALOG.basic).toBeDefined()
     })
 
     it('특수 가구(서버랙, 트로피 등)가 존재한다', () => {
