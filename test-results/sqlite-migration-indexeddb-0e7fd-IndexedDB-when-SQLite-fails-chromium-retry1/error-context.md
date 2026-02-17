@@ -1,0 +1,64 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e3]: Retro Stock-OS 95 - Setup
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: Retro Stock-OS 95
+      - generic [ref=e7]: 1995년부터 2025년까지, 30년간의 주식 투자 시뮬레이션
+    - generic [ref=e9]:
+      - checkbox "🥊 Investment Battle Mode" [ref=e10]
+      - generic [ref=e11] [cursor=pointer]: 🥊 Investment Battle Mode
+    - generic [ref=e12]:
+      - generic [ref=e13]: "🎯 승리 목표:"
+      - generic [ref=e14]:
+        - button "🏖️ 편한 은퇴 5억원 달성" [ref=e15]:
+          - generic [ref=e16]:
+            - generic [ref=e17]: 🏖️
+            - generic [ref=e18]: 편한 은퇴
+          - generic [ref=e19]: 5억원 달성
+        - button "💰 억만장자 10억원 달성" [ref=e20]:
+          - generic [ref=e21]:
+            - generic [ref=e22]: 💰
+            - generic [ref=e23]: 억만장자
+          - generic [ref=e24]: 10억원 달성
+        - button "⭐ 투자의 신 50억원 달성" [ref=e25]:
+          - generic [ref=e26]:
+            - generic [ref=e27]: ⭐
+            - generic [ref=e28]: 투자의 신
+          - generic [ref=e29]: 50억원 달성
+        - button "🔥 워렌 버핏 100억원 달성" [ref=e30]:
+          - generic [ref=e31]:
+            - generic [ref=e32]: 🔥
+            - generic [ref=e33]: 워렌 버핏
+          - generic [ref=e34]: 100억원 달성
+    - generic [ref=e35]:
+      - generic [ref=e36]: "💰 초기 자본 설정:"
+      - generic [ref=e37]:
+        - generic [ref=e38]: 커스텀 초기 자본 (비워두면 난이도별 기본값 사용)
+        - generic [ref=e39]:
+          - 'textbox "예: 50000000" [ref=e40]'
+          - button "초기화" [ref=e41]
+    - generic [ref=e42]:
+      - generic [ref=e43]: "새 게임 시작:"
+      - generic [ref=e45]:
+        - generic [ref=e46]:
+          - generic [ref=e47]: Easy
+          - generic [ref=e48]: 넉넉한 자본, 낮은 변동성
+          - generic [ref=e49]: "초기자본: 1억원 · 목표: 10억원 달성"
+        - button "시작" [ref=e50] [cursor=pointer]
+      - generic [ref=e52]:
+        - generic [ref=e53]:
+          - generic [ref=e54]: Normal
+          - generic [ref=e55]: 표준 밸런스
+          - generic [ref=e56]: "초기자본: 5천만원 · 목표: 10억원 달성"
+        - button "시작" [ref=e57] [cursor=pointer]
+      - generic [ref=e59]:
+        - generic [ref=e60]:
+          - generic [ref=e61]: Hard
+          - generic [ref=e62]: 높은 변동성, 빠른 스태미너 소모
+          - generic [ref=e63]: "초기자본: 2천만원 · 목표: 10억원 달성"
+        - button "시작" [ref=e64] [cursor=pointer]
+    - generic [ref=e65]: (c) 2026 Wecoms.co.ltd - Retro Stock-OS 95
+```
