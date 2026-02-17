@@ -1,12 +1,20 @@
 /* ── Analyst Logic: Signal Detection Pipeline (Pure Functions) ── */
 
-import type { Company, Employee } from '../../types'
+import type { Company, Employee, MarketEvent } from '../../types'
 import type { TradeProposal } from '../../types/trade'
 import { calculateRSI, calculateMA } from '../../utils/technicalIndicators'
 import { TRADE_AI_CONFIG } from '../../config/tradeAIConfig'
+import { SKILL_BALANCE } from '../../config/skillBalance'
+import { generateTradeSignals } from '../signalGenerationEngine' // ✨ 신규 엔진 통합
+import { getPassiveModifiers } from '../../systems/skillSystem' // ✨ RPG Skill Tree
 
 /**
  * Analyze a stock and return confidence/direction signal.
+ *
+ * ✨ Enhanced with badge system:
+ * - Base confidence from technical analysis (RSI, MA)
+ * - Badge bonus from signalGenerationEngine
+ * - Trait and condition adjustments
  *
  * Confidence = (analysisSkill * 0.5) + (traitBonus * 0.3) + (conditionFactor * 0.2)
  * Insight: 5% chance → +20 confidence bonus
@@ -16,6 +24,7 @@ export function analyzeStock(
   priceHistory: number[],
   analyst: Employee,
   adjacencyBonus: number = 0,
+  marketEvents: MarketEvent[] = [], // ✨ 신규: 이벤트 정보
 ): { confidence: number; direction: 'buy' | 'sell'; isInsight: boolean } | null {
   if (priceHistory.length < 15) return null
 
@@ -63,6 +72,26 @@ export function analyzeStock(
   const conditionFactor = conditionRaw * 20 // max 20
 
   let confidence = skillFactor + traitFactor + conditionFactor
+
+  // ✨ Badge bonus from signal generation engine
+  const signalEnhancement = generateTradeSignals(analyst, [company], marketEvents)
+  const signalMatch = signalEnhancement.find((s) => s.companyId === company.id)
+  if (signalMatch && !signalMatch.isNoise) {
+    // 신호 생성 엔진의 신뢰도를 추가 보너스로 활용 (최대 +20)
+    const badgeBonus = (signalMatch.confidence / 100) * 20
+    confidence += badgeBonus
+  }
+
+  // ✨ RPG Skill Tree: Apply signalAccuracy passive modifiers
+  const signalAccuracyModifiers = getPassiveModifiers(analyst, 'signalAccuracy')
+  for (const mod of signalAccuracyModifiers) {
+    if (mod.operation === 'add') {
+      // modifier 0.1 = 10% → +10 confidence points (0-100 scale)
+      confidence += mod.modifier * SKILL_BALANCE.CONFIDENCE_SCALE_MULTIPLIER
+    } else if (mod.operation === 'multiply') {
+      confidence *= mod.modifier
+    }
+  }
 
   // Insight ability: 5% chance → +20 confidence
   const isInsight = Math.random() < TRADE_AI_CONFIG.INSIGHT_CHANCE
