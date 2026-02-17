@@ -110,6 +110,7 @@ function makeCompany(
       topSellers: [],
       institutionalOwnership: 0,
     },
+    institutionFlowHistory: [], // 최근 10일 수급 추이 (초기값: 빈 배열)
     // M&A 시스템 필드
     status: 'active',
     parentCompanyId: null,

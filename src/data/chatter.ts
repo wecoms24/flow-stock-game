@@ -246,6 +246,46 @@ export const CHATTER_TEMPLATES: ChatterTemplate[] = [
     priority: 2,
     cooldownTicks: 7200, // 12시간
   },
+
+  // AI 배치 시스템 관련 (Task 3.2: Week 3 Integration)
+  {
+    id: 'ai_moved_closer',
+    category: 'random',
+    condition: () => false, // 외부에서 트리거
+    messages: [
+      '여기가 훨씬 편한데? 😊',
+      '자리 바꿔서 좋네요!',
+      '이 자리 마음에 들어요',
+      '일하기 훨씬 편하네!',
+    ],
+    priority: 5,
+    cooldownTicks: 7200,
+  },
+  {
+    id: 'ai_furniture_placed',
+    category: 'random',
+    condition: () => false, // 외부에서 트리거
+    messages: [
+      '커피머신이다!! ☕',
+      '휴게실 생겼다! 최고!',
+      '이제 좀 살 것 같아요',
+      '회사가 신경 써주네요!',
+    ],
+    priority: 5,
+    cooldownTicks: 7200,
+  },
+  {
+    id: 'ai_synergy_boost',
+    category: 'random',
+    condition: () => false, // 외부에서 트리거
+    messages: [
+      '{partner}랑 같이 일하니까 효율 좋네요!',
+      '팀워크가 훨씬 좋아진 것 같아요',
+      '이 자리에서 일하니 더 잘되네!',
+    ],
+    priority: 5,
+    cooldownTicks: 7200,
+  },
 ]
 
 /* ── Chatter Selection ── */
