@@ -81,6 +81,9 @@ function migrateSaveData(data: Record<string, unknown>): SaveData {
     // M&A 시스템 상태 필드
     data.lastMnaQuarter ??= 0
     data.pendingIPOs ??= []
+    // 플레이어 M&A 필드
+    data.playerAcquisitionHistory ??= []
+    data.lastPlayerAcquisitionTick ??= 0
     data.version = 5
   }
 

@@ -53,8 +53,9 @@ function calculateRiskTolerance(recentTrades: PlayerEvent[]): number {
   let totalTrades = 0
 
   for (const trade of trades) {
-    const qty = trade.metadata.qty || 0
-    const price = trade.metadata.price || 0
+    const meta = trade.metadata as { qty?: number; price?: number; action?: string }
+    const qty = meta.qty || 0
+    const price = meta.price || 0
     const notional = qty * price
 
     // 큰 거래 (1억 이상)는 위험도 증가
@@ -62,9 +63,9 @@ function calculateRiskTolerance(recentTrades: PlayerEvent[]): number {
       riskScore += 1
     }
     // 매수는 위험 증가, 매도는 위험 감소
-    if (trade.metadata.action === 'buy') {
+    if (meta.action === 'buy') {
       riskScore += 0.3
-    } else if (trade.metadata.action === 'sell') {
+    } else if (meta.action === 'sell') {
       riskScore -= 0.1
     }
 
@@ -89,9 +90,10 @@ function calculatePlayPace(recentSettings: PlayerEvent[]): number {
   const changeFrequency = settings.length
 
   // 속도 변경 비율 계산
-  const speedChanges = settings.filter(
-    (e) => e.metadata.speed !== undefined && e.metadata.speed > 1,
-  ).length
+  const speedChanges = settings.filter((e) => {
+    const meta = e.metadata as { speed?: number }
+    return meta.speed !== undefined && meta.speed > 1
+  }).length
 
   // 빠른 플레이 선호도
   const paceScore = speedChanges / Math.max(changeFrequency, 1)

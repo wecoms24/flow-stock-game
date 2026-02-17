@@ -134,4 +134,27 @@ export const soundManager = {
   playClick() {
     playTone(600, 0.03, 'square', 0.05)
   },
+
+  // AI Architect Sounds (Task 3.3: Week 3 Integration)
+  playAIProposalOpen() {
+    playTone(600, 0.1, 'sine', 0.08)
+  },
+
+  playAIApprove() {
+    playSequence([
+      { freq: 800, dur: 0.1 },
+      { freq: 1000, dur: 0.15 },
+    ], 'square')
+  },
+
+  playFurniturePlace() {
+    playSequence([
+      { freq: 500, dur: 0.08 },
+      { freq: 700, dur: 0.12 },
+    ], 'triangle')
+  },
+
+  playEmployeeMove() {
+    playTone(440, 0.08, 'sine', 0.06)
+  },
 }
