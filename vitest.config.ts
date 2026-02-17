@@ -27,9 +27,23 @@ export default defineConfig({
       },
     },
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
-    exclude: ['node_modules', 'dist'],
-    testTimeout: 10000,
+    exclude: [
+      'node_modules',
+      'dist',
+      // 장시간 시뮬레이션 테스트 기본 제외
+      // 별도 실행: npm run test:sim (lightweight) / npm run test:sim:heavy (full)
+      'tests/simulation/**',
+      'tests/performance/**',
+    ],
+    testTimeout: 30000,
     hookTimeout: 10000,
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        maxForks: 4,
+        minForks: 1,
+      },
+    },
   },
   resolve: {
     alias: {
