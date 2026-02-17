@@ -14,6 +14,7 @@ export interface CircuitBreakerState {
   triggeredAt: GameTime | null
   kospiSessionOpen: number // KOSPI index at session open
   kospiCurrent: number // Current KOSPI index
+  triggeredLevels: number[] // Levels already triggered today (KRX: 1 trigger per level per day)
 }
 
 /**
@@ -27,6 +28,7 @@ export function initializeCircuitBreakerState(): CircuitBreakerState {
     triggeredAt: null,
     kospiSessionOpen: 100, // Base index
     kospiCurrent: 100,
+    triggeredLevels: [],
   }
 }
 
@@ -76,9 +78,11 @@ export function checkCircuitBreaker(
 
   // Calculate daily return
   const dailyReturn = (kospiIndex - kospiSessionOpen) / kospiSessionOpen
+  const alreadyTriggered = currentState.triggeredLevels ?? []
 
   // Check circuit breaker levels (descending order for correct level detection)
-  if (dailyReturn <= CIRCUIT_BREAKER_CONFIG.LEVEL_3.threshold) {
+  // KRX rule: each level can only trigger once per trading day
+  if (dailyReturn <= CIRCUIT_BREAKER_CONFIG.LEVEL_3.threshold && !alreadyTriggered.includes(3)) {
     return {
       level: 3,
       isActive: true,
@@ -86,8 +90,9 @@ export function checkCircuitBreaker(
       triggeredAt: currentTime,
       kospiSessionOpen,
       kospiCurrent: kospiIndex,
+      triggeredLevels: [...alreadyTriggered, 3],
     }
-  } else if (dailyReturn <= CIRCUIT_BREAKER_CONFIG.LEVEL_2.threshold) {
+  } else if (dailyReturn <= CIRCUIT_BREAKER_CONFIG.LEVEL_2.threshold && !alreadyTriggered.includes(2)) {
     return {
       level: 2,
       isActive: true,
@@ -95,8 +100,9 @@ export function checkCircuitBreaker(
       triggeredAt: currentTime,
       kospiSessionOpen,
       kospiCurrent: kospiIndex,
+      triggeredLevels: [...alreadyTriggered, 2],
     }
-  } else if (dailyReturn <= CIRCUIT_BREAKER_CONFIG.LEVEL_1.threshold) {
+  } else if (dailyReturn <= CIRCUIT_BREAKER_CONFIG.LEVEL_1.threshold && !alreadyTriggered.includes(1)) {
     return {
       level: 1,
       isActive: true,
@@ -104,6 +110,7 @@ export function checkCircuitBreaker(
       triggeredAt: currentTime,
       kospiSessionOpen,
       kospiCurrent: kospiIndex,
+      triggeredLevels: [...alreadyTriggered, 1],
     }
   }
 
@@ -115,6 +122,7 @@ export function checkCircuitBreaker(
     triggeredAt: null,
     kospiSessionOpen,
     kospiCurrent: kospiIndex,
+    triggeredLevels: alreadyTriggered,
   }
 }
 
@@ -131,6 +139,7 @@ export function resetCircuitBreakerForNewDay(
     triggeredAt: null,
     kospiSessionOpen: kospiIndex,
     kospiCurrent: kospiIndex,
+    triggeredLevels: [],
   }
 }
 

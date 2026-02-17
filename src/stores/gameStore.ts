@@ -26,6 +26,8 @@ import type {
 } from '../types'
 import type { OfficeGrid, FurnitureType, FurnitureItem, OfficeLayout, DeskType, DecorationType, DeskItem, DecorationItem } from '../types/office'
 import type { TradeProposal, ProposalStatus } from '../types/trade'
+import type { CashFlowEntry, CashFlowCategory, RealizedTrade, MonthlySummary } from '../types/cashFlow'
+import { createCashFlowEntry, purgeOldEntries, detectAnomalies, aggregateMonthly } from '../engines/cashFlowTracker'
 import type { PlayerEvent, PlayerProfile } from '../types/personalization'
 import type { MnaDeal } from '../engines/mnaEngine'
 import { MAX_EVENT_LOG_SIZE, defaultProfile } from '../types/personalization'
@@ -320,6 +322,26 @@ interface GameStore {
   // Limit Order System
   limitOrders: LimitOrder[]
 
+  // Auto-sell (profit-taking) System
+  autoSellEnabled: boolean
+  autoSellPercent: number
+
+  // Cash Flow Tracking
+  cashFlowLog: CashFlowEntry[]
+  realizedTrades: RealizedTrade[]
+  monthlyCashFlowSummaries: MonthlySummary[]
+  cashFlowAnomalies: string[]
+
+  // Actions - Cash Flow
+  recordCashFlow: (category: CashFlowCategory, amount: number, description: string, meta?: CashFlowEntry['meta']) => void
+  recordRealizedTrade: (trade: RealizedTrade) => void
+  purgeCashFlowLog: () => void
+
+  // Actions - Auto-sell
+  setAutoSellEnabled: (enabled: boolean) => void
+  setAutoSellPercent: (percent: number) => void
+  processAutoSell: () => void
+
   // Actions - Limit Orders
   createLimitOrder: (companyId: string, targetPrice: number, shares: number) => void
   cancelLimitOrder: (orderId: string) => void
@@ -365,7 +387,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   news: [],
   marketRegime: initializeRegimeState(),
   marketIndexHistory: [],
-  circuitBreaker: { level: 0, isActive: false, remainingTicks: 0, triggeredAt: null, kospiSessionOpen: 100, kospiCurrent: 100 },
+  circuitBreaker: { level: 0, isActive: false, remainingTicks: 0, triggeredAt: null, kospiSessionOpen: 100, kospiCurrent: 100, triggeredLevels: [] },
 
   windows: [],
   nextZIndex: 1,
@@ -380,6 +402,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   lastPlayerAcquisitionTick: 0,
   isAcquiring: false,
   limitOrders: [],
+  autoSellEnabled: false,
+  autoSellPercent: 10,
 
   competitors: [],
   competitorCount: 0,
@@ -391,6 +415,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   aiProposal: null, // Week 4 Integration
   orderFlowByCompany: {},
   institutions: [],
+
+  // Cash Flow Tracking
+  cashFlowLog: [],
+  realizedTrades: [],
+  monthlyCashFlowSummaries: [],
+  cashFlowAnomalies: [],
 
   // Personalization System
   playerEventLog: [],
@@ -461,6 +491,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       unreadNewsCount: 1,
       proposals: [],
       institutions,
+      autoSellEnabled: false,
+      autoSellPercent: 10,
       // Personalization: sync lastUpdatedDay with game start day
       playerProfile: { ...defaultProfile(), lastUpdatedDay: 1 },
     })
@@ -570,11 +602,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
       orderFlowByCompany: {},
       marketRegime: data.marketRegime ?? initializeRegimeState(),
       marketIndexHistory: data.marketIndexHistory ?? [],
+      autoSellEnabled: data.autoSellEnabled ?? false,
+      autoSellPercent: data.autoSellPercent ?? 10,
+      cashFlowLog: data.cashFlowLog ?? [],
+      realizedTrades: data.realizedTrades ?? [],
+      monthlyCashFlowSummaries: data.monthlyCashFlowSummaries ?? [],
+      cashFlowAnomalies: [],
       windows: [],
       nextZIndex: 1,
       windowIdCounter: 0,
       unreadNewsCount: 0,
     })
+
+    // 직원 ID 카운터 복원 (중복 ID 방지)
+    const maxEmpId = migratedPlayer.employees.reduce((max, emp) => {
+      const num = parseInt(emp.id.replace('emp-', ''), 10)
+      return Number.isNaN(num) ? max : Math.max(max, num)
+    }, 0)
+    employeeIdCounter = maxEmpId
 
     const store = get()
 
@@ -606,12 +651,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       time: s.time,
       currentTick: s.currentTick,
       player: s.player,
-      companies: s.companies.map((c) => ({
-        id: c.id,
-        price: c.price,
-        previousPrice: c.previousPrice,
-        priceHistory: c.priceHistory,
-      })),
+      companies: s.companies,
       events: s.events,
       news: s.news.slice(0, 50), // Save only recent news
       competitors: s.competitors,
@@ -621,8 +661,66 @@ export const useGameStore = create<GameStore>((set, get) => ({
       institutions: s.institutions,
       marketRegime: s.marketRegime,
       marketIndexHistory: s.marketIndexHistory,
+      autoSellEnabled: s.autoSellEnabled,
+      autoSellPercent: s.autoSellPercent,
+      cashFlowLog: s.cashFlowLog,
+      realizedTrades: s.realizedTrades,
+      monthlyCashFlowSummaries: s.monthlyCashFlowSummaries,
     }
     saveGame(data)
+  },
+
+  /* ── Cash Flow Tracking ── */
+  recordCashFlow: (category, amount, description, meta) => {
+    const s = get()
+    const entry = createCashFlowEntry(
+      s.currentTick,
+      { year: s.time.year, month: s.time.month, day: s.time.day },
+      category,
+      amount,
+      description,
+      meta,
+    )
+    set((st) => ({
+      cashFlowLog: [...st.cashFlowLog, entry].slice(-5000),
+    }))
+  },
+
+  recordRealizedTrade: (trade) =>
+    set((s) => ({
+      realizedTrades: [...s.realizedTrades, trade].slice(-500),
+    })),
+
+  purgeCashFlowLog: () => {
+    const s = get()
+    const { prunedEntries, newSummaries } = purgeOldEntries(
+      s.cashFlowLog,
+      s.time.year,
+      s.time.month,
+      s.monthlyCashFlowSummaries,
+    )
+
+    // Detect anomalies for current month
+    const currentSummary = aggregateMonthly(
+      s.cashFlowLog,
+      s.time.year,
+      s.time.month,
+      s.player.cash,
+    )
+    const anomalies = detectAnomalies(
+      s.player.cash,
+      s.player.totalAssetValue,
+      currentSummary,
+      s.player.employees.length,
+    )
+
+    set({
+      cashFlowLog: prunedEntries,
+      monthlyCashFlowSummaries: [...s.monthlyCashFlowSummaries, ...newSummaries].slice(-360),
+      cashFlowAnomalies: anomalies.length > 0
+        ? [...s.cashFlowAnomalies, ...anomalies].slice(-50)
+        : s.cashFlowAnomalies,
+    })
   },
 
   /* ── Trade AI Pipeline CRUD ── */
@@ -691,12 +789,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
    */
   processAnalystTick: () => {
     const s = get()
-    if (!s.player.officeGrid) return
+    if (!s.player.officeLayout) return
 
     // Check if ALL pipeline employees are stressed out (stress >= 100)
     const pipelineRoles = ['analyst', 'manager', 'trader'] as const
     const pipelineEmployees = s.player.employees.filter(
-      (e) => pipelineRoles.includes(e.role as typeof pipelineRoles[number]) && e.seatIndex != null,
+      (e) => pipelineRoles.includes(e.role as typeof pipelineRoles[number]) && e.deskId != null,
     )
     if (pipelineEmployees.length > 0 && pipelineEmployees.every((e) => (e.stress ?? 0) >= 100)) {
       // Cooldown: only warn once per 100 ticks to prevent spam
@@ -719,7 +817,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     const analysts = s.player.employees.filter(
-      (e) => e.role === 'analyst' && e.seatIndex != null && (e.stress ?? 0) < 100,
+      (e) => e.role === 'analyst' && e.deskId != null && (e.stress ?? 0) < 100,
     )
     if (analysts.length === 0) return
 
@@ -730,7 +828,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     for (const analyst of analysts) {
       // Adjacency bonus: lower confidence threshold if Manager is adjacent
-      const adjBonus = calculateAdjacencyBonus(analyst, 'manager', s.player.employees, s.player.officeGrid)
+      const adjBonus = calculateAdjacencyBonus(analyst, 'manager', s.player.employees, s.player.officeLayout)
 
       const sectors = analyst.assignedSectors ?? []
       const targetCompanies = sectors.length > 0
@@ -834,19 +932,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
    */
   processManagerTick: () => {
     const s = get()
-    if (!s.player.officeGrid) return
+    if (!s.player.officeLayout) return
     const pendingProposals = s.proposals.filter((p) => p.status === 'PENDING')
     if (pendingProposals.length === 0) return
 
     const manager = s.player.employees.find(
-      (e) => e.role === 'manager' && e.seatIndex != null && (e.stress ?? 0) < 100,
+      (e) => e.role === 'manager' && e.deskId != null && (e.stress ?? 0) < 100,
     ) ?? null
 
     const absoluteTick = getAbsoluteTimestamp(s.time, s.config.startYear)
 
     // Adjacency bonus: Manager adjacent to relevant roles can process extra proposals
     const adjBonus = manager
-      ? calculateAdjacencyBonus(manager, 'analyst', s.player.employees, s.player.officeGrid)
+      ? calculateAdjacencyBonus(manager, 'analyst', s.player.employees, s.player.officeLayout)
       : 0
     const processCount = adjBonus > 0 ? 2 : 1 // Process 2 proposals if adjacent
 
@@ -947,19 +1045,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
    */
   processTraderTick: () => {
     const s = get()
-    if (!s.player.officeGrid) return
+    if (!s.player.officeLayout) return
     const approvedProposals = s.proposals.filter((p) => p.status === 'APPROVED')
     if (approvedProposals.length === 0) return
 
     const trader = s.player.employees.find(
-      (e) => e.role === 'trader' && e.seatIndex != null && (e.stress ?? 0) < 100,
+      (e) => e.role === 'trader' && e.deskId != null && (e.stress ?? 0) < 100,
     ) ?? null
 
     const absoluteTick = getAbsoluteTimestamp(s.time, s.config.startYear)
 
     // Adjacency bonus: Trader adjacent to Manager reduces slippage further
     const adjBonus = trader
-      ? calculateAdjacencyBonus(trader, 'manager', s.player.employees, s.player.officeGrid)
+      ? calculateAdjacencyBonus(trader, 'manager', s.player.employees, s.player.officeLayout)
       : 0
 
     // Process one approved proposal per tick
@@ -967,68 +1065,133 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const company = s.companies.find((c) => c.id === proposal.companyId)
     if (!company) return
 
+    // Check if trading is allowed (circuit breaker + VI)
+    if (!get().canTrade(proposal.companyId)) return
+
     const result = executeProposal(proposal, trader, company.price, s.player.cash, adjBonus)
 
     if (result.success) {
-      // Execute the actual trade (buyStock/sellStock are separate actions)
-      if (proposal.direction === 'buy') {
-        get().buyStock(proposal.companyId, proposal.quantity)
-      } else {
-        get().sellStock(proposal.companyId, proposal.quantity)
-      }
-
-      // Compute toast significance after trade execution
+      // Compute toast significance
       const traderName = trader?.name ?? '시스템'
       const execMsg = getPipelineMessage('trade_executed', {
         ticker: proposal.ticker,
         direction: proposal.direction,
-        hour: get().time.hour,
+        hour: s.time.hour,
       })
       const tradeValue = result.executedPrice * proposal.quantity
-      const totalAssets = get().player.totalAssetValue
+      const totalAssets = s.player.totalAssetValue
       const isSignificant = totalAssets > 0 && tradeValue >= totalAssets * 0.05
 
-      // Single atomic set: fee + proposal EXECUTED + satisfaction + toast
-      set((st) => ({
-        proposals: st.proposals.map((p) =>
-          p.id === proposal.id
+      // Single atomic set: trade execution + fee + proposal EXECUTED + satisfaction + toast
+      // Uses result.executedPrice (slippage-applied) instead of company.price
+      set((st) => {
+        const executedPrice = result.executedPrice
+        const quantity = proposal.quantity
+
+        let newCash = st.player.cash
+        let newPortfolio = { ...st.player.portfolio }
+
+        if (proposal.direction === 'buy') {
+          const cost = executedPrice * quantity
+          newCash -= cost
+          const existing = newPortfolio[proposal.companyId]
+          newPortfolio[proposal.companyId] = existing
             ? {
-                ...p,
-                status: 'EXECUTED' as ProposalStatus,
-                executedByEmployeeId: trader?.id ?? null,
-                executedAt: absoluteTick,
-                executedPrice: result.executedPrice,
-                slippage: result.slippage,
+                companyId: proposal.companyId,
+                shares: existing.shares + quantity,
+                avgBuyPrice:
+                  (existing.avgBuyPrice * existing.shares + executedPrice * quantity) /
+                  (existing.shares + quantity),
               }
-            : p,
-        ),
-        player: {
-          ...st.player,
-          cash: Math.max(0, st.player.cash - result.fee),
-          employees: st.player.employees.map((e) => {
-            if (
-              e.id === proposal.createdByEmployeeId ||
-              e.id === proposal.reviewedByEmployeeId ||
-              e.id === trader?.id
-            ) {
-              return {
-                ...e,
-                satisfaction: Math.min(100, (e.satisfaction ?? 50) + TRADE_AI_CONFIG.SUCCESS_SATISFACTION_GAIN),
-              }
+            : { companyId: proposal.companyId, shares: quantity, avgBuyPrice: executedPrice }
+        } else {
+          const revenue = executedPrice * quantity
+          newCash += revenue
+          const position = newPortfolio[proposal.companyId]
+          if (position) {
+            const remaining = position.shares - quantity
+            if (remaining <= 0) {
+              delete newPortfolio[proposal.companyId]
+            } else {
+              newPortfolio[proposal.companyId] = { ...position, shares: remaining }
             }
-            return e
-          }),
-        },
-        officeEvents: isSignificant
-          ? [...st.officeEvents, {
-              timestamp: absoluteTick,
-              type: 'trade_executed',
-              emoji: '💰',
-              message: `${traderName}: ${execMsg}`,
-              employeeIds: [trader?.id ?? '', proposal.createdByEmployeeId].filter(Boolean),
-            }].slice(-200)
-          : st.officeEvents,
-      }))
+          }
+        }
+
+        // Deduct fee atomically
+        newCash = Math.max(0, newCash - result.fee)
+
+        return {
+          proposals: st.proposals.map((p) =>
+            p.id === proposal.id
+              ? {
+                  ...p,
+                  status: 'EXECUTED' as ProposalStatus,
+                  executedByEmployeeId: trader?.id ?? null,
+                  executedAt: absoluteTick,
+                  executedPrice: result.executedPrice,
+                  slippage: result.slippage,
+                }
+              : p,
+          ),
+          player: {
+            ...st.player,
+            cash: newCash,
+            portfolio: newPortfolio,
+            totalAssetValue: newCash + calcPortfolioValue(newPortfolio, st.companies),
+            employees: st.player.employees.map((e) => {
+              if (
+                e.id === proposal.createdByEmployeeId ||
+                e.id === proposal.reviewedByEmployeeId ||
+                e.id === trader?.id
+              ) {
+                return {
+                  ...e,
+                  satisfaction: Math.min(100, (e.satisfaction ?? 50) + TRADE_AI_CONFIG.SUCCESS_SATISFACTION_GAIN),
+                }
+              }
+              return e
+            }),
+          },
+          officeEvents: isSignificant
+            ? [...st.officeEvents, {
+                timestamp: absoluteTick,
+                type: 'trade_executed',
+                emoji: '💰',
+                message: `${traderName}: ${execMsg}`,
+                employeeIds: [trader?.id ?? '', proposal.createdByEmployeeId].filter(Boolean),
+              }].slice(-200)
+            : st.officeEvents,
+        }
+      })
+
+      // Record cash flow entries for the trade
+      // Note: `s` is the pre-trade snapshot (line 1053), so s.player.portfolio still has the position
+      const tradeMeta = { companyId: proposal.companyId, ticker: proposal.ticker, shares: proposal.quantity }
+      if (proposal.direction === 'buy') {
+        get().recordCashFlow('TRADE_BUY', -(result.executedPrice * proposal.quantity), `${proposal.ticker} ${proposal.quantity}주 매수`, tradeMeta)
+      } else {
+        // Use pre-trade snapshot for buyPrice (position may be deleted after atomic set)
+        const preSellPos = s.player.portfolio[proposal.companyId]
+        if (preSellPos) {
+          const buyPrice = preSellPos.avgBuyPrice
+          get().recordCashFlow('TRADE_SELL', result.executedPrice * proposal.quantity, `${proposal.ticker} ${proposal.quantity}주 매도`, tradeMeta)
+          get().recordRealizedTrade({
+            companyId: proposal.companyId,
+            ticker: proposal.ticker,
+            shares: proposal.quantity,
+            buyPrice,
+            sellPrice: result.executedPrice,
+            pnl: (result.executedPrice - buyPrice) * proposal.quantity,
+            fee: result.fee,
+            tick: s.currentTick,
+            timestamp: { year: s.time.year, month: s.time.month, day: s.time.day },
+          })
+        }
+      }
+      if (result.fee > 0) {
+        get().recordCashFlow('TRADE_FEE', -result.fee, `${proposal.ticker} 거래 수수료`, tradeMeta)
+      }
     } else {
       // Compute toast significance for failure
       const failTraderName = trader?.name ?? '시스템'
@@ -1165,9 +1328,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (newDay !== oldDay && get().personalizationEnabled) {
       get().updateProfileOnDayEnd()
     }
-
-    // Process limit orders (check every tick)
-    get().processLimitOrders()
   },
 
   /* ── Monthly Processing: salary deduction + stamina drain ── */
@@ -1221,7 +1381,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       })
 
-      const newCash = s.player.cash - totalSalary
+      const newCash = Math.max(0, s.player.cash - totalSalary)
 
       return {
         lastProcessedMonth: monthNum,
@@ -1234,6 +1394,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
         },
       }
     })
+
+    // Record salary cash flow and detect deficit
+    if (state.player.employees.length > 0) {
+      const totalSalary = state.player.employees.reduce((sum, emp) => sum + emp.salary, 0)
+      if (totalSalary > 0) {
+        const preCash = state.player.cash
+        const actualDeducted = Math.min(totalSalary, preCash)
+        get().recordCashFlow('SALARY', -actualDeducted, `${state.time.month}월 급여 (${state.player.employees.length}명)`)
+
+        // Warn player if salary exceeds available cash (deficit clamped to 0)
+        if (totalSalary > preCash) {
+          const deficit = totalSalary - preCash
+          set((st) => ({
+            cashFlowAnomalies: [
+              ...st.cashFlowAnomalies,
+              `급여 부족! ${Math.round(deficit).toLocaleString()}원 미지급 (현금 부족으로 0원 처리)`,
+            ].slice(-50),
+          }))
+        }
+      }
+    }
+
+    // Purge old cash flow entries + anomaly detection
+    get().purgeCashFlowLog()
 
     // Grant monthly XP to working employees (single batch set)
     set((s) => {
@@ -1370,6 +1554,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       })
     }
 
+    // Record cash flow
+    {
+      const c = get().companies.find((co) => co.id === companyId)
+      if (c) {
+        get().recordCashFlow('TRADE_BUY', -(c.price * shares), `${c.ticker} ${shares}주 매수`, { companyId, ticker: c.ticker, shares })
+      }
+    }
+
     // Grant trade XP to a random working employee
     const emps = get().player.employees.filter((e) => e.stamina > 0)
     if (emps.length > 0) {
@@ -1384,6 +1576,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       soundManager.playClick() // Use available sound method
       return
     }
+
+    // Capture avgBuyPrice before sell (position may be deleted after full sell)
+    const preSellAvgBuyPrice = get().player.portfolio[companyId]?.avgBuyPrice ?? 0
 
     set((s) => {
       if (shares <= 0) return s
@@ -1420,11 +1615,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     })
 
-    // Personalization: Log trade event
+    // Personalization: Log trade event + cash flow recording
     const company = get().companies.find((c) => c.id === companyId)
-    const position = get().player.portfolio[companyId]
-    if (company && position) {
-      const pnl = (company.price - position.avgBuyPrice) * shares
+    // Note: position may have been deleted (if sold all shares), use pre-sell snapshot
+    const sellBuyPrice = preSellAvgBuyPrice
+    if (company) {
+      const revenue = company.price * shares
+      get().recordCashFlow('TRADE_SELL', revenue, `${company.ticker} ${shares}주 매도`, { companyId, ticker: company.ticker, shares })
+      const pnl = (company.price - sellBuyPrice) * shares
+      get().recordRealizedTrade({
+        companyId,
+        ticker: company.ticker,
+        shares,
+        buyPrice: sellBuyPrice,
+        sellPrice: company.price,
+        pnl,
+        fee: 0,
+        tick: get().currentTick,
+        timestamp: { year: get().time.year, month: get().time.month, day: get().time.day },
+      })
+
+      const position = get().player.portfolio[companyId]
       get().logPlayerEvent('TRADE', {
         action: 'sell',
         companyId,
@@ -1433,6 +1644,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         price: company.price,
         pnl,
       })
+      void position // suppress unused warning
     }
 
     // Grant trade XP to a random working employee
@@ -1477,10 +1689,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
         // Trigger VI if needed
         if (shouldTriggerVI) {
           updatedCompany = triggerVI(updatedCompany)
+          // Dispatch VI notification
+          setTimeout(() => {
+            window.dispatchEvent(
+              new CustomEvent('viTriggered', {
+                detail: { companyName: c.name, ticker: c.ticker },
+              }),
+            )
+          }, 0)
         }
 
         return updatedCompany
       })
+
+      // Build price map once for O(1) lookups
+      const priceMap = buildPriceMap(newCompanies)
 
       // Update event impact tracking
       const updatedEvents = s.events.map((evt) => {
@@ -1489,10 +1712,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const updatedSnapshot = { ...evt.priceImpactSnapshot }
 
         Object.keys(updatedSnapshot).forEach((companyId) => {
-          const company = newCompanies.find((c) => c.id === companyId)
-          if (company && updatedSnapshot[companyId]) {
+          const companyPrice = priceMap.get(companyId)
+          if (companyPrice !== undefined && updatedSnapshot[companyId]) {
             const snapshot = updatedSnapshot[companyId]
-            const currentChange = company.price - snapshot.priceBefore
+            const currentChange = companyPrice - snapshot.priceBefore
 
             // Update peak change if current change is more extreme
             if (Math.abs(currentChange) > Math.abs(snapshot.peakChange)) {
@@ -1509,7 +1732,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       })
 
-      const portfolioValue = calcPortfolioValue(s.player.portfolio, newCompanies)
+      const portfolioValue = calcPortfolioValue(s.player.portfolio, priceMap)
 
       return {
         companies: newCompanies,
@@ -1633,27 +1856,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     }),
 
+  // VI cooldown decay only — VI trigger detection is handled in updatePrices()
   updateVIStates: () =>
     set((s) => ({
-      companies: s.companies.map((c) => {
-        // Check if VI should trigger
-        if (checkVITrigger(c)) {
-          const triggered = triggerVI(c)
-          // Trigger notification
-          setTimeout(() => {
-            window.dispatchEvent(
-              new CustomEvent('viTriggered', {
-                detail: {
-                  companyName: c.name,
-                  ticker: c.ticker,
-                },
-              }),
-            )
-          }, 0)
-          return triggered
-        }
-        return c
-      }),
+      companies: s.companies.map((c) => updateVIState(c, c.price)),
     })),
 
   canTrade: (companyId) => {
@@ -1677,18 +1883,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   /* ── Employees ── */
-  hireEmployee: (role) =>
+  hireEmployee: (role) => {
     set((s) => {
       const roleConfig = EMPLOYEE_ROLE_CONFIG[role]
       const salary = Math.round(roleConfig.baseSalary * s.difficultyConfig.employeeSalaryMultiplier)
-
-      if (s.player.cash < salary * 3) return s // Must afford 3 months upfront
 
       // ✨ Sprint 1: Generate traits and skills
       const traits = generateRandomTraits()
       const skills = generateInitialSkills(role, traits)
 
-      // Apply trait salary multiplier
+      // Apply trait salary multiplier (BEFORE guard check)
       let adjustedSalary = salary
       traits.forEach((trait) => {
         const config = TRAIT_DEFINITIONS[trait]
@@ -1696,6 +1900,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
           adjustedSalary = Math.round(adjustedSalary * config.effects.salaryMultiplier)
         }
       })
+
+      if (s.player.cash < adjustedSalary * 3) return s // Must afford 3 months upfront (adjusted)
 
       // ✨ 뱃지 생성 (스킬 기반)
       const badges = generateBadgesFromSkills(skills)
@@ -1735,6 +1941,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // Deduct 3-month upfront signing bonus (adjusted salary)
       const newCash = s.player.cash - adjustedSalary * 3
 
+      // officeLayout 자동 초기화 (첫 고용 시)
+      const layout = s.player.officeLayout ?? createInitialOfficeLayout()
+
+      // 빈 책상에 자동 배치
+      const emptyDesk = layout.desks.find((d) => !d.employeeId)
+      let updatedLayout = layout
+      if (emptyDesk) {
+        employee.deskId = emptyDesk.id
+        updatedLayout = {
+          ...layout,
+          desks: layout.desks.map((d) =>
+            d.id === emptyDesk.id ? { ...d, employeeId: employee.id } : d,
+          ),
+        }
+      }
+
       return {
         player: {
           ...s.player,
@@ -1742,9 +1964,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
           employees: [...s.player.employees, employee],
           monthlyExpenses: s.player.monthlyExpenses + adjustedSalary,
           totalAssetValue: newCash + calcPortfolioValue(s.player.portfolio, s.companies),
+          officeLayout: updatedLayout,
         },
       }
-    }),
+    })
+
+    // Record cash flow for hire bonus (use post-set state to get actual employee + cost)
+    const postState = get()
+    const newEmp = postState.player.employees[postState.player.employees.length - 1]
+    if (newEmp) {
+      const signingBonus = newEmp.salary * 3
+      get().recordCashFlow('HIRE_BONUS', -signingBonus, `${newEmp.name} 채용 보너스`, { employeeId: newEmp.id })
+    }
+  },
 
   fireEmployee: (id) => {
     cleanupChatterCooldown(id)
@@ -1826,24 +2058,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     }),
 
-  upgradeOffice: () =>
-    set((s) => {
-      const currentLevel = s.player.officeLevel
-      if (currentLevel >= OFFICE_BALANCE.MAX_LEVEL) return s
+  upgradeOffice: () => {
+    const s = get()
+    const currentLevel = s.player.officeLevel
+    if (currentLevel >= OFFICE_BALANCE.MAX_LEVEL) return
+    const cost = OFFICE_BALANCE.UPGRADE_COSTS[currentLevel]
+    if (s.player.cash < cost) return
 
-      const cost = OFFICE_BALANCE.UPGRADE_COSTS[currentLevel]
-      if (s.player.cash < cost) return s // Not enough cash
+    const newLevel = currentLevel + 1
 
+    set((st) => {
       // Reset all employee stamina to max on office upgrade
-      const refreshedEmployees = s.player.employees.map((emp) => ({
+      const refreshedEmployees = st.player.employees.map((emp) => ({
         ...emp,
         stamina: emp.maxStamina,
       }))
 
       // 그리드 확장: 기존 직원/가구 보존하며 새 크기로 재생성
-      const newLevel = currentLevel + 1
       const newGrid = createInitialOfficeGrid(newLevel)
-      const oldGrid = s.player.officeGrid
+      const oldGrid = st.player.officeGrid
       if (oldGrid) {
         // 기존 셀 데이터 복사 (기존 범위 내)
         for (let y = 0; y < oldGrid.size.height; y++) {
@@ -1859,16 +2092,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       return {
         player: {
-          ...s.player,
-          cash: s.player.cash - cost,
+          ...st.player,
+          cash: st.player.cash - cost,
           officeLevel: newLevel,
           employees: refreshedEmployees,
           officeGrid: newGrid,
           totalAssetValue:
-            s.player.cash - cost + calcPortfolioValue(s.player.portfolio, s.companies),
+            st.player.cash - cost + calcPortfolioValue(st.player.portfolio, st.companies),
         },
       }
-    }),
+    })
+
+    // Record with pre-computed cost (no race condition)
+    get().recordCashFlow('OFFICE_UPGRADE', -cost, `사무실 레벨 ${newLevel} 업그레이드`)
+  },
 
   /* ── Windows ── */
   openWindow: (type, props) =>
@@ -2425,6 +2662,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   applyAcquisitionExchange: (deal: MnaDeal) => {
+    const prevCash = get().player.cash
     set((s) => {
       const target = s.companies.find((c) => c.id === deal.targetId)
       if (!target) return s
@@ -2487,6 +2725,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
         officeEvents: newOfficeEvents,
       }
     })
+
+    // Record M&A cashout if player received money
+    const cashGained = get().player.cash - prevCash
+    if (cashGained > 0) {
+      const target = get().companies.find((c) => c.id === deal.targetId)
+      get().recordCashFlow('MNA_CASHOUT', cashGained, `${target?.name ?? '인수'} M&A 정산`, { companyId: deal.targetId, ticker: target?.ticker })
+    }
   },
 
   playerAcquireCompany: (targetId: string, premium: number, layoffRate: number) => {
@@ -2532,6 +2777,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       },
       lastPlayerAcquisitionTick: s.currentTick,
     }))
+
+    // Record M&A cash flow
+    get().recordCashFlow('MNA_ACQUISITION', -totalCost, `${target.name} 인수`, { companyId: targetId, ticker: target.ticker })
 
     // 인수 실행 (플레이어를 인수자로 표시하기 위해 특수 ID 사용)
     const playerAcquirerId = 'PLAYER'
@@ -2651,6 +2899,44 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ isAcquiring: false })
   },
 
+  /* ── Auto-sell (Profit-Taking) Actions ── */
+  setAutoSellEnabled: (enabled) => set({ autoSellEnabled: enabled }),
+  setAutoSellPercent: (percent) => set({ autoSellPercent: Math.max(1, Math.min(100, percent)) }),
+
+  processAutoSell: () => {
+    const state = get()
+    if (!state.autoSellEnabled || state.autoSellPercent <= 0) return
+
+    const { portfolio } = state.player
+    const threshold = state.autoSellPercent
+
+    for (const [companyId, position] of Object.entries(portfolio)) {
+      const company = state.companies.find((c) => c.id === companyId)
+      if (!company || position.shares <= 0) continue
+
+      const returnPct = ((company.price - position.avgBuyPrice) / position.avgBuyPrice) * 100
+      if (returnPct >= threshold) {
+        const shares = position.shares
+        const ticker = company.ticker
+
+        get().sellStock(companyId, shares)
+
+        set((s) => ({
+          officeEvents: [
+            ...s.officeEvents,
+            {
+              timestamp: s.currentTick,
+              type: 'auto_sell_executed',
+              emoji: '📈',
+              message: `자동 익절: ${ticker} +${returnPct.toFixed(1)}% 달성, ${shares}주 매도`,
+              employeeIds: [],
+            },
+          ].slice(-200),
+        }))
+      }
+    }
+  },
+
   /* ── Limit Order Actions ── */
   createLimitOrder: (companyId, targetPrice, shares) => {
     const state = get()
@@ -2736,8 +3022,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   processCompetitorTick: () => {
-    const { competitors, companies, time, playerProfile, personalizationEnabled } = get()
+    const { competitors, companies, time, playerProfile, personalizationEnabled, circuitBreaker } = get()
     if (competitors.length === 0) return
+
+    // Skip all AI trading during circuit breaker halt
+    if (isTradingHalted(circuitBreaker)) return
 
     // Decrease panic sell cooldowns (compensate for HOUR_DISTRIBUTION interval)
     set((state) => ({
@@ -2763,9 +3052,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       personalizationEnabled,
     )
 
+    // Filter out actions targeting VI-halted companies
+    const tradableActions = actions.filter((action) => {
+      const company = companies.find((c) => c.id === action.companyId)
+      return company && !isVIHalted(company)
+    })
+
     // Execute batch actions
-    if (actions.length > 0) {
-      get().executeBatchActions(actions)
+    if (tradableActions.length > 0) {
+      get().executeBatchActions(tradableActions)
     }
   },
 
@@ -2867,11 +3162,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   updateCompetitorAssets: () => {
     set((state) => {
+      const priceMap = buildPriceMap(state.companies)
       const newCompetitors = state.competitors.map((competitor) => {
         const portfolioValue = Object.entries(competitor.portfolio).reduce(
           (sum, [companyId, position]) => {
-            const company = state.companies.find((c) => c.id === companyId)
-            const currentPrice = company?.price || 0
+            const currentPrice = priceMap.get(companyId) ?? 0
             return sum + position.shares * currentPrice
           },
           0,
@@ -3265,6 +3560,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     })
 
+    if (result.success && result.cost > 0) {
+      get().recordCashFlow('SKILL_RESET', -result.cost, `스킬 리셋`, { employeeId })
+    }
+
     return result
   },
 
@@ -3585,6 +3884,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       officeEvents: [...s.officeEvents, ...officeEvents].slice(-200), // Keep last 200
       employeeBehaviors: behaviorMap,
     }))
+
+    // Record HR cash flow
+    if (hrResult.cashSpent > 0) {
+      get().recordCashFlow('HR_CARE', -hrResult.cashSpent, `HR 자동 관리 비용`)
+    }
   },
 
   /* ── Personalization Actions ── */
@@ -3755,6 +4059,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
 
     console.log(`[buyDesk] ✅ 책상 구매 성공: ${type} at (${x},${y}), id=${deskId}`)
+    get().recordCashFlow('OFFICE_FURNITURE', -catalog.cost, `책상 구매: ${type}`)
     soundManager.playClick()
     return true
   },
@@ -3812,6 +4117,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     })
 
+    get().recordCashFlow('OFFICE_FURNITURE', -catalog.cost, `장식 구매: ${type}`)
     soundManager.playClick()
     return true
   },
@@ -4001,14 +4307,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
 }))
 
 /* ── Helper ── */
+function buildPriceMap(companies: Company[]): Map<string, number> {
+  const map = new Map<string, number>()
+  for (const c of companies) map.set(c.id, c.price)
+  return map
+}
+
 function calcPortfolioValue(
   portfolio: Record<string, PortfolioPosition>,
-  companies: Company[],
+  companiesOrMap: Company[] | Map<string, number>,
 ): number {
+  const priceMap =
+    companiesOrMap instanceof Map ? companiesOrMap : buildPriceMap(companiesOrMap)
   let total = 0
   for (const pos of Object.values(portfolio)) {
-    const company = companies.find((c) => c.id === pos.companyId)
-    if (company) total += company.price * pos.shares
+    const price = priceMap.get(pos.companyId)
+    if (price !== undefined) total += price * pos.shares
   }
   return total
 }

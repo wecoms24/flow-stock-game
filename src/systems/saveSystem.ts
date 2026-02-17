@@ -1,209 +1,172 @@
+/* ── Dual-Write Save System (IndexedDB + SQLite) ── */
+
 import type { SaveData } from '../types'
-import { COMPANIES } from '../data/companies'
+import {
+  saveGame as saveToIndexedDB,
+  loadGame as loadFromIndexedDB,
+  deleteSave as deleteFromIndexedDB,
+  hasSaveData as hasIndexedDBSave,
+} from './saveSystemLegacy'
+import { initializeDB, saveDataToSQLite, sqliteToSaveData, saveSlotExists, deleteSaveSlot } from './sqlite'
+import { getFeatureFlag } from './featureFlags'
 
-/* ── IndexedDB Auto-Save System ── */
+/**
+ * Save game data to both IndexedDB and SQLite (if enabled)
+ * Uses graceful degradation - succeeds if at least one storage succeeds
+ */
+export async function saveGame(data: SaveData): Promise<void> {
+  const sqliteEnabled = getFeatureFlag('sqlite_enabled')
 
-const DB_NAME = 'retro-stock-os'
-const DB_VERSION = 1
-const STORE_NAME = 'saves'
-const AUTO_SAVE_KEY = 'autosave'
-const SAVE_VERSION = 5
+  // Always save to IndexedDB (primary storage for Phase 2)
+  const indexedDBPromise = saveToIndexedDB(data)
 
-/** Build ticker→companyId lookup from COMPANIES data */
-const TICKER_TO_ID: Record<string, string> = {}
-for (const c of COMPANIES) {
-  TICKER_TO_ID[c.ticker] = c.id
-}
-
-/** Migrate save data through all versions */
-function migrateSaveData(data: Record<string, unknown>): SaveData {
-  if (!data) return data as SaveData
-
-  // v1 → v2: tick (0-9) → hour (9-18)
-  if ((data.version as number) < 2) {
-    const time = data.time as Record<string, unknown> | undefined
-    if (time && 'tick' in time) {
-      time.hour = ((time.tick as number) ?? 0) + 9
-      delete time.tick
-    }
-    data.version = 2
-  }
-
-  // v2 → v3: competitor portfolio keys ticker → companyId
-  if ((data.version as number) < 3) {
-    const competitors = data.competitors as Array<Record<string, unknown>> | undefined
-    if (competitors && Array.isArray(competitors)) {
-      for (const competitor of competitors) {
-        if (!competitor.portfolio) continue
-        const oldPortfolio = competitor.portfolio as Record<string, Record<string, unknown>>
-        const newPortfolio: Record<string, Record<string, unknown>> = {}
-        for (const [key, position] of Object.entries(oldPortfolio)) {
-          // If key looks like a ticker (not an id pattern like "tech-01"), convert it
-          const companyId = TICKER_TO_ID[key] ?? key
-          newPortfolio[companyId] = {
-            ...position,
-            companyId,
-          }
+  // Save to SQLite if feature flag enabled
+  const sqlitePromise = sqliteEnabled
+    ? (async () => {
+        try {
+          const db = await initializeDB()
+          await saveDataToSQLite(db, data, 'autosave')
+          console.log('[SaveSystem] SQLite save successful')
+        } catch (error) {
+          console.error('[SaveSystem] SQLite save failed:', error)
+          throw error
         }
-        competitor.portfolio = newPortfolio
-      }
-    }
-    data.version = 3
+      })()
+    : Promise.resolve() // No-op if disabled
+
+  // Execute both saves in parallel
+  const results = await Promise.allSettled([indexedDBPromise, sqlitePromise])
+
+  // Check if at least one succeeded
+  const indexedDBResult = results[0]
+  const sqliteResult = results[1]
+
+  const indexedDBSucceeded = indexedDBResult.status === 'fulfilled'
+  const sqliteSucceeded = sqliteResult.status === 'fulfilled'
+
+  if (!indexedDBSucceeded && !sqliteSucceeded) {
+    const errors = [
+      indexedDBResult.status === 'rejected' ? indexedDBResult.reason : null,
+      sqliteResult.status === 'rejected' ? sqliteResult.reason : null,
+    ].filter(Boolean)
+
+    throw new Error(
+      `Both IndexedDB and SQLite saves failed: ${errors.map((e) => e.message).join(', ')}`
+    )
   }
 
-  // v3 → v4: add sessionOpenPrice to companies
-  if ((data.version as number) < 4) {
-    const companies = data.companies as Array<Record<string, unknown>> | undefined
-    if (companies && Array.isArray(companies)) {
-      for (const company of companies) {
-        // If sessionOpenPrice doesn't exist, set it to current price
-        if (!('sessionOpenPrice' in company)) {
-          company.sessionOpenPrice = company.price
+  // Log failures (but don't throw if at least one succeeded)
+  if (!indexedDBSucceeded) {
+    console.error(
+      '[SaveSystem] IndexedDB save failed:',
+      indexedDBResult.status === 'rejected' ? indexedDBResult.reason : 'Unknown error'
+    )
+  }
+
+  if (sqliteEnabled && !sqliteSucceeded) {
+    console.error(
+      '[SaveSystem] SQLite save failed:',
+      sqliteResult.status === 'rejected' ? sqliteResult.reason : 'Unknown error'
+    )
+  }
+}
+
+/**
+ * Load game data with SQLite priority (Phase 3)
+ * Falls back to IndexedDB if SQLite fails or is disabled
+ */
+export async function loadGame(): Promise<SaveData | null> {
+  const sqliteEnabled = getFeatureFlag('sqlite_enabled')
+
+  if (sqliteEnabled) {
+    try {
+      // Try SQLite first
+      const db = await initializeDB()
+      const sqliteData = await sqliteToSaveData(db, 'autosave')
+
+      if (sqliteData) {
+        console.log('[SaveSystem] Loaded from SQLite')
+        return sqliteData
+      }
+
+      console.warn('[SaveSystem] SQLite returned null, falling back to IndexedDB')
+    } catch (error) {
+      console.error('[SaveSystem] SQLite load failed, falling back to IndexedDB:', error)
+    }
+  }
+
+  // Fallback to IndexedDB (always works)
+  const indexedDBData = await loadFromIndexedDB()
+  console.log('[SaveSystem] Loaded from IndexedDB')
+  return indexedDBData
+}
+
+/**
+ * Delete save from both IndexedDB and SQLite
+ * Uses graceful degradation - succeeds if at least one deletion succeeds
+ */
+export async function deleteSave(): Promise<void> {
+  const sqliteEnabled = getFeatureFlag('sqlite_enabled')
+
+  const indexedDBPromise = deleteFromIndexedDB()
+
+  const sqlitePromise = sqliteEnabled
+    ? (async () => {
+        try {
+          const db = await initializeDB()
+          await deleteSaveSlot(db, 'autosave')
+          console.log('[SaveSystem] SQLite delete completed')
+        } catch (error) {
+          console.error('[SaveSystem] SQLite delete failed:', error)
+          throw error
         }
-      }
-    }
-    data.version = 4
+      })()
+    : Promise.resolve()
+
+  const results = await Promise.allSettled([indexedDBPromise, sqlitePromise])
+
+  // Check if at least one succeeded
+  const succeeded = results.some((r) => r.status === 'fulfilled')
+
+  if (!succeeded) {
+    throw new Error('Both IndexedDB and SQLite deletes failed')
   }
 
-  // v4 → v5: M&A 필드 추가
-  if ((data.version as number) < 5) {
-    const companies = data.companies as Array<Record<string, unknown>> | undefined
-    if (companies && Array.isArray(companies)) {
-      for (const company of companies) {
-        company.status ??= 'active'
-        company.parentCompanyId ??= null
-        company.acquiredAtTick ??= null
-        company.headcount ??= calculateInitialHeadcount(company)
-        company.layoffRateOnAcquisition ??= 0.2 + Math.random() * 0.4 // 20-60% 랜덤
-        company.mnaHistory ??= []
-      }
+  // Log failures
+  results.forEach((result, idx) => {
+    if (result.status === 'rejected') {
+      console.error(
+        `[SaveSystem] ${idx === 0 ? 'IndexedDB' : 'SQLite'} delete failed:`,
+        result.reason
+      )
     }
-    // M&A 시스템 상태 필드
-    data.lastMnaQuarter ??= 0
-    data.pendingIPOs ??= []
-    // 플레이어 M&A 필드
-    data.playerAcquisitionHistory ??= []
-    data.lastPlayerAcquisitionTick ??= 0
-    data.version = 5
-  }
-
-  return data as unknown as SaveData
-}
-
-/** Calculate initial headcount based on sector and marketCap */
-function calculateInitialHeadcount(company: Record<string, unknown>): number {
-  const sector = company.sector as string
-  const marketCap = (company.marketCap as number) ?? 1_000_000_000
-
-  const baseHeadcount: Record<string, number> = {
-    tech: 5000,
-    finance: 3000,
-    energy: 4000,
-    healthcare: 6000,
-    consumer: 2000,
-    industrial: 7000,
-    telecom: 4500,
-    materials: 3500,
-    utilities: 2500,
-    realestate: 1500,
-  }
-
-  // 시가총액 기반 스케일링 (간단한 로그 스케일)
-  const base = baseHeadcount[sector] ?? 4000
-  const scale = Math.log10(marketCap / 1_000_000) * 0.5 + 0.5
-  return Math.round(base * scale)
-}
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION)
-
-    request.onupgradeneeded = () => {
-      const db = request.result
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME)
-      }
-    }
-
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
   })
 }
 
-export async function saveGame(data: SaveData): Promise<void> {
-  try {
-    const db = await openDB()
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite')
-      const store = tx.objectStore(STORE_NAME)
-      store.put({ ...data, version: SAVE_VERSION }, AUTO_SAVE_KEY)
-      tx.oncomplete = () => {
-        db.close()
-        resolve()
-      }
-      tx.onerror = () => {
-        db.close()
-        reject(tx.error)
-      }
-    })
-  } catch {
-    // IndexedDB may not be available in all environments
-    console.warn('[SaveSystem] Failed to save game')
+/**
+ * Check if save data exists in either SQLite or IndexedDB
+ * Checks SQLite first when enabled, then falls back to IndexedDB
+ */
+export async function hasSaveData(): Promise<boolean> {
+  const sqliteEnabled = getFeatureFlag('sqlite_enabled')
+
+  if (sqliteEnabled) {
+    const hasSqlite = await hasSQLiteSave()
+    if (hasSqlite) return true
   }
+
+  return hasIndexedDBSave()
 }
 
-export async function loadGame(): Promise<SaveData | null> {
+/**
+ * Check if SQLite save exists (Phase 3+)
+ * Returns false if SQLite is disabled or check fails
+ */
+export async function hasSQLiteSave(): Promise<boolean> {
   try {
-    const db = await openDB()
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly')
-      const store = tx.objectStore(STORE_NAME)
-      const request = store.get(AUTO_SAVE_KEY)
-      request.onsuccess = () => {
-        db.close()
-        const data = request.result as Record<string, unknown> | undefined
-        if (!data) {
-          resolve(null)
-        } else if (data.version === SAVE_VERSION) {
-          resolve(data as unknown as SaveData)
-        } else if (data.version && (data.version as number) < SAVE_VERSION) {
-          resolve(migrateSaveData(data))
-        } else {
-          resolve(null)
-        }
-      }
-      request.onerror = () => {
-        db.close()
-        reject(request.error)
-      }
-    })
+    const db = await initializeDB()
+    return await saveSlotExists(db, 'autosave')
   } catch {
-    console.warn('[SaveSystem] Failed to load game')
-    return null
+    return false
   }
-}
-
-export async function deleteSave(): Promise<void> {
-  try {
-    const db = await openDB()
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite')
-      const store = tx.objectStore(STORE_NAME)
-      store.delete(AUTO_SAVE_KEY)
-      tx.oncomplete = () => {
-        db.close()
-        resolve()
-      }
-      tx.onerror = () => {
-        db.close()
-        reject(tx.error)
-      }
-    })
-  } catch {
-    console.warn('[SaveSystem] Failed to delete save')
-  }
-}
-
-export function hasSaveData(): Promise<boolean> {
-  return loadGame().then((data) => data !== null)
 }

@@ -1,7 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { VICTORY_GOALS } from '../../data/difficulty'
 import type { Sector } from '../../types'
+import { PnLTab } from './portfolio/PnLTab'
+import { CashFlowTab } from './portfolio/CashFlowTab'
 
 const SECTOR_LABELS: Record<Sector, string> = {
   tech: '기술',
@@ -29,7 +31,47 @@ const SECTOR_COLORS: Record<Sector, string> = {
   realestate: 'bg-pink-500',
 }
 
+type TabId = 'overview' | 'pnl' | 'cashflow'
+
+const TABS: Array<{ id: TabId; label: string }> = [
+  { id: 'overview', label: '포트폴리오' },
+  { id: 'pnl', label: '손익계산서' },
+  { id: 'cashflow', label: '현금흐름' },
+]
+
 export function PortfolioWindow() {
+  const [activeTab, setActiveTab] = useState<TabId>('overview')
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Tab Bar */}
+      <div className="flex border-b border-win-shadow bg-win-face shrink-0">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            className={`px-3 py-1 text-[10px] font-bold border border-win-shadow border-b-0 rounded-t ${
+              activeTab === tab.id
+                ? 'bg-white -mb-px z-10 relative'
+                : 'bg-win-face text-retro-gray hover:bg-win-highlight/30'
+            }`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      <div className="flex-1 overflow-hidden p-1">
+        {activeTab === 'overview' && <OverviewTab />}
+        {activeTab === 'pnl' && <PnLTab />}
+        {activeTab === 'cashflow' && <CashFlowTab />}
+      </div>
+    </div>
+  )
+}
+
+function OverviewTab() {
   const player = useGameStore((s) => s.player)
   const companies = useGameStore((s) => s.companies)
   const config = useGameStore((s) => s.config)

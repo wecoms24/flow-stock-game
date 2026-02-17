@@ -103,11 +103,8 @@ function computeGBM(price: number, mu: number, sigma: number, dt: number): numbe
 
 /**
  * Apply KRX tick size rounding based on price range
- * - Under 1,000: 1 won
- * - 1,000~5,000: 5 won
- * - 5,000~10,000: 10 won
- * - 10,000~50,000: 50 won
- * - 50,000+: 100 won
+ * SYNC: Must stay in sync with src/config/priceLimit.ts:applyTickSize
+ * (duplicated here because Web Workers cannot import from main thread)
  */
 function applyTickSize(price: number): number {
   if (price < 1000) return Math.round(price)
@@ -132,6 +129,7 @@ function applyPriceSafetyLimits(
   basePrice: number
 ): number {
   // Layer 1: Daily price limits (±30% from session open, KRX standard)
+  // SYNC: Must stay in sync with src/config/priceLimit.ts:MAX_DAILY_CHANGE
   const MAX_DAILY_CHANGE = 0.30
   const dailyMax = applyTickSize(sessionOpenPrice * (1 + MAX_DAILY_CHANGE))
   const dailyMin = applyTickSize(sessionOpenPrice * (1 - MAX_DAILY_CHANGE))

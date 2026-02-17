@@ -36,18 +36,18 @@ export function analyzeStock(
   let direction: 'buy' | 'sell' | null = null
   let technicalSignal = 0
 
-  if (rsi < 35 && currentPrice < ma20) {
+  if (rsi < 40 && currentPrice < ma20) {
     direction = 'buy'
-    technicalSignal = (35 - rsi) / 35 // 0~1, stronger when more oversold
-  } else if (rsi > 65 && currentPrice > ma20) {
+    technicalSignal = (40 - rsi) / 40 // 0~1, stronger when more oversold
+  } else if (rsi > 60 && currentPrice > ma20) {
+    direction = 'sell'
+    technicalSignal = (rsi - 60) / 40
+  } else if (rsi < 35) {
+    direction = 'buy'
+    technicalSignal = (35 - rsi) / 35
+  } else if (rsi > 65) {
     direction = 'sell'
     technicalSignal = (rsi - 65) / 35
-  } else if (rsi < 30) {
-    direction = 'buy'
-    technicalSignal = (30 - rsi) / 30
-  } else if (rsi > 70) {
-    direction = 'sell'
-    technicalSignal = (rsi - 70) / 30
   }
 
   if (!direction) return null

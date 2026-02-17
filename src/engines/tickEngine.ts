@@ -41,7 +41,10 @@ export function initTickEngine() {
 
   worker.onmessage = (e) => {
     if (e.data.type === 'prices') {
-      useGameStore.getState().updatePrices(e.data.prices)
+      const store = useGameStore.getState()
+      store.updatePrices(e.data.prices)
+      store.processAutoSell()
+      store.processLimitOrders()
     }
   }
 }

@@ -8,7 +8,7 @@ export const TRADE_AI_CONFIG = {
   /** Trader 체결 주기 (영업시간 수) */
   TRADER_HOUR_INTERVAL: 1,
   /** 제안서 생성 최소 Confidence */
-  CONFIDENCE_THRESHOLD: 70,
+  CONFIDENCE_THRESHOLD: 50,
   /** 최대 PENDING 제안서 수 */
   MAX_PENDING_PROPOSALS: 10,
   /** PENDING 자동 만료 영업시간 수 */

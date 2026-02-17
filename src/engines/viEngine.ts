@@ -41,20 +41,16 @@ export function updateVIState(company: Company, newPrice: number): Company {
   let viTriggered = company.viTriggered ?? false
   let viCooldown = company.viCooldown ?? 0
 
-  // Decrement cooldown
-  if (viCooldown > 0) {
-    viCooldown -= 1
-  }
-
-  // If VI is active, decrement halt timer
+  // VI halt active → decrement halt timer, then transition to cooldown
   if (viTriggered) {
     viCooldown -= 1
-
-    // End VI halt
     if (viCooldown <= 0) {
       viTriggered = false
-      viCooldown = VI_CONFIG.COOLDOWN_AFTER_HALT // Set cooldown after halt ends
+      viCooldown = VI_CONFIG.COOLDOWN_AFTER_HALT
     }
+  } else if (viCooldown > 0) {
+    // Post-halt cooldown → decrement until next VI can trigger
+    viCooldown -= 1
   }
 
   return {

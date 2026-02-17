@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { soundManager } from '../../systems/soundManager'
+import { getFeatureFlag, setFeatureFlag } from '../../systems/featureFlags'
+import { hasSaveData, hasSQLiteSave } from '../../systems/saveSystem'
+import { getMigrationStatusPublic, resetMigrationStatus } from '../../systems/sqlite/migration'
 
 export function SettingsWindow() {
   const {
@@ -13,9 +16,60 @@ export function SettingsWindow() {
     personalizationEnabled,
     setPersonalizationEnabled,
     playerProfile,
+    autoSellEnabled,
+    autoSellPercent,
+    setAutoSellEnabled,
+    setAutoSellPercent,
   } = useGameStore()
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled)
   const [volume, setVolume] = useState(soundManager.volume)
+
+  // SQLite Settings
+  const [sqliteEnabled, setSqliteEnabled] = useState(getFeatureFlag('sqlite_enabled'))
+  const [currentBackend, setCurrentBackend] = useState<'IndexedDB' | 'SQLite' | '확인 중...'>('확인 중...')
+  const [isMigrationCompleted, setIsMigrationCompleted] = useState(false)
+  const [needsReload, setNeedsReload] = useState(false)
+
+  // Detect current backend on mount
+  useEffect(() => {
+    const detectBackend = async () => {
+      const hasIndexedDB = await hasSaveData()
+      const hasSqlite = await hasSQLiteSave()
+
+      if (sqliteEnabled && hasSqlite) {
+        setCurrentBackend('SQLite')
+      } else if (hasIndexedDB) {
+        setCurrentBackend('IndexedDB')
+      } else {
+        setCurrentBackend('IndexedDB')
+      }
+    }
+    detectBackend()
+  }, [sqliteEnabled])
+
+  // Check migration status
+  useEffect(() => {
+    if (sqliteEnabled) {
+      const status = getMigrationStatusPublic()
+      setIsMigrationCompleted(status.completed)
+    }
+  }, [sqliteEnabled])
+
+  const handleSQLiteToggle = (enabled: boolean) => {
+    setFeatureFlag('sqlite_enabled', enabled)
+    setSqliteEnabled(enabled)
+    setNeedsReload(true)
+    soundManager.playClick()
+  }
+
+  const handleResetMigration = () => {
+    if (confirm('마이그레이션 상태를 초기화하시겠습니까?\n\n⚠️ 개발자 전용 기능입니다.')) {
+      resetMigrationStatus()
+      setIsMigrationCompleted(false)
+      soundManager.playClick()
+      alert('마이그레이션 상태가 초기화되었습니다.\n페이지를 새로고침하면 다시 마이그레이션이 실행됩니다.')
+    }
+  }
 
   return (
     <div className="text-xs p-1 space-y-3">
@@ -104,6 +158,40 @@ export function SettingsWindow() {
         </div>
       </div>
 
+      {/* Auto-sell (profit-taking) */}
+      <div className="space-y-1">
+        <div className="font-bold">📈 자동 매도 (익절)</div>
+        <div className="win-inset bg-white p-2 space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-retro-gray">자동 익절:</span>
+            <RetroButton
+              size="sm"
+              onClick={() => setAutoSellEnabled(!autoSellEnabled)}
+              className={autoSellEnabled ? 'win-pressed' : ''}
+            >
+              {autoSellEnabled ? 'ON' : 'OFF'}
+            </RetroButton>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-retro-gray">수익률:</span>
+            <input
+              type="range"
+              min="1"
+              max="100"
+              value={autoSellPercent}
+              onChange={(e) => setAutoSellPercent(Number(e.target.value))}
+              className="flex-1"
+              style={{ accentColor: '#000080' }}
+              disabled={!autoSellEnabled}
+            />
+            <span className="text-[10px] w-8 text-right">{autoSellPercent}%</span>
+          </div>
+          <div className="text-[10px] text-retro-gray">
+            보유 주식 수익률이 {autoSellPercent}% 이상이면 자동 전량 매도
+          </div>
+        </div>
+      </div>
+
       {/* Personalization */}
       <div className="space-y-1">
         <div className="font-bold">🎯 개인화 시스템</div>
@@ -136,6 +224,66 @@ export function SettingsWindow() {
                 <span className="text-retro-gray">학습 단계:</span>
                 <span className="uppercase">{playerProfile.learningStage}</span>
               </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* SQLite Storage System */}
+      <div className="space-y-1">
+        <div className="font-bold">🗄️ 저장 시스템</div>
+        <div className="win-inset bg-white p-2 space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-retro-gray">SQLite 사용:</span>
+            <RetroButton
+              size="sm"
+              onClick={() => handleSQLiteToggle(!sqliteEnabled)}
+              className={sqliteEnabled ? 'win-pressed' : ''}
+            >
+              {sqliteEnabled ? 'ON' : 'OFF'}
+            </RetroButton>
+          </div>
+          <div className="text-[10px] text-retro-gray">
+            더 빠른 저장/로드를 위한 새로운 시스템 (베타)
+          </div>
+          <div className="text-[10px] space-y-0.5 mt-1 border-t border-retro-gray/30 pt-1">
+            <div className="flex justify-between">
+              <span className="text-retro-gray">현재 백엔드:</span>
+              <span>{currentBackend}</span>
+            </div>
+            {sqliteEnabled && (
+              <div className="flex justify-between">
+                <span className="text-retro-gray">마이그레이션:</span>
+                <span>{isMigrationCompleted ? '✅ 완료' : '⏳ 대기 중'}</span>
+              </div>
+            )}
+          </div>
+          {needsReload && (
+            <div className="text-[10px] bg-yellow-100 border border-yellow-400 p-1 mt-1 space-y-1">
+              <div className="font-bold">⚠️ 새로고침 필요</div>
+              <div className="text-retro-gray">
+                변경사항을 적용하려면 페이지를 새로고침하세요.
+              </div>
+              <RetroButton
+                size="sm"
+                onClick={() => window.location.reload()}
+                className="w-full mt-0.5"
+              >
+                🔄 새로고침
+              </RetroButton>
+            </div>
+          )}
+          {import.meta.env.DEV && (
+            <div className="text-[10px] border-t border-retro-gray/30 pt-1 mt-1">
+              <div className="text-retro-gray mb-0.5">개발자 도구</div>
+              <RetroButton
+                size="sm"
+                variant="danger"
+                onClick={handleResetMigration}
+                className="w-full"
+              >
+                🔧 마이그레이션 초기화
+              </RetroButton>
             </div>
           )}
         </div>

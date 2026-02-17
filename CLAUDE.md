@@ -258,8 +258,55 @@ All windows use `WindowFrame` for consistent drag/resize/close behavior. `window
 
 ## Active Technologies
 - TypeScript 5.9 (strict mode) + React 19, Zustand 5, Vite 7, TailwindCSS v4 (001-employee-trade-ai)
-- Dexie (IndexedDB) - 기존 세이브 시스템 확장 (001-employee-trade-ai)
+- **SQLite (sql.js-httpvfs)** - Primary storage system for save data with multi-slot support (001-system-level-up)
+- Dexie (IndexedDB) - Legacy storage system, retained for migration and fallback (001-system-level-up)
+- TypeScript 5.9 (strict mode enabled) + React 19, Zustand 5, Motion (animation), Chart.js, TailwindCSS v4, Vite 7 (001-system-level-up)
+- **Phase 5: SQLite Migration Complete** - SQLite enabled by default with automatic migration prompt for existing users
 
 ## Recent Changes
 - M&A System: Corporate mergers, acquisitions, IPOs with quarterly evaluation and forced portfolio exchanges
 - 001-employee-trade-ai: Added TypeScript 5.9 (strict mode) + React 19, Zustand 5, Vite 7, TailwindCSS v4
+- **Phase 5 Complete: SQLite Default with Migration UI** - SQLite enabled by default, migration banner for IndexedDB users
+
+## Storage System Migration Phases (001-system-level-up)
+
+### Phase 5: Deprecation & Migration UI (Complete ✅)
+- **Default Storage**: SQLite enabled by default (`sqlite_enabled: true` in `featureFlags.ts`)
+- **Migration Banner**: Automatic prompt for IndexedDB users on app start (`App.tsx`)
+  - Detects existing IndexedDB data via `hasSaveData()`
+  - Checks if SQLite migration already completed via `saveSlotExists(db, 'autosave')`
+  - Shows upgrade banner with "업그레이드" and "나중에" buttons
+  - Dismissible via localStorage (`migration_dismissed`)
+- **User Flow**:
+  - New users → SQLite by default (no migration needed)
+  - Existing users → Migration banner → One-click upgrade
+  - Dismissed banner → Never shown again (user choice preserved)
+- **Graceful Degradation**: IndexedDB code retained for fallback and migration
+- **Feature Flag**: Manual toggle still available in Settings window for advanced users
+
+### Phase 4: Settings UI (Complete ✅)
+- SQLite toggle in Settings window for user control (`SettingsWindow.tsx`)
+- Real-time backend detection (IndexedDB vs SQLite)
+- Migration status indicator in UI ("✅ 완료" / "⏳ 대기 중")
+- Auto-reload prompt when changing storage backend
+- Developer tools for migration reset (dev mode only via `import.meta.env.DEV`)
+- Retro Windows 95 themed UI components with consistent styling
+- Feature flag integration (`getFeatureFlag`, `setFeatureFlag`)
+- Migration status check via `getMigrationStatusPublic()`
+
+## Phase 3: SQLite Loading + Migration (Complete ✅)
+- SQLite read capability enabled via `sqlite_enabled` feature flag
+- `loadGame()` tries SQLite first, falls back to IndexedDB on failure (graceful degradation)
+- One-time migration: IndexedDB → SQLite on app start (`migration.ts`)
+- Migration validation: critical fields (cash, assets, employee count, tick) checked after migration
+- IndexedDB data preserved (never deleted) - remains backup until Phase 5
+- Migration status tracked in localStorage to prevent duplicate runs
+- Full Company objects migrated (not just truncated SaveData)
+- `hasSQLiteSave()` helper for checking SQLite save existence
+
+## Phase 2: Dual-Write Storage System (Complete ✅)
+- IndexedDB + SQLite dual-write mode for save data (graceful degradation)
+- Feature flag system (`featureFlags.ts`) for SQLite rollout control
+- `saveSystem.ts` coordinates both storage backends with Promise.allSettled
+- SQLite writes enabled when feature flag set
+- Legacy IndexedDB implementation preserved in `saveSystemLegacy.ts`

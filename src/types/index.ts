@@ -469,7 +469,7 @@ export interface SaveData {
   time: GameTime
   currentTick?: number // Game tick counter (optional for backward compat)
   player: PlayerState
-  companies: Array<{ id: string; price: number; previousPrice: number; priceHistory: number[] }>
+  companies: Company[]
   events: MarketEvent[]
   news: NewsItem[]
   competitors?: Competitor[] // Optional for backward compatibility
@@ -489,6 +489,13 @@ export interface SaveData {
   // M&A System (v5)
   lastMnaQuarter?: number
   pendingIPOs?: Array<{ slotIndex: number; spawnTick: number; newCompany: Company }>
+  // Auto-sell (profit-taking) System
+  autoSellEnabled?: boolean
+  autoSellPercent?: number
+  // Cash Flow Tracking (v6)
+  cashFlowLog?: import('./cashFlow').CashFlowEntry[]
+  realizedTrades?: import('./cashFlow').RealizedTrade[]
+  monthlyCashFlowSummaries?: import('./cashFlow').MonthlySummary[]
 }
 
 /* ── Investment Battle Mode Types ── */
