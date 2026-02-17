@@ -7,7 +7,7 @@ export interface PlayerEvent {
   kind: 'TRADE' | 'SETTINGS' | 'WINDOW_FOCUS'
   timestamp: number
   day: number // 게임 내 일 수 (time.day)
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
 }
 
 /**

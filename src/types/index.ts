@@ -93,7 +93,8 @@ export interface PlayerState {
   monthlyExpenses: number
   employees: Employee[]
   officeLevel: number // 1-3, affects max employees and stamina recovery
-  officeGrid?: import('./office').OfficeGrid // ✨ Sprint 2: Office Grid (선택적)
+  officeGrid?: import('./office').OfficeGrid // ✨ Sprint 2: Office Grid (선택적, 레거시)
+  officeLayout?: import('./office').OfficeLayout // ✨ 도트 형식 사무실 (새 시스템)
   lastDayChange: number // Yesterday's asset value change percentage
   previousDayAssets: number // Asset value at previous day start for change calculation
 }
@@ -111,10 +112,12 @@ export interface Employee {
 
   // ✨ RPG System - Sprint 1 (선택적 속성으로 하위 호환성 유지)
   traits?: EmployeeTrait[] // 성격 태그 (1-2개)
-  seatIndex?: number | null // 그리드 좌표 (null = 미배치)
+  seatIndex?: number | null // 그리드 좌표 (null = 미배치, 레거시)
+  deskId?: string | null // 도트 사무실 책상 ID (null = 미배치, 새 시스템)
   stress?: number // 스트레스 (0-100)
   satisfaction?: number // 만족도 (0-100)
-  skills?: EmployeeSkills // 스킬 스탯
+  skills?: EmployeeSkills // 스킬 스탯 (내부 로직용, 0-100 수치)
+  badges?: import('./skills').SkillBadge[] // ✨ 스킬 뱃지 (UI 표시용, 이모지 + 별점)
 
   // ✨ Trade AI Pipeline
   assignedSectors?: import('./trade').AssignedSector[] // Analyst 담당 섹터 (1-2개)
@@ -129,6 +132,10 @@ export interface Employee {
   praiseCooldown?: number // 칭찬 쿨다운 (게임 일 기준)
   scoldCooldown?: number // 꾸짖기 쿨다운 (게임 일 기준)
   mood?: number // 기분 (0-100, default 50)
+
+  // ✨ RPG Skill Tree System
+  progression?: import('./skills').EmployeeProgression // 스킬 포인트 시스템
+  unlockedSkills?: string[] // 해금한 스킬 노드 ID
 }
 
 /* ── Employee Growth System Types ── */
@@ -374,6 +381,7 @@ export type WindowType =
   | 'trading'
   | 'news'
   | 'office'
+  | 'office_dot' // 도트 형식 사무실 (새 시스템)
   | 'office_history'
   | 'employee_detail'
   | 'ranking'
@@ -569,4 +577,14 @@ export interface PlayerAcquisitionHistory {
   cost: number
   premium: number
   layoffRate: number
+}
+
+/* ── Limit Order System ── */
+export interface LimitOrder {
+  id: string
+  companyId: string
+  type: 'SELL' // 목표가 매도만 지원
+  targetPrice: number // 목표 가격
+  shares: number // 매도할 주식 수
+  createdTick: number // 생성 시점
 }
