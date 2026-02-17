@@ -157,4 +157,53 @@ export const soundManager = {
   playEmployeeMove() {
     playTone(440, 0.08, 'sine', 0.06)
   },
+
+  // ✨ Trade Animation Sounds
+  playTradeSuccess() {
+    playSequence([
+      { freq: 523, dur: 0.08 },
+      { freq: 659, dur: 0.08 },
+      { freq: 784, dur: 0.12 },
+    ], 'square')
+  },
+
+  playTradeProfit() {
+    playSequence([
+      { freq: 440, dur: 0.06 },
+      { freq: 554, dur: 0.06 },
+      { freq: 659, dur: 0.06 },
+      { freq: 880, dur: 0.15 },
+    ], 'square')
+  },
+
+  playTradeLoss() {
+    playSequence([
+      { freq: 440, dur: 0.08 },
+      { freq: 370, dur: 0.08 },
+      { freq: 330, dur: 0.15 },
+    ], 'sawtooth')
+  },
+
+  playMilestone() {
+    playSequence([
+      { freq: 523, dur: 0.1 },
+      { freq: 659, dur: 0.1 },
+      { freq: 784, dur: 0.1 },
+      { freq: 1047, dur: 0.1 },
+      { freq: 1319, dur: 0.3 },
+    ], 'square')
+  },
+
+  playCardFlip() {
+    playTone(800, 0.05, 'triangle', 0.06)
+    setTimeout(() => playTone(1000, 0.04, 'triangle', 0.04), 30)
+  },
+
+  playCoinDrop() {
+    playSequence([
+      { freq: 1200, dur: 0.04 },
+      { freq: 900, dur: 0.04 },
+      { freq: 1100, dur: 0.06 },
+    ], 'triangle')
+  },
 }

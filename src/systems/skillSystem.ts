@@ -196,6 +196,7 @@ export function applyPassiveModifiers(
   let result = baseValue
 
   for (const modifier of modifiers) {
+    if (!Number.isFinite(modifier.modifier)) continue
     if (modifier.operation === 'add') {
       result += modifier.modifier
     } else if (modifier.operation === 'multiply') {
@@ -203,7 +204,7 @@ export function applyPassiveModifiers(
     }
   }
 
-  return result
+  return Number.isFinite(result) ? result : baseValue
 }
 
 /**

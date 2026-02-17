@@ -4,7 +4,7 @@
  * 거래 성공, 가구 설치 등의 이벤트에 파티클 효과를 생성
  */
 
-export type ParticleType = 'money' | 'sparkle' | 'heart' | 'star'
+export type ParticleType = 'money' | 'sparkle' | 'heart' | 'star' | 'profit' | 'loss' | 'celebration' | 'coin'
 
 // Resource limits for performance
 const MAX_PARTICLES = 200
@@ -37,6 +37,10 @@ export class ParticleSystem {
       sparkle: '#FFFFFF', // 흰색
       heart: '#FF69B4', // 분홍
       star: '#FFD700', // 금색
+      profit: '#4CAF50', // 초록 (수익)
+      loss: '#F44336', // 빨강 (손실)
+      celebration: '#FFD700', // 금색 (축하)
+      coin: '#FFC107', // 금색 (코인)
     }
 
     const color = colorMap[type]
@@ -121,6 +125,10 @@ export class ParticleSystem {
       sparkle: [],
       heart: [],
       star: [],
+      profit: [],
+      loss: [],
+      celebration: [],
+      coin: [],
     }
 
     visibleParticles.forEach((p) => {
@@ -133,7 +141,7 @@ export class ParticleSystem {
 
       ctx.save()
 
-      if (type === 'money' || type === 'heart' || type === 'star') {
+      if (type === 'money' || type === 'heart' || type === 'star' || type === 'profit' || type === 'loss' || type === 'celebration' || type === 'coin') {
         // 이모지 파티클 - 스프라이트 아틀라스 사용 (fillText 대신 drawImage)
         particles.forEach((p) => {
           // 크기를 아틀라스 크기(12/18/24)로 매핑
@@ -215,6 +223,10 @@ export class ParticleSystem {
       heart: '❤️',
       star: '⭐',
       sparkle: '', // sparkle은 원형이므로 아틀라스 불필요
+      profit: '📈',
+      loss: '📉',
+      celebration: '🎉',
+      coin: '🪙',
     }
 
     // 3가지 크기로 미리 렌더링 (작은/중간/큰)
