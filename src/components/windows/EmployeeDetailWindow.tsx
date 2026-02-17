@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { XPBar } from '../ui/XPBar'
@@ -13,6 +13,8 @@ import {
   badgeForLevel,
   titleForLevel,
 } from '../../systems/growthSystem'
+import { SkillTreeTab } from './SkillTreeTab'
+import { formatActiveEffects } from '../../utils/skillFormatter'
 
 function getStatColor(value: number, isStress: boolean): string {
   if (isStress) {
@@ -30,6 +32,7 @@ interface EmployeeDetailWindowProps {
 }
 
 export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) {
+  const [activeTab, setActiveTab] = useState<'info' | 'skillTree'>('info')
   const employees = useGameStore((s) => s.player.employees)
   const time = useGameStore((s) => s.time)
   const praiseEmployee = useGameStore((s) => s.praiseEmployee)
@@ -40,6 +43,9 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
     () => employees.find((e) => e.id === employeeId),
     [employees, employeeId],
   )
+
+  // 🚀 Performance: Memoize active effects calculation (must be before early return)
+  const activeEffects = useMemo(() => (emp ? formatActiveEffects(emp) : []), [emp])
 
   if (!emp) {
     return (
@@ -78,9 +84,30 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
   )
 
   return (
-    <div className="text-xs p-2 space-y-2 overflow-y-auto h-full">
-      {/* Profile Header */}
-      <div className="win-inset bg-white p-2">
+    <div className="flex flex-col h-full">
+      {/* Tab Buttons */}
+      <div className="flex gap-1 p-2 border-b border-gray-400">
+        <RetroButton
+          onClick={() => setActiveTab('info')}
+          size="sm"
+          variant={activeTab === 'info' ? 'primary' : 'default'}
+        >
+          📋 기본 정보
+        </RetroButton>
+        <RetroButton
+          onClick={() => setActiveTab('skillTree')}
+          size="sm"
+          variant={activeTab === 'skillTree' ? 'primary' : 'default'}
+        >
+          🌳 스킬 트리
+        </RetroButton>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'info' ? (
+        <div className="text-xs p-2 space-y-2 overflow-y-auto flex-1">
+          {/* Profile Header */}
+          <div className="win-inset bg-white p-2">
         <div className="flex items-center gap-2">
           <div className="text-3xl">{roleEmoji}</div>
           <div className="flex-1">
@@ -217,7 +244,7 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
 
       {/* Skills */}
       <div className="win-inset bg-white p-2">
-        <div className="font-bold text-[10px] mb-1">스킬</div>
+        <div className="font-bold text-[10px] mb-1">스킬 (숫자)</div>
         <div className="space-y-1">
           {[
             { key: 'analysis', label: '분석', color: 'bg-purple-500', value: skills.analysis },
@@ -239,6 +266,57 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
           ))}
         </div>
       </div>
+
+      {/* Active Passive Effects */}
+      {activeEffects.length > 0 && (
+        <div className="win-inset bg-white p-2">
+          <div className="font-bold text-[10px] mb-1">⚡ 활성 패시브 효과</div>
+          <div className="space-y-1">
+            {activeEffects.map((effect, idx) => (
+              <div key={idx} className="text-[9px]">
+                <div className="font-semibold text-blue-700">{effect.label}</div>
+                {effect.effects.map((effectText, effectIdx) => (
+                  <div key={effectIdx} className="text-blue-600 pl-2">
+                    • {effectText}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Skill Badges */}
+      {emp.badges && emp.badges.length > 0 && (
+        <div className="win-inset bg-white p-2">
+          <div className="font-bold text-[10px] mb-1">획득한 뱃지</div>
+          <div className="grid grid-cols-1 gap-1">
+            {emp.badges.map((badge) => {
+              const stars = '★'.repeat(badge.level) + '☆'.repeat(5 - badge.level)
+              return (
+                <div
+                  key={badge.id}
+                  className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-300 rounded p-1.5"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <div className="text-xl">{badge.emoji}</div>
+                    <div className="flex-1">
+                      <div className="text-[10px] font-bold">{badge.name}</div>
+                      <div className="text-[8px] text-yellow-600">{stars}</div>
+                      <div className="text-[8px] text-gray-600 mt-0.5">
+                        {badge.description}
+                      </div>
+                      <div className="text-[8px] text-blue-600 font-medium mt-0.5">
+                        {badge.playerMessage}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex gap-1">
@@ -319,6 +397,12 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
           </div>
         </div>
       </div>
+        </div>
+      ) : (
+        <div className="flex-1 p-2 overflow-hidden">
+          <SkillTreeTab employee={emp} />
+        </div>
+      )}
     </div>
   )
 }

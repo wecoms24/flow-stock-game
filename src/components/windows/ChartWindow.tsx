@@ -189,7 +189,6 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   const [sectorFilter, setSectorFilter] = useState<string>('all')
   const [sortBy, setSortBy] = useState<SortOption>('name')
   const [changeFilter, setChangeFilter] = useState<ChangeFilter>('all')
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
 
   // Filter and sort companies
   const filteredCompanies = useMemo(() => {
@@ -286,29 +285,29 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
 
     // Generate date labels based on period
     const labels = history.map((_, i) => {
-      const ticksAgo = history.length - 1 - i
-      const daysAgo = Math.floor(ticksAgo / 10)
-      const hoursAgo = ticksAgo % 10
-
-      // 현재 시간에서 거슬러 올라가기
-      const year = currentTime.year
-      const month = currentTime.month
-      const day = currentTime.day - daysAgo
-      const hour = currentTime.hour - hoursAgo
+      // 역순: 맨 처음(i=0)이 가장 오래된 시점
+      const ticksFromStart = i
+      const ticksFromEnd = history.length - 1 - i
 
       // 기간에 따라 라벨 포맷 변경
       if (periodTicks <= 10) {
-        // 1일: 시간 표시
-        return `${String(Math.max(0, hour)).padStart(2, '0')}시`
-      } else if (periodTicks <= 140) {
-        // 2주 이하: 일 단위
-        return `${Math.max(1, day)}일`
-      } else if (periodTicks <= 900) {
-        // 3개월 이하: 월.일
-        return `${month}.${Math.max(1, day)}`
+        // 1일: 시간 단위 (0시부터 시작)
+        const hour = (currentTime.hour - ticksFromEnd + 240) % 24 // 음수 방지
+        return `${String(hour).padStart(2, '0')}시`
+      } else if (periodTicks <= 70) {
+        // 1주: 매 10틱마다 하나씩 (일 단위)
+        const dayOffset = Math.floor(ticksFromStart / 10)
+        return `${dayOffset + 1}일`
+      } else if (periodTicks <= 300) {
+        // 1개월: 매 30틱마다 하나씩
+        const dayOffset = Math.floor(ticksFromStart / 10)
+        return `${dayOffset + 1}일`
       } else {
-        // 그 이상: 년.월
-        return `${year}.${month}`
+        // 3개월 이상: 월.일 형식
+        const totalDays = Math.floor(ticksFromStart / 10)
+        const month = ((currentTime.month - 1 + Math.floor(totalDays / 30)) % 12) + 1
+        const day = (totalDays % 30) + 1
+        return `${month}.${day}`
       }
     })
 
@@ -452,9 +451,9 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
 
   return (
     <div className="flex flex-col h-full text-xs">
-      {/* 검색 및 빠른 필터 (항상 표시) */}
+      {/* 통합 필터 패널 */}
       <div className="win-inset bg-white p-1 mb-1 space-y-1">
-        {/* 검색창 */}
+        {/* 검색창 + 정렬 */}
         <div className="flex items-center gap-1">
           <input
             type="text"
@@ -463,6 +462,16 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="flex-1 win-inset bg-white px-1.5 py-0.5 text-xs"
           />
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortOption)}
+            className="win-inset bg-white px-1 py-0.5 text-xs"
+          >
+            <option value="name">이름순</option>
+            <option value="price">가격순</option>
+            <option value="change">등락률순</option>
+            <option value="sector">섹터순</option>
+          </select>
           {hasActiveFilters && (
             <RetroButton size="sm" onClick={resetFilters} className="text-[10px]">
               초기화
@@ -470,7 +479,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
           )}
         </div>
 
-        {/* 빠른 섹터 필터 */}
+        {/* 전체 섹터 필터 (2줄) */}
         <div className="flex gap-0.5 flex-wrap">
           {sectors.map((sector) => (
             <RetroButton
@@ -481,6 +490,24 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
               className="text-[9px] px-1 py-0.5"
             >
               {sector.emoji} {sector.label}
+            </RetroButton>
+          ))}
+          {/* 추가 섹터 */}
+          {[
+            { value: 'industrial', label: '산업재' },
+            { value: 'telecom', label: '통신' },
+            { value: 'materials', label: '원자재' },
+            { value: 'utilities', label: '유틸리티' },
+            { value: 'realestate', label: '부동산' },
+          ].map((sector) => (
+            <RetroButton
+              key={sector.value}
+              size="sm"
+              variant={sectorFilter === sector.value ? 'primary' : 'default'}
+              onClick={() => setSectorFilter(sector.value)}
+              className="text-[9px] px-1 py-0.5"
+            >
+              {sector.label}
             </RetroButton>
           ))}
         </div>
@@ -571,15 +598,6 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
 
         <RetroButton
           size="sm"
-          variant={showAdvancedFilters ? 'primary' : 'default'}
-          onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-          className="text-[10px]"
-        >
-          고급 필터
-        </RetroButton>
-
-        <RetroButton
-          size="sm"
           onClick={() => useGameStore.getState().openWindow('trading', { companyId: selectedId })}
         >
           매매
@@ -594,46 +612,6 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
           {changePercent.toFixed(2)}%)
         </span>
       </div>
-
-      {/* 고급 필터 패널 */}
-      {showAdvancedFilters && (
-        <div className="mb-1 win-inset bg-white p-1 space-y-1 text-[10px]">
-          {/* Sort */}
-          <div className="flex items-center gap-1">
-            <span className="text-retro-gray">정렬:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortOption)}
-              className="flex-1 win-inset bg-white px-1 py-0.5"
-            >
-              <option value="name">이름순</option>
-              <option value="price">가격순</option>
-              <option value="change">등락률순</option>
-              <option value="sector">섹터순</option>
-            </select>
-          </div>
-
-          {/* 추가 섹터 */}
-          <div className="flex flex-wrap gap-0.5">
-            <span className="text-retro-gray w-full">추가 섹터:</span>
-            {['industrial', 'telecom', 'materials', 'utilities', 'realestate'].map((sector) => (
-              <RetroButton
-                key={sector}
-                size="sm"
-                variant={sectorFilter === sector ? 'primary' : 'default'}
-                onClick={() => setSectorFilter(sector)}
-                className="text-[9px] px-1 py-0.5"
-              >
-                {sector === 'industrial' && '산업재'}
-                {sector === 'telecom' && '통신'}
-                {sector === 'materials' && '원자재'}
-                {sector === 'utilities' && '유틸리티'}
-                {sector === 'realestate' && '부동산'}
-              </RetroButton>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Chart */}
       <div className="flex-1 min-h-0">

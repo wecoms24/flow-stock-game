@@ -4,7 +4,7 @@ import { PortfolioWindow } from './PortfolioWindow'
 import { ChartWindow } from './ChartWindow'
 import { TradingWindow } from './TradingWindow'
 import { NewsWindow } from './NewsWindow'
-import { OfficeWindow } from './OfficeWindow'
+import { OfficeDotWindow } from './OfficeDotWindow'
 import { RankingWindow } from './RankingWindow'
 import { SettingsWindow } from './SettingsWindow'
 import { EndingScreen } from './EndingScreen'
@@ -20,7 +20,8 @@ const WINDOW_COMPONENTS: Record<WindowType, React.ComponentType<unknown>> = {
   chart: ChartWindow as React.ComponentType<unknown>,
   trading: TradingWindow as React.ComponentType<unknown>,
   news: NewsWindow as React.ComponentType<unknown>,
-  office: OfficeWindow as React.ComponentType<unknown>,
+  office: OfficeDotWindow as React.ComponentType<unknown>,
+  office_dot: OfficeDotWindow as React.ComponentType<unknown>,
   ranking: RankingWindow as React.ComponentType<unknown>,
   office_history: OfficeHistoryWindow as React.ComponentType<unknown>,
   employee_detail: EmployeeDetailWindow as React.ComponentType<unknown>,

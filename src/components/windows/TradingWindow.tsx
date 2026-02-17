@@ -18,11 +18,16 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
   const updateWindowProps = useGameStore((s) => s.updateWindowProps)
   const canTrade = useGameStore((s) => s.canTrade)
   const circuitBreaker = useGameStore((s) => s.circuitBreaker)
+  const openWindow = useGameStore((s) => s.openWindow)
+  const limitOrders = useGameStore((s) => s.limitOrders)
+  const createLimitOrder = useGameStore((s) => s.createLimitOrder)
+  const cancelLimitOrder = useGameStore((s) => s.cancelLimitOrder)
 
   const [selectedId, setSelectedId] = useState(companyId ?? companies[0]?.id ?? '')
   const [shares, setShares] = useState(1)
   const [mode, setMode] = useState<'buy' | 'sell'>('buy')
   const [tab, setTab] = useState<Tab>('market')
+  const [limitPrice, setLimitPrice] = useState<Record<string, string>>({}) // 목표가 입력
 
   // 차트 창에서 기업 변경 시 동기화 (외부 prop 변경만 추적)
   // 조건문으로 무한 루프 방지됨 - controlled component 패턴
@@ -67,6 +72,29 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
     [holdings],
   )
   const totalPnlPercent = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0
+
+  // 인수 가능 회사 판단 (AcquisitionWindow와 동일한 로직)
+  const isAcquirable = (c: typeof companies[0]) => {
+    if (c.status !== 'active') return false
+
+    const activeCompanies = companies.filter((co) => co.status === 'active')
+    if (activeCompanies.length < 2) return false
+
+    // 시가총액 하위 50% 체크
+    const sorted = [...activeCompanies].sort((a, b) => b.marketCap - a.marketCap)
+    const medianIndex = Math.floor(sorted.length * 0.5)
+    const isLowerHalf = sorted.slice(medianIndex).some((co) => co.id === c.id)
+
+    // 가격 20% 이상 하락 체크
+    const priceDropRatio = 1 - c.price / c.basePrice
+
+    return isLowerHalf && priceDropRatio >= 0.2
+  }
+
+  const handleOpenAcquisition = (companyId: string, e: React.MouseEvent) => {
+    e.stopPropagation() // 회사 선택 방지
+    openWindow('acquisition', { preselectedCompanyId: companyId })
+  }
 
   if (!company) return <div className="text-xs text-retro-gray">종목 없음</div>
 
@@ -151,6 +179,8 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
             const isAcquired = c.status === 'acquired'
             const parent = isAcquired ? companies.find(co => co.id === c.parentCompanyId) : null
 
+            const canAcquire = isAcquirable(c)
+
             return (
               <div
                 key={c.id}
@@ -181,6 +211,15 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
                       >
                         보유
                       </span>
+                    )}
+                    {canAcquire && !isAcquired && (
+                      <button
+                        className="text-[9px] px-1 py-0.5 bg-purple-600 text-white hover:bg-purple-700 active:bg-purple-800 win-outset"
+                        onClick={(e) => handleOpenAcquisition(c.id, e)}
+                        title="인수 가능 (시총 하위 50% + 20% 하락)"
+                      >
+                        인수
+                      </button>
                     )}
                   </div>
                   <div
@@ -218,44 +257,113 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
           </div>
         ) : (
           /* 보유 종목 리스트 */
-          holdings.map((h) => (
-            <div
-              key={h.companyId}
-              className={`flex items-center px-1.5 py-1 cursor-pointer border-b border-retro-gray/20 ${
-                h.companyId === selectedId
-                  ? 'bg-win-title-active text-white'
-                  : 'hover:bg-retro-gray/10'
-              }`}
-              onClick={() => handleSelectCompany(h.companyId)}
-            >
-              <div className="flex-1 min-w-0">
-                <div className="font-bold truncate">{h.company.ticker}</div>
+          holdings.map((h) => {
+            const activeOrders = limitOrders.filter((o) => o.companyId === h.companyId)
+            const hasActiveOrder = activeOrders.length > 0
+
+            return (
+              <div
+                key={h.companyId}
+                className="border-b border-retro-gray/20 last:border-b-0"
+              >
+                {/* 종목 정보 */}
                 <div
-                  className={`text-[10px] ${
-                    h.companyId === selectedId ? 'text-white/70' : 'text-retro-gray'
-                  }`}
-                >
-                  {h.shares}주 / 평단 {h.avgBuyPrice.toLocaleString()}원
-                </div>
-              </div>
-              <div className="text-right ml-2">
-                <div className="font-bold">{h.currentValue.toLocaleString()}</div>
-                <div
-                  className={`text-[10px] ${
+                  className={`flex items-center px-1.5 py-1 cursor-pointer ${
                     h.companyId === selectedId
-                      ? 'text-white/80'
-                      : h.pnl >= 0
-                        ? 'text-stock-up'
-                        : 'text-stock-down'
+                      ? 'bg-win-title-active text-white'
+                      : 'hover:bg-retro-gray/10'
                   }`}
+                  onClick={() => handleSelectCompany(h.companyId)}
                 >
-                  {h.pnl >= 0 ? '+' : ''}
-                  {h.pnl.toLocaleString()}원 ({h.pnl >= 0 ? '+' : ''}
-                  {h.pnlPercent.toFixed(1)}%)
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1">
+                      <span className="font-bold truncate">{h.company.ticker}</span>
+                      {hasActiveOrder && (
+                        <span className="text-[9px] px-0.5 bg-yellow-500 text-white">
+                          예약 {activeOrders.length}
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className={`text-[10px] ${
+                        h.companyId === selectedId ? 'text-white/70' : 'text-retro-gray'
+                      }`}
+                    >
+                      {h.shares}주 / 평단 {h.avgBuyPrice.toLocaleString()}원
+                    </div>
+                  </div>
+                  <div className="text-right ml-2">
+                    <div className="font-bold">{h.currentValue.toLocaleString()}</div>
+                    <div
+                      className={`text-[10px] ${
+                        h.companyId === selectedId
+                          ? 'text-white/80'
+                          : h.pnl >= 0
+                            ? 'text-stock-up'
+                            : 'text-stock-down'
+                      }`}
+                    >
+                      {h.pnl >= 0 ? '+' : ''}
+                      {h.pnl.toLocaleString()}원 ({h.pnl >= 0 ? '+' : ''}
+                      {h.pnlPercent.toFixed(1)}%)
+                    </div>
+                  </div>
+                </div>
+
+                {/* 예약 매매 설정 */}
+                <div className="px-1.5 py-1 bg-retro-gray/5 space-y-0.5">
+                  <div className="flex items-center gap-1 text-[10px]">
+                    <span className="text-retro-gray shrink-0">🎯 목표가:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      step={100}
+                      placeholder={`현재 ${h.company.price.toLocaleString()}`}
+                      value={limitPrice[h.companyId] ?? ''}
+                      onChange={(e) =>
+                        setLimitPrice({ ...limitPrice, [h.companyId]: e.target.value })
+                      }
+                      onClick={(e) => e.stopPropagation()}
+                      className="win-inset bg-white px-1 py-0.5 flex-1 text-center"
+                    />
+                    <button
+                      className="win-outset bg-win-face px-1 py-0.5 text-[9px] hover:bg-retro-gray/10 active:win-pressed shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const targetPrice = parseInt(limitPrice[h.companyId] ?? '0')
+                        if (targetPrice > 0 && targetPrice > h.company.price) {
+                          createLimitOrder(h.companyId, targetPrice, h.shares)
+                          setLimitPrice({ ...limitPrice, [h.companyId]: '' })
+                        }
+                      }}
+                      disabled={!limitPrice[h.companyId] || parseInt(limitPrice[h.companyId]) <= h.company.price}
+                    >
+                      전체 예약
+                    </button>
+                  </div>
+
+                  {/* 활성 예약 주문 목록 */}
+                  {activeOrders.map((order) => (
+                    <div
+                      key={order.id}
+                      className="flex items-center gap-1 text-[9px] text-retro-gray bg-yellow-50 px-1 py-0.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="flex-1">
+                        {order.shares}주 @ {order.targetPrice.toLocaleString()}원
+                      </span>
+                      <button
+                        className="win-outset bg-win-face px-1 hover:bg-red-100 active:win-pressed"
+                        onClick={() => cancelLimitOrder(order.id)}
+                      >
+                        취소
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
-          ))
+            )
+          })
         )}
       </div>
 
@@ -433,6 +541,55 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
           </div>
         )}
       </div>
+
+      {/* 전체 활성 예약 주문 (있을 때만) */}
+      {limitOrders.length > 0 && (
+        <div className="win-outset bg-win-face p-1.5 mt-1">
+          <div className="text-[10px] font-bold mb-1 text-retro-gray">
+            🎯 활성 예약 주문 ({limitOrders.length})
+          </div>
+          <div className="space-y-0.5 max-h-20 overflow-y-auto">
+            {limitOrders.map((order) => {
+              const orderCompany = companies.find((c) => c.id === order.companyId)
+              if (!orderCompany) return null
+
+              const progress =
+                orderCompany.price >= order.targetPrice
+                  ? 100
+                  : (orderCompany.price / order.targetPrice) * 100
+
+              return (
+                <div
+                  key={order.id}
+                  className="win-inset bg-white px-1 py-0.5 text-[9px] flex items-center gap-1"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold truncate">
+                      [{orderCompany.ticker}] {order.shares}주
+                    </div>
+                    <div className="text-retro-gray flex items-center gap-1">
+                      <span>목표 {order.targetPrice.toLocaleString()}원</span>
+                      <span
+                        className={`${
+                          progress >= 100 ? 'text-stock-up font-bold' : 'text-yellow-600'
+                        }`}
+                      >
+                        ({progress.toFixed(0)}%)
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    className="win-outset bg-win-face px-1 py-0.5 hover:bg-red-100 active:win-pressed shrink-0"
+                    onClick={() => cancelLimitOrder(order.id)}
+                  >
+                    취소
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

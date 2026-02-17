@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { XPBar } from '../ui/XPBar'
@@ -13,6 +13,14 @@ import { TITLE_LABELS, BADGE_COLORS, badgeForLevel, titleForLevel } from '../../
 import { soundManager } from '../../systems/soundManager'
 import { emitFloatingText } from '../../utils/floatingTextEmitter'
 import { ROLE_EMOJI, BEHAVIOR_EMOJI, getMoodFace } from '../../data/employeeEmoji'
+import { AIProposalWindow } from './AIProposalWindow'
+import { BlueprintOverlay } from '../office/BlueprintOverlay'
+import { SynergyLines } from '../office/SynergyLines'
+import { SpeechBubbleContainer } from '../office/SpeechBubble'
+import { emitParticles } from '../../systems/particleSystem'
+import { OfficeTutorial, TutorialResetButton } from '../tutorial/OfficeTutorial'
+import { isTutorialCompleted } from '../../utils/tutorialStorage'
+import { OfficeCanvas } from '../office/OfficeCanvas'
 
 const HIRE_ROLES: EmployeeRole[] = ['intern', 'analyst', 'trader', 'manager', 'ceo', 'hr_manager']
 
@@ -55,6 +63,10 @@ export function OfficeWindow() {
     praiseEmployee,
     scoldEmployee,
     openWindow,
+    aiProposal,
+    generateAIProposal,
+    applyAIProposal,
+    rejectAIProposal,
   } = useGameStore()
   const employeeBehaviors = useGameStore((s) => s.employeeBehaviors)
 
@@ -63,41 +75,69 @@ export function OfficeWindow() {
   const [selectedFurnitureType, setSelectedFurnitureType] = useState<FurnitureType | null>(null)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ x: number; y: number } | null>(null)
-  const [chatBubbles, setChatBubbles] = useState<Record<string, string>>({})
-  const bubbleTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+  const [speechBubbles, setSpeechBubbles] = useState<Array<{
+    id: string
+    employeeId: string
+    message: string
+    position: { x: number; y: number }
+  }>>([])
+  const [showFPS] = useState(import.meta.env.DEV) // 개발 모드에서만 FPS 표시
+  const [fps, setFps] = useState(0)
+  const [showTutorial, setShowTutorial] = useState(false)
+
+  // 튜토리얼 자동 시작 (첫 실행 시)
+  useEffect(() => {
+    if (!isTutorialCompleted()) {
+      setShowTutorial(true)
+    }
+  }, [])
 
   // 말풍선 업데이트 (2초마다)
   useEffect(() => {
-    const timeouts = bubbleTimeoutsRef.current
+    if (!player.officeGrid) return
+
     const interval = setInterval(() => {
       const currentTick = (time.hour - 9) + time.day * 10
-      const newBubbles: Record<string, string> = {}
+      const newBubbles: Array<{
+        id: string
+        employeeId: string
+        message: string
+        position: { x: number; y: number }
+      }> = []
+
       player.employees.forEach((emp) => {
-        if (emp.seatIndex != null) {
+        if (emp.seatIndex != null && player.officeGrid) {
           const msg = selectChatter(emp, currentTick)
-          if (msg) newBubbles[emp.id] = msg
+          if (msg) {
+            // seatIndex → 그리드 좌표 변환
+            const gridX = emp.seatIndex % player.officeGrid.size.width
+            const gridY = Math.floor(emp.seatIndex / player.officeGrid.size.width)
+
+            // 그리드 좌표 → 화면 px 좌표
+            // Grid container: padding 8px, cell: 40px width + 4px gap
+            const GRID_PADDING = 8
+            const CELL_SIZE = 40
+            const CELL_GAP = 4
+            const px = GRID_PADDING + gridX * (CELL_SIZE + CELL_GAP) + CELL_SIZE / 2
+            const py = GRID_PADDING + gridY * (CELL_SIZE + CELL_GAP)
+
+            newBubbles.push({
+              id: `${emp.id}-${Date.now()}`,
+              employeeId: emp.id,
+              message: msg,
+              position: { x: px, y: py }
+            })
+          }
         }
       })
-      if (Object.keys(newBubbles).length > 0) {
-        setChatBubbles((prev) => ({ ...prev, ...newBubbles }))
-        // 5초 후 자동 제거
-        const tid = setTimeout(() => {
-          setChatBubbles((prev) => {
-            const updated = { ...prev }
-            Object.keys(newBubbles).forEach((id) => delete updated[id])
-            return updated
-          })
-          timeouts.delete(tid)
-        }, 5000)
-        timeouts.add(tid)
+
+      if (newBubbles.length > 0) {
+        setSpeechBubbles((prev) => [...prev, ...newBubbles])
       }
     }, 2000)
-    return () => {
-      clearInterval(interval)
-      timeouts.forEach((tid) => clearTimeout(tid))
-      timeouts.clear()
-    }
-  }, [player.employees, time.hour, time.day])
+
+    return () => clearInterval(interval)
+  }, [player.employees, player.officeGrid, time.hour, time.day])
 
   // Initialize grid if not exists (must be in useEffect to avoid setState during render)
   useEffect(() => {
@@ -123,8 +163,8 @@ export function OfficeWindow() {
     const catalog = FURNITURE_CATALOG[selectedFurnitureType]
     const cells: { x: number; y: number; valid: boolean }[] = []
 
-    for (let dy = 0; dy < catalog.size.height; dy++) {
-      for (let dx = 0; dx < catalog.size.width; dx++) {
+    for (let dy = 0; dy < (catalog.size?.height ?? 1); dy++) {
+      for (let dx = 0; dx < (catalog.size?.width ?? 1); dx++) {
         const x = hoveredCell.x + dx
         const y = hoveredCell.y + dy
         const valid =
@@ -159,6 +199,14 @@ export function OfficeWindow() {
       if (success) {
         setPlacementMode(null)
         setSelectedFurnitureType(null)
+
+        // Emit sparkle particles at furniture position
+        const GRID_PADDING = 8
+        const CELL_SIZE = 40
+        const CELL_GAP = 4
+        const px = GRID_PADDING + x * (CELL_SIZE + CELL_GAP) + CELL_SIZE / 2
+        const py = GRID_PADDING + y * (CELL_SIZE + CELL_GAP) + CELL_SIZE / 2
+        emitParticles('sparkle', px, py, 12)
       }
     } else if (placementMode === 'employee' && selectedEmployeeId) {
       // Place employee
@@ -247,7 +295,7 @@ export function OfficeWindow() {
         tooltip: catalog.name,
         hasBuffs,
         sprite: catalog.sprite,
-        isMultiCell: catalog.size.width > 1 || catalog.size.height > 1,
+        isMultiCell: (catalog.size?.width ?? 1) > 1 || (catalog.size?.height ?? 1) > 1,
         isTopLeft,
       }
     }
@@ -290,9 +338,65 @@ export function OfficeWindow() {
           >
             📋
           </RetroButton>
+          <RetroButton
+            size="sm"
+            onClick={() => {
+              console.log('🤖 AI 버튼 클릭됨')
+              console.log('Office grid:', !!player.officeGrid)
+              console.log('Employee count:', player.employees.length)
+
+              // 오피스 그리드 확인
+              if (!player.officeGrid) {
+                alert(
+                  '⚠️ 오피스가 초기화되지 않았습니다.\n\n' +
+                  '게임을 시작하면 자동으로 오피스가 생성됩니다.'
+                )
+                console.error('❌ Office grid가 없습니다.')
+                return
+              }
+
+              // AI 제안 생성 (직원 없으면 가구만, 있으면 직원+가구)
+              try {
+                const hasEmployees = player.employees.length > 0
+                const maxMoves = hasEmployees ? 5 : 0  // 직원 없으면 이동 제안 안 함
+                const maxPurchases = 3  // 가구는 항상 제안
+
+                console.log('AI 제안 생성 시작:', {
+                  maxMoves,
+                  maxPurchases,
+                  employeeCount: player.employees.length,
+                  mode: hasEmployees ? '직원 배치 + 가구' : '가구만'
+                })
+
+                generateAIProposal(maxMoves, maxPurchases)
+                soundManager.playAIProposalOpen()
+
+                console.log('✅ AI 제안 생성 완료')
+              } catch (error) {
+                console.error('❌ AI 제안 생성 중 오류:', error)
+                alert(
+                  '❌ AI 제안 생성 중 오류가 발생했습니다.\n\n' +
+                  '오류: ' + String(error) + '\n\n' +
+                  '브라우저 콘솔(F12)에서 자세한 정보를 확인하세요.'
+                )
+              }
+            }}
+            className="text-[8px] bg-blue-600 hover:bg-blue-500"
+            title="AI 자동 최적화 (직원 배치 + 가구 제안)"
+          >
+            🤖 AI
+          </RetroButton>
+          <TutorialResetButton onClick={() => setShowTutorial(true)} />
         </div>
-        <div className="text-retro-gray text-[10px]">
-          {time.year}년 {time.month}월 | 월 지출: {player.monthlyExpenses.toLocaleString()}원
+        <div className="text-retro-gray text-[10px] flex items-center justify-between">
+          <span>
+            {time.year}년 {time.month}월 | 월 지출: {player.monthlyExpenses.toLocaleString()}원
+          </span>
+          {showFPS && (
+            <span className={`ml-2 font-mono ${fps >= 55 ? 'text-green-600' : fps >= 30 ? 'text-yellow-600' : 'text-red-600'}`}>
+              {fps} FPS
+            </span>
+          )}
         </div>
         {placementMode && (
           <div className="mt-1 bg-yellow-100 border-2 border-yellow-400 rounded p-1">
@@ -321,8 +425,13 @@ export function OfficeWindow() {
       </div>
 
       {/* 10x10 Grid - 40x40px cells */}
-      <div className="win-inset bg-white p-2">
-        <div className="grid grid-cols-10 gap-1" style={{ width: '420px', height: '420px' }}>
+      <div className="win-inset bg-white p-2 relative">
+        {/* Canvas rendering (background, ambient, particle) */}
+        <OfficeCanvas
+          officeLevel={player.officeLevel}
+          onFpsUpdate={showFPS ? setFps : undefined}
+        />
+        <div className="grid grid-cols-10 gap-1 relative" style={{ width: '420px', height: '420px', zIndex: 10 }}>
           {grid.cells.map((row, y) =>
             row.map((_cell, x) => {
               const info = getCellInfo(x, y)
@@ -373,15 +482,6 @@ export function OfficeWindow() {
                       </div>
                       {/* 이름 축약 */}
                       <span className="text-[6px] font-bold text-gray-700 mt-0.5">{info.label}</span>
-                      {/* Employee chat bubble */}
-                      {info.employeeId && chatBubbles[info.employeeId] && (
-                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 z-10 whitespace-nowrap animate-bounce">
-                          <div className="bg-white border-2 border-gray-800 rounded px-1.5 py-0.5 text-[7px] shadow-md">
-                            {chatBubbles[info.employeeId]}
-                            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white border-r-2 border-b-2 border-gray-800 rotate-45" />
-                          </div>
-                        </div>
-                      )}
                     </div>
                   ) : (
                     <span className="text-[8px] text-gray-400">{info.label}</span>
@@ -580,6 +680,18 @@ export function OfficeWindow() {
                             soundManager.playPraise()
                             const rect = (e.target as HTMLElement).getBoundingClientRect()
                             emitFloatingText('+5 XP', rect.left, rect.top - 10, '#FF69B4')
+
+                            // Emit heart particles at employee position
+                            if (emp.seatIndex != null && player.officeGrid) {
+                              const gridX = emp.seatIndex % player.officeGrid.size.width
+                              const gridY = Math.floor(emp.seatIndex / player.officeGrid.size.width)
+                              const GRID_PADDING = 8
+                              const CELL_SIZE = 40
+                              const CELL_GAP = 4
+                              const px = GRID_PADDING + gridX * (CELL_SIZE + CELL_GAP) + CELL_SIZE / 2
+                              const py = GRID_PADDING + gridY * (CELL_SIZE + CELL_GAP) + CELL_SIZE / 2
+                              emitParticles('heart', px, py, 8)
+                            }
                           }}
                           disabled={!canPraise}
                           className="text-[8px]"
@@ -656,6 +768,71 @@ export function OfficeWindow() {
           })}
         </div>
       </div>
+
+      {/* AI Proposal Window (Week 4 Integration) */}
+      {aiProposal && (
+        <AIProposalWindow
+          proposal={aiProposal}
+          employees={player.employees}
+          currentCash={player.cash}
+          onApprove={() => {
+            applyAIProposal()
+
+            // Emit star particles at grid center
+            const GRID_PADDING = 8
+            const CELL_SIZE = 40
+            const CELL_GAP = 4
+            const gridCenterX = GRID_PADDING + 5 * (CELL_SIZE + CELL_GAP)
+            const gridCenterY = GRID_PADDING + 5 * (CELL_SIZE + CELL_GAP)
+            emitParticles('star', gridCenterX, gridCenterY, 20)
+          }}
+          onReject={() => {
+            rejectAIProposal()
+          }}
+          onClose={() => {
+            rejectAIProposal()
+          }}
+        />
+      )}
+
+      {/* Blueprint Overlay (미리보기) */}
+      {aiProposal && player.officeGrid && (
+        <BlueprintOverlay
+          proposal={aiProposal}
+          employees={player.employees}
+          grid={player.officeGrid}
+          cellSize={40} // 그리드 셀 크기 (px)
+        />
+      )}
+
+      {/* Synergy Lines (시너지 연결선) */}
+      {selectedEmployeeId && player.officeGrid && (
+        <SynergyLines
+          selectedEmployee={player.employees.find((e) => e.id === selectedEmployeeId) ?? null}
+          employees={player.employees}
+          grid={player.officeGrid}
+          cellSize={40} // 그리드 셀 크기 (px)
+        />
+      )}
+
+      {/* Speech Bubbles (말풍선) */}
+      <SpeechBubbleContainer
+        bubbles={speechBubbles}
+        onRemoveBubble={(id) => {
+          setSpeechBubbles((prev) => prev.filter((b) => b.id !== id))
+        }}
+      />
+
+      {/* Tutorial Overlay */}
+      {showTutorial && (
+        <OfficeTutorial
+          onClose={() => setShowTutorial(false)}
+          onAIProposalClick={() => {
+            generateAIProposal()
+            soundManager.playAIProposalOpen()
+          }}
+        />
+      )}
     </div>
   )
 }
