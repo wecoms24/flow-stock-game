@@ -752,6 +752,8 @@ export async function sqliteToSaveData(
         officeLayout: safeParseJSONOptional(save.player_office_layout),
         lastDayChange: save.player_last_day_change,
         previousDayAssets: save.player_previous_day_assets,
+        lastDailyTradeResetDay: 0,
+        dailyTradeCount: 0,
       },
       companies,
       events,

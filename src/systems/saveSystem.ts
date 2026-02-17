@@ -7,7 +7,7 @@ import {
   deleteSave as deleteFromIndexedDB,
   hasSaveData as hasIndexedDBSave,
 } from './saveSystemLegacy'
-import { initializeDB, saveDataToSQLite, sqliteToSaveData, saveSlotExists, deleteSaveSlot } from './sqlite'
+import { initializeDB, getDBSafe, saveDataToSQLite, sqliteToSaveData, saveSlotExists, deleteSaveSlot } from './sqlite'
 import { getFeatureFlag } from './featureFlags'
 
 /**
@@ -148,25 +148,32 @@ export async function deleteSave(): Promise<void> {
  * Checks SQLite first when enabled, then falls back to IndexedDB
  */
 export async function hasSaveData(): Promise<boolean> {
-  const sqliteEnabled = getFeatureFlag('sqlite_enabled')
-
-  if (sqliteEnabled) {
-    const hasSqlite = await hasSQLiteSave()
-    if (hasSqlite) return true
-  }
-
+  // IMPORTANT: Skip SQLite check to avoid initialization errors
+  // SQLite is checked separately during actual save/load operations
+  // This function is only used for UI display purposes
   return hasIndexedDBSave()
 }
 
 /**
  * Check if SQLite save exists (Phase 3+)
  * Returns false if SQLite is disabled or check fails
+ *
+ * IMPORTANT: Only checks if DB is already initialized.
+ * Does NOT trigger initialization to avoid concurrent init errors.
  */
 export async function hasSQLiteSave(): Promise<boolean> {
   try {
-    const db = await initializeDB()
+    // Use safe getter - don't trigger initialization
+    const db = getDBSafe()
+
+    if (!db) {
+      // DB not initialized yet - return false without error
+      return false
+    }
+
     return await saveSlotExists(db, 'autosave')
-  } catch {
+  } catch (error) {
+    console.warn('[saveSystem] hasSQLiteSave check failed:', error instanceof Error ? error.message : String(error))
     return false
   }
 }

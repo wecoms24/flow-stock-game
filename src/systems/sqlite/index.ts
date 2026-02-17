@@ -1,6 +1,6 @@
 /* ── SQLite System Public API ── */
 
-export { initializeDB, getDB, closeDB } from './database'
+export { initializeDB, getDB, getDBSafe, closeDB } from './database'
 export { saveDataToSQLite, sqliteToSaveData } from './transformers'
 export {
   listSaveSlots,

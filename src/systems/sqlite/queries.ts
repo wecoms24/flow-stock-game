@@ -28,10 +28,20 @@ export async function deleteSaveSlot(db: SQLiteDB, slotName: string): Promise<vo
 
 /**
  * Check if a save slot exists
+ *
+ * @throws Error if DB is not properly initialized or query fails
  */
 export async function saveSlotExists(db: SQLiteDB, slotName: string): Promise<boolean> {
-  const rows = await db.run('SELECT 1 FROM saves WHERE slot_name = ? LIMIT 1;', [slotName])
-  return rows.length > 0
+  try {
+    const rows = await db.run('SELECT 1 FROM saves WHERE slot_name = ? LIMIT 1;', [slotName])
+    return rows.length > 0
+  } catch (error) {
+    console.error('[SQLite] saveSlotExists query failed:', error)
+    // Re-throw with context to help debugging
+    throw new Error(
+      `세이브 슬롯 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
 }
 
 /**

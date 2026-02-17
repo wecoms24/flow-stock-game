@@ -7,7 +7,7 @@ interface FeatureFlags {
 }
 
 const DEFAULT_FLAGS: FeatureFlags = {
-  sqlite_enabled: true, // SQLite enabled by default (Phase 5 complete)
+  sqlite_enabled: false, // SQLite disabled by default (initialization issues - see troubleshooting log)
 }
 
 export function getFeatureFlag(flag: keyof FeatureFlags): boolean {

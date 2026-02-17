@@ -13,38 +13,87 @@ const SCHEMA_VERSION = 6
 /**
  * Initialize SQLite database with IndexedDB persistence
  * Uses IDBBatchAtomicVFS for best compatibility across browsers
+ *
+ * Includes retry logic, busy timeout, and WAL mode for concurrency
  */
 export async function initializeDB(): Promise<SQLiteDB> {
   if (dbInstance) {
     return dbInstance
   }
 
-  try {
-    // Initialize with IndexedDB storage + async WASM
-    const db = await initSQLite(useIdbStorage('retro-stock-os.db', { url: wasmUrl }))
+  const MAX_RETRIES = 3
+  const RETRY_DELAY_MS = 2000 // Increased to 2s for lock contention
 
-    // Create schema if tables don't exist
-    await createSchema(db)
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`[SQLite] Initialization attempt ${attempt}/${MAX_RETRIES}...`)
 
-    // Run migrations for schema evolution
-    await runMigrations(db)
+      // Initialize with IndexedDB storage + async WASM
+      const db = await initSQLite(useIdbStorage('retro-stock-os.db', { url: wasmUrl }))
 
-    dbInstance = db
-    return db
-  } catch (error) {
-    console.error('[SQLite] Failed to initialize database:', error)
-    throw error
+      // Configure SQLite for better concurrency and lock handling
+      // PRAGMA busy_timeout: Wait up to 5s for locks (prevents "database is locked")
+      await db.run('PRAGMA busy_timeout = 5000;')
+
+      // Enable WAL mode for better concurrent read/write performance
+      // (IDBBatchAtomicVFS may not support WAL, but try it - falls back gracefully)
+      try {
+        await db.run('PRAGMA journal_mode = WAL;')
+      } catch {
+        console.log('[SQLite] WAL mode not available, using default journal mode')
+      }
+
+      // Enable foreign key constraints
+      await db.run('PRAGMA foreign_keys = ON;')
+
+      // Brief settle time for VFS stabilization
+      await new Promise((resolve) => setTimeout(resolve, 150))
+
+      // Create schema if tables don't exist
+      await createSchema(db)
+
+      // Run migrations for schema evolution
+      await runMigrations(db)
+
+      dbInstance = db
+      console.log('[SQLite] Database initialized successfully')
+      return db
+    } catch (error) {
+      console.error(`[SQLite] Initialization attempt ${attempt} failed:`, error)
+
+      // Clean up failed instance
+      dbInstance = null
+
+      if (attempt === MAX_RETRIES) {
+        console.error('[SQLite] All initialization attempts failed')
+        throw new Error(
+          `SQLite 초기화 실패 (${MAX_RETRIES}회 시도). IndexedDB 모드를 사용하세요.\n` +
+            `에러: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+
+      // Wait before retry (exponential backoff)
+      const backoffDelay = RETRY_DELAY_MS * attempt
+      console.log(`[SQLite] Retrying in ${backoffDelay}ms...`)
+      await new Promise((resolve) => setTimeout(resolve, backoffDelay))
+    }
   }
+
+  // TypeScript exhaustiveness check (never reached)
+  throw new Error('[SQLite] Unreachable code')
 }
 
 /**
  * Create all tables and indexes if they don't exist
+ * Uses a single transaction for atomicity
  */
 async function createSchema(db: SQLiteDB): Promise<void> {
-  // Enable foreign key constraints
-  await db.run('PRAGMA foreign_keys = ON;')
+  // Foreign keys already enabled in initializeDB()
+  // Wrap schema creation in transaction for atomicity and better lock handling
+  await db.run('BEGIN TRANSACTION;')
 
-  // Main saves table (세이브 슬롯 메타데이터 + 플레이어 상태)
+  try {
+    // Main saves table (세이브 슬롯 메타데이터 + 플레이어 상태)
   await db.run(`
     CREATE TABLE IF NOT EXISTS saves (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -341,7 +390,15 @@ async function createSchema(db: SQLiteDB): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_pending_ipos_save_id ON pending_ipos(save_id);
   `)
 
-  console.log('[SQLite] Schema created successfully')
+    // Commit the transaction
+    await db.run('COMMIT;')
+    console.log('[SQLite] Schema created successfully')
+  } catch (error) {
+    // Rollback on error
+    await db.run('ROLLBACK;')
+    console.error('[SQLite] Schema creation failed, transaction rolled back:', error)
+    throw error
+  }
 }
 
 /**
@@ -351,6 +408,14 @@ export function getDB(): SQLiteDB {
   if (!dbInstance) {
     throw new Error('[SQLite] Database not initialized. Call initializeDB() first.')
   }
+  return dbInstance
+}
+
+/**
+ * Get DB instance if already initialized, otherwise return null
+ * Use this for non-critical checks that shouldn't trigger initialization
+ */
+export function getDBSafe(): SQLiteDB | null {
   return dbInstance
 }
 

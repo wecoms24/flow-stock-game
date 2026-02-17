@@ -49,10 +49,11 @@ export function aggregateMonthly(
   const skillResets = sum('SKILL_RESET')
   const mnaCosts = sum('MNA_ACQUISITION')
   const mnaCashOuts = sum('MNA_CASHOUT')
+  const taxes = sum('TAX')  // ✨ 부유세 추가
 
   const totalChange =
     tradeBuys + tradeSells + tradeFees + salaries + hireBonuses +
-    hrCosts + officeCosts + skillResets + mnaCosts + mnaCashOuts
+    hrCosts + officeCosts + skillResets + mnaCosts + mnaCashOuts + taxes  // ✨ taxes 추가
 
   return {
     year,
@@ -67,6 +68,7 @@ export function aggregateMonthly(
     skillResets,
     mnaCosts,
     mnaCashOuts,
+    taxes,  // ✨ taxes 필드 추가
     openingCash,
     closingCash: openingCash + totalChange,
   }
@@ -145,6 +147,8 @@ export function computePnLSummary(
   realizedPnL: number
   unrealizedPnL: number
   totalFees: number
+  totalTradeBuys: number
+  totalTradeSells: number
   totalSalaries: number
   totalHireBonuses: number
   totalHRCosts: number
@@ -152,6 +156,7 @@ export function computePnLSummary(
   totalSkillResets: number
   totalMnACosts: number
   totalMnACashOuts: number
+  totalTaxes: number
   byTicker: Array<{ ticker: string; pnl: number; trades: number }>
 } {
   // Realized P&L from trades
@@ -173,6 +178,8 @@ export function computePnLSummary(
   const sumFromLog = (cat: CashFlowCategory) =>
     cashFlowLog.filter((e) => e.category === cat).reduce((sum, e) => sum + e.amount, 0)
 
+  const totalTradeBuys = sumFromSummaries('tradeBuys') + sumFromLog('TRADE_BUY')
+  const totalTradeSells = sumFromSummaries('tradeSells') + sumFromLog('TRADE_SELL')
   const totalSalaries = sumFromSummaries('salaries') + sumFromLog('SALARY')
   const totalHireBonuses = sumFromSummaries('hireBonuses') + sumFromLog('HIRE_BONUS')
   const totalHRCosts = sumFromSummaries('hrCosts') + sumFromLog('HR_CARE') + sumFromLog('HR_TRAINING')
@@ -180,6 +187,7 @@ export function computePnLSummary(
   const totalSkillResets = sumFromSummaries('skillResets') + sumFromLog('SKILL_RESET')
   const totalMnACosts = sumFromSummaries('mnaCosts') + sumFromLog('MNA_ACQUISITION')
   const totalMnACashOuts = sumFromSummaries('mnaCashOuts') + sumFromLog('MNA_CASHOUT')
+  const totalTaxes = sumFromSummaries('taxes') + sumFromLog('TAX')
 
   // Per-ticker realized P&L
   const tickerMap = new Map<string, { pnl: number; trades: number }>()
@@ -195,6 +203,8 @@ export function computePnLSummary(
     realizedPnL,
     unrealizedPnL,
     totalFees,
+    totalTradeBuys,
+    totalTradeSells,
     totalSalaries,
     totalHireBonuses,
     totalHRCosts,
@@ -202,6 +212,7 @@ export function computePnLSummary(
     totalSkillResets,
     totalMnACosts,
     totalMnACashOuts,
+    totalTaxes,
     byTicker,
   }
 }
