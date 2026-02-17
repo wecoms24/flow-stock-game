@@ -47,14 +47,21 @@ export function generateTradeSignals(
     // 실제 분석 수행
     let confidence = finalAccuracy * 100 // 0 ~ 100
 
-    // 간단한 분석 로직 (예시)
-    const priceChange = company.price - company.previousPrice
-    const recentTrend = calculateRecentTrend(company.priceHistory)
+    // 간단한 분석 로직: priceHistory 기반 추세 + 최근 가격 변화
+    const history = company.priceHistory ?? []
+    const prevPrice = history.length >= 2 ? history[history.length - 2] : company.price
+    const priceChange = company.price - prevPrice
+    const recentTrend = calculateRecentTrend(history)
 
     let action: 'buy' | 'sell' | 'hold' = 'hold'
     let reason = ''
 
-    if (recentTrend > 0.05 && priceChange > 0) {
+    // 데이터 부족 시 hold 유지 (낮은 신뢰도)
+    if (recentTrend === null) {
+      action = 'hold'
+      reason = '분석 데이터 부족'
+      confidence -= 10
+    } else if (recentTrend > 0.05 && priceChange > 0) {
       action = 'buy'
       reason = '상승 추세 지속'
       confidence += 10
@@ -101,16 +108,18 @@ function generateNoiseSignal(company: Company): TradeSignal {
 
 /**
  * 최근 가격 추세 계산 (단순 선형 회귀)
+ * @returns 추세 비율 (양수=상승, 음수=하락), 데이터 부족 시 null
  */
-function calculateRecentTrend(priceHistory: number[]): number {
-  if (priceHistory.length < 2) return 0
+function calculateRecentTrend(priceHistory: number[]): number | null {
+  if (priceHistory.length < 2) return null
 
   const recentPrices = priceHistory.slice(-10) // 최근 10개
-  if (recentPrices.length < 2) return 0
+  if (recentPrices.length < 2) return null
 
   const firstPrice = recentPrices[0]
   const lastPrice = recentPrices[recentPrices.length - 1]
 
+  if (firstPrice === 0) return 0
   return (lastPrice - firstPrice) / firstPrice
 }
 

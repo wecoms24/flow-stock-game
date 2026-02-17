@@ -5,6 +5,7 @@ import type { TradeProposal } from '../../types/trade'
 import { TRADE_AI_CONFIG } from '../../config/tradeAIConfig'
 import { executeEmployeeTrade } from '../tradeExecutionEngine' // ✨ 신규 엔진 통합
 import { getPassiveModifiers } from '../../systems/skillSystem' // ✨ RPG Skill Tree
+import type { AggregatedCorporateEffects } from '../corporateSkillEngine' // ✨ 회사 스킬
 
 /**
  * Execute a trade proposal and return the execution result.
@@ -23,6 +24,7 @@ export function executeProposal(
   playerCash: number,
   adjacencyBonus: number = 0,
   volatility: number = 0.2, // ✨ 신규: 변동성 정보
+  corporateEffects?: AggregatedCorporateEffects, // ✨ 회사 스킬 효과
 ): {
   success: boolean
   executedPrice: number
@@ -44,7 +46,7 @@ export function executeProposal(
         targetPrice: currentPrice,
         quantity: proposal.quantity,
         direction: proposal.direction,
-        duration: 0, // TODO: 보유 기간 추적 필요
+        duration: 0, // 신규 매매는 보유 기간 0 (scalper 배지 50% 할인 항상 적용)
       },
       {
         volume: Math.max(proposal.quantity, 100), // 임시 volume
@@ -75,6 +77,12 @@ export function executeProposal(
       }
     }
 
+    // ✨ Corporate Skill: 슬리피지/수수료 감소
+    if (corporateEffects) {
+      slippage *= 1 - corporateEffects.slippageReduction
+      fee *= 1 - corporateEffects.commissionDiscount
+    }
+
     // Adjacency bonus: 추가 슬리피지 감소 (기존 로직 유지)
     if (adjacencyBonus > 0) {
       const slippageReduction = 1 - adjacencyBonus
@@ -86,11 +94,22 @@ export function executeProposal(
     const tradingSkill = 0
     const baseSlippage = TRADE_AI_CONFIG.BASE_SLIPPAGE * (1 - tradingSkill / 100)
     slippage = baseSlippage * (1 - adjacencyBonus)
+
+    // ✨ Corporate Skill: no-trader 경로에도 슬리피지 감소 적용
+    if (corporateEffects) {
+      slippage *= 1 - corporateEffects.slippageReduction
+    }
+
     const slippageDirection = proposal.direction === 'buy' ? 1 : -1
     executedPrice = currentPrice * (1 + slippage * slippageDirection)
 
     const baseFee = executedPrice * proposal.quantity * 0.001 // 0.1% base fee
     fee = baseFee * TRADE_AI_CONFIG.NO_TRADER_FEE_MULTIPLIER
+
+    // ✨ Corporate Skill: no-trader 경로에도 수수료 감소 적용
+    if (corporateEffects) {
+      fee *= 1 - corporateEffects.commissionDiscount
+    }
   }
 
   // Validate buy: check if player has enough cash
