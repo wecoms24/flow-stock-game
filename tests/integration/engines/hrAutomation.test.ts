@@ -40,7 +40,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
       const employees: Employee[] = [
         createTestEmployee({
           role: 'trader',
-          stress: 80,
+          stress: 85,
         }),
       ]
 
@@ -60,7 +60,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
       const employees: Employee[] = [
         createTestEmployee({
           role: 'trader',
-          stress: 80,
+          stress: 85,
         }),
       ]
 
@@ -71,12 +71,12 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
   })
 
   describe('스트레스 케어 시스템', () => {
-    it('스트레스 >60인 직원의 스트레스를 감소시킨다', () => {
+    it('스트레스 >80인 직원의 스트레스를 감소시킨다', () => {
       const hrManager = createTestEmployee({
         role: 'hr_manager',
       })
       const stressedEmployee = createTestEmployee({
-        stress: 80,
+        stress: 85,
       })
 
       hireEmployee(store, hrManager)
@@ -86,7 +86,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
       ])
 
       if (result.updatedEmployees.length > 0) {
-        expect(result.updatedEmployees[0].stress).toBeLessThan(80)
+        expect(result.updatedEmployees[0].stress).toBeLessThan(85)
       }
     })
 
@@ -95,7 +95,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
         role: 'hr_manager',
       })
       const stressedEmployee = createTestEmployee({
-        stress: 80,
+        stress: 85,
       })
 
       hireEmployee(store, hrManager)
@@ -106,7 +106,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
       ])
 
       // 스트레스 케어 실행 시 비용 차감
-      if (result.updatedEmployees[0].stress < 80) {
+      if (result.updatedEmployees[0].stress < 85) {
         expect(result.cashSpent).toBeGreaterThanOrEqual(0)
       }
     })
@@ -116,7 +116,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
         role: 'hr_manager',
       })
       const stressedEmployee = createTestEmployee({
-        stress: 80,
+        stress: 85,
       })
 
       store = createTestStore({
@@ -132,7 +132,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
       expect(result).toBeDefined()
     })
 
-    it('스트레스 <60인 직원은 케어 대상이 아니다', () => {
+    it('스트레스 <=80인 직원은 케어 대상이 아니다', () => {
       const hrManager = createTestEmployee({
         role: 'hr_manager',
       })
@@ -155,7 +155,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
         role: 'hr_manager',
       })
       const stressedEmployee = createTestEmployee({
-        stress: 80,
+        stress: 85,
       })
 
       hireEmployee(store, hrManager)
@@ -165,14 +165,14 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
         stressedEmployee,
       ])
 
-      if (result.updatedEmployees[0].stress < 80) {
-        expect(result.updatedEmployees[0].stress).toBe(80 - 15)
+      if (result.updatedEmployees[0].stress < 85) {
+        expect(result.updatedEmployees[0].stress).toBe(85 - 15)
       }
     })
   })
 
-  describe('분기별 훈련 시스템', () => {
-    it('분기별(90일마다) 훈련이 실행된다', () => {
+  describe('월별 훈련 시스템', () => {
+    it('월별(30일마다) 훈련이 실행된다', () => {
       const hrManager = createTestEmployee({
         role: 'hr_manager',
       })
@@ -330,7 +330,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
         role: 'hr_manager',
       })
       const employee = createTestEmployee({
-        stress: 80,
+        stress: 85,
       })
 
       store = createTestStore({
@@ -354,7 +354,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
         .fill(null)
         .map(() =>
           createTestEmployee({
-            stress: 80,
+            stress: 85,
           })
         )
 
@@ -402,10 +402,10 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
       })
       hireEmployee(store, hrManager)
 
-      const employees1 = [createTestEmployee({ stress: 80 })]
+      const employees1 = [createTestEmployee({ stress: 85 })]
       const employees5 = Array(5)
         .fill(null)
-        .map(() => createTestEmployee({ stress: 80 }))
+        .map(() => createTestEmployee({ stress: 85 }))
 
       const result1 = processHRAutomation(store.getState(), employees1)
       const result5 = processHRAutomation(store.getState(), employees5)
@@ -420,7 +420,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
   describe('HR 매니저 없는 상황', () => {
     it('HR 매니저 미배치 시 아무것도 실행되지 않는다', () => {
       const employee = createTestEmployee({
-        stress: 80,
+        stress: 85,
         satisfaction: 20,
       })
 
@@ -445,7 +445,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
       })
 
       const employee = createTestEmployee({
-        stress: 80,
+        stress: 85,
       })
 
       const result = processHRAutomation(store.getState(), [
@@ -509,7 +509,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
       addCash(store, 5_000_000)
 
       const employee = createTestEmployee({
-        stress: 80,
+        stress: 85,
       })
 
       const result1 = processHRAutomation(store.getState(), [
@@ -535,7 +535,7 @@ describe('게임 엔진: HR 자동화 시스템 (HR Automation)', () => {
       addCash(store, 5_000_000)
 
       const employee = createTestEmployee({
-        stress: 80,
+        stress: 85,
       })
 
       const result1 = processHRAutomation(store.getState(), [

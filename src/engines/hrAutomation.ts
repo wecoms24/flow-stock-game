@@ -38,9 +38,9 @@ export function processHRAutomation(
   const alerts: HRAlert[] = []
   const updated = employees.map((e) => ({ ...e }))
 
-  // 1. 스트레스 관리 (스트레스 > 60인 직원 케어)
+  // 1. 스트레스 관리 (스트레스 > 80인 직원 케어 — daily check이므로 threshold 상향)
   const highStressEmployees = updated.filter(
-    (e) => e.role !== 'hr_manager' && (e.stress ?? 0) > 60,
+    (e) => e.role !== 'hr_manager' && (e.stress ?? 0) > 80,
   )
 
   highStressEmployees.forEach((emp) => {
@@ -62,8 +62,8 @@ export function processHRAutomation(
     }
   })
 
-  // 2. 분기별 스킬 훈련 (90일마다)
-  if (gameDays > 0 && gameDays % 90 === 0) {
+  // 2. 월별 스킬 훈련 (30일마다)
+  if (gameDays > 0 && gameDays % 30 === 0) {
     updated
       .filter((e) => e.role !== 'hr_manager' && e.skills)
       .forEach((emp) => {
