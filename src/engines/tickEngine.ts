@@ -30,8 +30,8 @@ let unsubscribeSpeed: (() => void) | null = null
 let autoSaveCounter = 0
 let previousRankings: Record<string, number> = {} // Track previous rankings for change detection
 
-const BASE_HOUR_MS = 200
-const AUTO_SAVE_INTERVAL = 300 // Auto-save every 300 hours (~2.5 min at 1x)
+const BASE_HOUR_MS = 1000 // 1 second = 1 hour at 1x speed
+const AUTO_SAVE_INTERVAL = 300 // Auto-save every 300 hours (~5 min at 1x)
 
 export function initTickEngine() {
   if (worker) return
