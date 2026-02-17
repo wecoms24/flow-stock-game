@@ -19,6 +19,8 @@ const MENU_ITEMS = [
   { category: '관리', type: 'office_history' as WindowType, icon: 'office_history' as IconName, label: '히스토리', menuLabel: '사무실 히스토리' },
   { category: '관리', type: 'employee_detail' as WindowType, icon: 'employee' as IconName, label: '직원 정보', menuLabel: '직원 정보' },
   { category: '관리', type: 'ranking' as WindowType, icon: 'ranking' as IconName, label: '랭킹', menuLabel: '랭킹' },
+  { category: '관리', type: 'skill_library' as WindowType, icon: 'document' as IconName, label: '스킬', menuLabel: '스킬 라이브러리' },
+  { category: '관리', type: 'training_center' as WindowType, icon: 'employee' as IconName, label: '교육', menuLabel: '교육 센터' },
   { category: '시스템', type: 'settings' as WindowType, icon: 'settings' as IconName, label: '설정', menuLabel: '설정' },
 ] as const
 

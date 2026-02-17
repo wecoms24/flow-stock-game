@@ -7,6 +7,8 @@ import { calculateResetCost } from '../../config/skillBalance'
 import { formatSkillEffect, formatPrerequisites } from '../../utils/skillFormatter'
 import type { SkillNode, SkillNodeState } from '../../types/skills'
 import { RetroButton } from '../ui/RetroButton'
+import { SKILL_PATHS } from '../../data/skillPaths'
+import { canSelectPath, getNextBonus } from '../../engines/skillPathEngine'
 
 interface SkillTreeTabProps {
   employee: Employee
@@ -19,6 +21,9 @@ export function SkillTreeTab({ employee }: SkillTreeTabProps) {
   const [selectedSkill, setSelectedSkill] = useState<SkillNode | null>(null)
   const unlockEmployeeSkill = useGameStore((s) => s.unlockEmployeeSkill)
   const resetEmployeeSkillTree = useGameStore((s) => s.resetEmployeeSkillTree)
+  const selectSkillPath = useGameStore((s) => s.selectSkillPath)
+  const pathState = useGameStore((s) => s.employeeSkillPaths[employee.id])
+  const showPathSelection = canSelectPath(pathState, employee.level ?? 1)
 
   const progression = employee.progression
   const skills = calculateEmployeeStats(employee)
@@ -58,8 +63,51 @@ export function SkillTreeTab({ employee }: SkillTreeTabProps) {
     }
   }
 
+  const nextBonus = pathState ? getNextBonus(pathState, employee.level ?? 1) : null
+
   return (
     <div className="flex flex-col h-full">
+      {/* Skill Path Selection (레벨 5+ 미선택 시) */}
+      {showPathSelection && (
+        <div className="win-inset bg-yellow-50 p-2 mb-2 border-2 border-yellow-400">
+          <p className="text-xs font-bold text-yellow-800 mb-1">🎯 스킬 경로를 선택하세요!</p>
+          <p className="text-[10px] text-yellow-700 mb-2">레벨 5 달성! 전문화 경로를 선택할 수 있습니다.</p>
+          <div className="flex gap-2">
+            {Object.values(SKILL_PATHS).map((path) => (
+              <button
+                key={path.type}
+                onClick={() => selectSkillPath(employee.id, path.type)}
+                className="flex-1 border-2 border-gray-400 p-2 hover:bg-gray-100 text-left"
+              >
+                <p className="text-xs font-bold">
+                  {path.icon} {path.name}
+                </p>
+                <p className="text-[9px] text-gray-600 mt-0.5">{path.description}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Selected Path Info */}
+      {pathState?.selectedPath && (
+        <div className="win-inset bg-blue-50 p-2 mb-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-blue-800">
+              {SKILL_PATHS[pathState.selectedPath]?.icon} {SKILL_PATHS[pathState.selectedPath]?.name}
+            </span>
+            <span className="text-[10px] text-blue-600">
+              해금: {pathState.unlockedBonuses.length}/{SKILL_PATHS[pathState.selectedPath]?.bonuses.length ?? 0}
+            </span>
+          </div>
+          {nextBonus && (
+            <p className="text-[9px] text-blue-500 mt-0.5">
+              다음: Lv.{nextBonus.level} — {nextBonus.name} ({nextBonus.description})
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Header: SP Info */}
       <div className="win-inset bg-white p-2 mb-2">
         <div className="flex justify-between items-center">

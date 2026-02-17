@@ -64,7 +64,7 @@ export function CashFlowTab() {
     ? summary.tradeBuys + summary.tradeSells + summary.tradeFees
     : 0
   const operatingSubtotal = summary
-    ? summary.salaries + summary.hireBonuses + summary.hrCosts + summary.officeCosts + summary.skillResets
+    ? summary.salaries + summary.hireBonuses + summary.hrCosts + summary.officeCosts + summary.skillResets + summary.taxes
     : 0
   const otherSubtotal = summary ? summary.mnaCosts + summary.mnaCashOuts : 0
   const netChange = investmentSubtotal + operatingSubtotal + otherSubtotal
@@ -119,6 +119,7 @@ export function CashFlowTab() {
             <FlowRow label="HR 비용" amount={summary.hrCosts} />
             <FlowRow label="사무실 비용" amount={summary.officeCosts} />
             <FlowRow label="스킬 리셋" amount={summary.skillResets} />
+            <FlowRow label="부유세" amount={summary.taxes} />
             <hr className="border-win-shadow my-0.5" />
             <FlowRow label="소계" amount={operatingSubtotal} isBold />
           </Section>

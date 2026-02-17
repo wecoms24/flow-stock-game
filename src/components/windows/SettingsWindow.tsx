@@ -3,7 +3,6 @@ import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { soundManager } from '../../systems/soundManager'
 import { getFeatureFlag, setFeatureFlag } from '../../systems/featureFlags'
-import { hasSaveData, hasSQLiteSave } from '../../systems/saveSystem'
 import { getMigrationStatusPublic, resetMigrationStatus } from '../../systems/sqlite/migration'
 
 export function SettingsWindow() {
@@ -32,19 +31,13 @@ export function SettingsWindow() {
 
   // Detect current backend on mount
   useEffect(() => {
-    const detectBackend = async () => {
-      const hasIndexedDB = await hasSaveData()
-      const hasSqlite = await hasSQLiteSave()
-
-      if (sqliteEnabled && hasSqlite) {
-        setCurrentBackend('SQLite')
-      } else if (hasIndexedDB) {
-        setCurrentBackend('IndexedDB')
-      } else {
-        setCurrentBackend('IndexedDB')
-      }
+    // Simple backend detection based on feature flag only
+    // Avoids SQLite initialization errors by not querying DB
+    if (sqliteEnabled) {
+      setCurrentBackend('SQLite')
+    } else {
+      setCurrentBackend('IndexedDB')
     }
-    detectBackend()
   }, [sqliteEnabled])
 
   // Check migration status

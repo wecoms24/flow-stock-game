@@ -22,6 +22,8 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
   const limitOrders = useGameStore((s) => s.limitOrders)
   const createLimitOrder = useGameStore((s) => s.createLimitOrder)
   const cancelLimitOrder = useGameStore((s) => s.cancelLimitOrder)
+  const enforcePositionLimit = useGameStore((s) => s.enforcePositionLimit)
+  const wealthTier = useGameStore((s) => s.economicPressure.currentTier)
 
   const [selectedId, setSelectedId] = useState(companyId ?? companies[0]?.id ?? '')
   const [shares, setShares] = useState(1)
@@ -485,6 +487,19 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
             50%
           </button>
         </div>
+
+        {/* 포지션 제한 경고 */}
+        {mode === 'buy' && shares > 0 && wealthTier !== 'beginner' && (() => {
+          const limit = enforcePositionLimit(selectedId, shares)
+          if (limit.maxShares < shares) {
+            return (
+              <div className="text-[9px] text-orange-600 bg-orange-50 p-1 rounded border border-orange-300">
+                ⚠️ 포지션 제한: 최대 {limit.maxShares}주 매수 가능 ({wealthTier} 구간)
+              </div>
+            )
+          }
+          return null
+        })()}
 
         {/* 주문 요약 + 실행 */}
         <div className="flex items-center gap-1">

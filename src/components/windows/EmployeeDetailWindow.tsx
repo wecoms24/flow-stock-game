@@ -14,6 +14,7 @@ import {
   titleForLevel,
 } from '../../systems/growthSystem'
 import { SkillTreeTab } from './SkillTreeTab'
+import { EmployeeBioPanel } from './EmployeeBioPanel'
 import { formatActiveEffects } from '../../utils/skillFormatter'
 
 function getStatColor(value: number, isStress: boolean): string {
@@ -32,7 +33,7 @@ interface EmployeeDetailWindowProps {
 }
 
 export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) {
-  const [activeTab, setActiveTab] = useState<'info' | 'skillTree'>('info')
+  const [activeTab, setActiveTab] = useState<'info' | 'skillTree' | 'bio'>('info')
   const employees = useGameStore((s) => s.player.employees)
   const time = useGameStore((s) => s.time)
   const praiseEmployee = useGameStore((s) => s.praiseEmployee)
@@ -100,6 +101,13 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
           variant={activeTab === 'skillTree' ? 'primary' : 'default'}
         >
           🌳 스킬 트리
+        </RetroButton>
+        <RetroButton
+          onClick={() => setActiveTab('bio')}
+          size="sm"
+          variant={activeTab === 'bio' ? 'primary' : 'default'}
+        >
+          🧑 바이오
         </RetroButton>
       </div>
 
@@ -286,6 +294,28 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
         </div>
       )}
 
+      {/* Learned Corporate Skills */}
+      {emp.learnedCorporateSkills && emp.learnedCorporateSkills.length > 0 && (
+        <div className="win-inset bg-white p-2">
+          <div className="font-bold text-[10px] mb-1">🎓 학습한 회사 스킬</div>
+          <div className="flex gap-1 flex-wrap">
+            {emp.learnedCorporateSkills.map((skillId) => (
+              <span
+                key={skillId}
+                className="inline-flex items-center px-1.5 py-0.5 rounded border bg-purple-50 border-purple-300 text-[9px] text-purple-700"
+              >
+                {skillId}
+              </span>
+            ))}
+          </div>
+          {emp.activeTrainingId && (
+            <div className="mt-1 text-[9px] text-orange-600">
+              📖 교육 진행중
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Skill Badges */}
       {emp.badges && emp.badges.length > 0 && (
         <div className="win-inset bg-white p-2">
@@ -398,9 +428,13 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
         </div>
       </div>
         </div>
-      ) : (
+      ) : activeTab === 'skillTree' ? (
         <div className="flex-1 p-2 overflow-hidden">
           <SkillTreeTab employee={emp} />
+        </div>
+      ) : (
+        <div className="flex-1 p-2 overflow-y-auto">
+          <EmployeeBioPanel employeeId={emp.id} />
         </div>
       )}
     </div>

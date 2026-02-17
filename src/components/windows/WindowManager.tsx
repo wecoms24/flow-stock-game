@@ -13,6 +13,12 @@ import { EmployeeDetailWindow } from './EmployeeDetailWindow'
 import { InstitutionalWindow } from './InstitutionalWindow'
 import { ProposalListWindow } from './ProposalListWindow'
 import { AcquisitionWindow } from './AcquisitionWindow'
+import { MainDashboard } from '../desktop/MainDashboard'
+import { MonthlyCardDrawWindow } from './MonthlyCardDrawWindow'
+import { EventChainTracker } from './EventChainTracker'
+import { AchievementLogWindow } from './AchievementLogWindow'
+import { SkillLibraryWindow } from './SkillLibraryWindow'
+import { TrainingCenterWindow } from './TrainingCenterWindow'
 import type { WindowType } from '../../types'
 
 const WINDOW_COMPONENTS: Record<WindowType, React.ComponentType<unknown>> = {
@@ -30,6 +36,12 @@ const WINDOW_COMPONENTS: Record<WindowType, React.ComponentType<unknown>> = {
   institutional: InstitutionalWindow as React.ComponentType<unknown>,
   proposals: ProposalListWindow as React.ComponentType<unknown>,
   acquisition: AcquisitionWindow as React.ComponentType<unknown>,
+  dashboard: MainDashboard as React.ComponentType<unknown>,
+  achievement_log: AchievementLogWindow as React.ComponentType<unknown>,
+  monthly_cards: MonthlyCardDrawWindow as React.ComponentType<unknown>,
+  event_chain_tracker: EventChainTracker as React.ComponentType<unknown>,
+  skill_library: SkillLibraryWindow as React.ComponentType<unknown>,
+  training_center: TrainingCenterWindow as React.ComponentType<unknown>,
 }
 
 export function WindowManager() {

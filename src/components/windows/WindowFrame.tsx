@@ -21,6 +21,12 @@ const WINDOW_SIZE_CONSTRAINTS: Record<
   institutional: { minWidth: 400, minHeight: 500 },
   proposals: { minWidth: 350, minHeight: 300 },
   acquisition: { minWidth: 600, minHeight: 500 },
+  dashboard: { minWidth: 800, minHeight: 600 },
+  achievement_log: { minWidth: 400, minHeight: 350 },
+  monthly_cards: { minWidth: 500, minHeight: 400 },
+  event_chain_tracker: { minWidth: 400, minHeight: 350 },
+  skill_library: { minWidth: 500, minHeight: 400 },
+  training_center: { minWidth: 500, minHeight: 400 },
 }
 
 /* ── Resize Handle Directions ── */
