@@ -23,6 +23,8 @@ import type {
   Institution,
   Sector,
   LimitOrder,
+  TradingLimits,
+  StopLossTakeProfit,
 } from '../types'
 import type { OfficeGrid, FurnitureType, FurnitureItem, OfficeLayout, DeskType, DecorationType, DeskItem, DecorationItem } from '../types/office'
 import type { TradeProposal, ProposalStatus } from '../types/trade'
@@ -33,8 +35,15 @@ import type { MnaDeal } from '../engines/mnaEngine'
 import { MAX_EVENT_LOG_SIZE, defaultProfile } from '../types/personalization'
 import { computeProfileFromEvents } from '../systems/personalization/profile'
 import { TRADE_AI_CONFIG } from '../config/tradeAIConfig'
-import { getAbsoluteTimestamp } from '../config/timeConfig'
+import { getAbsoluteTimestamp, TIME_CONFIG } from '../config/timeConfig'
+import { drawCards } from '../engines/cardDrawEngine'
+import { createBio, inferEmotion, updateGoals } from '../engines/employeeBioEngine'
+import { calculateBonuses } from '../engines/skillPathEngine'
+import { selectChain, initChainState, advanceChainWeek, getCurrentWeekModifiers, canStartChain } from '../engines/eventChainEngine'
+import { EVENT_CHAIN_TEMPLATES } from '../data/eventChains'
+import { updateTier, calculateMonthlyTax, checkPositionLimit, recordMonthlyPerformance } from '../engines/economicPressureEngine'
 import { OFFICE_BALANCE } from '../config/balanceConfig'
+import { getTierConfig, RELIEF_TAX_DISCOUNT } from '../config/economicPressureConfig'
 import { EMPLOYEE_ROLE_CONFIG } from '../types'
 import { COMPANIES, initializeCompanyFinancials } from '../data/companies'
 import { DIFFICULTY_TABLE } from '../data/difficulty'
@@ -63,13 +72,31 @@ import { PANIC_SELL_CONFIG, PERFORMANCE_CONFIG } from '../config/aiConfig'
 import { xpForLevel, titleForLevel, badgeForLevel, SKILL_UNLOCKS, XP_AMOUNTS } from '../systems/growthSystem'
 import { soundManager } from '../systems/soundManager'
 import { updateOfficeSystem } from '../engines/officeSystem'
-import { processHRAutomation } from '../engines/hrAutomation'
+import { processHRAutomation, type HRAutomationResult } from '../engines/hrAutomation'
 import { cleanupChatterCooldown, getPipelineMessage } from '../data/chatter'
 import { cleanupInteractionCooldowns } from '../engines/employeeInteraction'
+import { createTradeAnimationSequence, createMilestoneAnimationSequence } from '../engines/animationEngine'
+import { MILESTONE_DEFINITIONS, createInitialMilestones, type MilestoneContext } from '../data/milestones'
 import { resetNewsEngine } from '../engines/newsEngine'
 import { generateBadgesFromSkills } from '../utils/badgeConverter' // ✨ 신규: 뱃지 생성
+import { createInitialCorporateSkills } from '../data/corporateSkills'
+import {
+  validateUnlock,
+  unlockCorporateSkill as unlockCorpSkill,
+  aggregateCorporateEffects,
+  calculateUnlockStats,
+} from '../engines/corporateSkillEngine'
+import {
+  createTrainingProgram,
+  calculateTotalCost as calcTrainingCost,
+  advanceTraining,
+  resolveCheckpoint,
+  cancelTraining,
+  canStartTraining,
+  applyGraduation,
+} from '../engines/trainingEngine'
 import { resetSentiment } from '../engines/sentimentEngine'
-import { analyzeStock, generateProposal } from '../engines/tradePipeline/analystLogic'
+import { analyzeStock, generateProposal, checkPortfolioExits } from '../engines/tradePipeline/analystLogic'
 import { evaluateRisk } from '../engines/tradePipeline/managerLogic'
 import { executeProposal } from '../engines/tradePipeline/traderLogic'
 import { calculateAdjacencyBonus } from '../engines/tradePipeline/adjacencyBonus'
@@ -150,6 +177,7 @@ interface GameStore {
   // Time
   time: GameTime
   lastProcessedMonth: number
+  lastHRProcessDay: number // ✨ HR 자동화 마지막 실행일 (gameDays 기준)
   currentTick: number // 게임 시작 이후 경과 틱 (매 시간마다 증가)
 
   // Player
@@ -222,8 +250,12 @@ interface GameStore {
   togglePause: () => void
   checkEnding: () => void
 
+  // Hourly processing accumulators
+  hourlyAccumulators: import('../types').HourlyAccumulators
+
   // Actions - Time
   advanceHour: () => void
+  processHourly: () => void
   processMonthly: () => void
 
   // Actions - Trading
@@ -246,6 +278,8 @@ interface GameStore {
   hireEmployee: (role: EmployeeRole) => void
   fireEmployee: (id: string) => void
   updateEmployeeBadges: (employeeId: string) => void
+  setTradingLimits: (employeeId: string, limits: TradingLimits | null) => void
+  setStopLossTakeProfit: (employeeId: string, config: StopLossTakeProfit | null) => void
   upgradeOffice: () => void
 
   // Actions - Competitors
@@ -347,6 +381,61 @@ interface GameStore {
   cancelLimitOrder: (orderId: string) => void
   processLimitOrders: () => void // 매 틱마다 호출, 조건 달성 시 자동 실행
 
+  // ✨ UX Enhancement System - Animation Queue
+  animationQueue: import('../types/animation').AnimationQueueState
+  queueAnimation: (sequence: import('../types/animation').AnimationSequence) => void
+  startAnimation: () => void
+  completeAnimation: () => void
+  cancelAnimation: () => void
+
+  // ✨ UX Enhancement System - Monthly Cards
+  monthlyCards: import('../types/newsCard').MonthlyCardDrawState
+  drawMonthlyCards: () => void
+  selectCard: (cardId: string) => void
+  applyCardEffects: () => void
+  expireCards: () => void
+
+  // ✨ UX Enhancement System - Event Chains
+  eventChains: import('../types/eventChain').ActiveEventChainState
+  startEventChain: (chainId: string) => void
+  advanceChain: () => void
+  resolveChain: (chainId: string) => void
+
+  // ✨ UX Enhancement System - Employee Bio
+  employeeBios: Record<string, import('../types/employeeBio').EmployeeBio>
+  createEmployeeBio: (employeeId: string) => void
+  updateGoalProgress: (employeeId: string) => void
+  addLifeEvent: (employeeId: string, event: import('../types/employeeBio').LifeEvent) => void
+  updateEmotion: (employeeId: string) => void
+  deleteEmployeeBio: (employeeId: string) => void
+
+  // ✨ UX Enhancement System - Skill Paths
+  employeeSkillPaths: Record<string, import('../types/skillPath').EmployeeSkillPathState>
+  selectSkillPath: (employeeId: string, path: import('../types/skillPath').SkillPathType) => void
+  calculatePathBonuses: (employeeId: string) => import('../types/skillPath').SkillBonusEffect[]
+
+  // ✨ UX Enhancement System - Economic Pressure
+  economicPressure: import('../types/economicPressure').EconomicPressure
+  updateWealthTier: () => void
+  applyWealthTax: () => void
+  enforcePositionLimit: (companyId: string, shares: number) => { allowed: boolean; maxShares: number }
+  recordPerformance: () => void
+
+  // ✨ UX Enhancement System - Milestones
+  milestones: import('../types').MilestoneProgress
+  checkMilestones: () => void
+
+  // ✨ Corporate Skill System
+  corporateSkills: import('../types/corporateSkill').CorporateSkillState
+  unlockCorporateSkill: (skillId: string) => { success: boolean; reason?: string }
+  getCorporateEffects: () => import('../engines/corporateSkillEngine').AggregatedCorporateEffects
+
+  // ✨ Training System
+  training: import('../types/training').TrainingState
+  startTraining: (skillId: string, traineeIds: string[], instructorId?: string | null) => { success: boolean; reason?: string }
+  advanceTrainingTick: () => void
+  cancelTrainingProgram: (programId: string) => void
+
   // Flash
   triggerFlash: () => void
 }
@@ -369,6 +458,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   time: { year: 1995, quarter: 1, month: 1, day: 1, hour: 9, speed: 1, isPaused: true },
   lastProcessedMonth: 0,
+  lastHRProcessDay: -1, // ✨ HR 자동화 쿨다운 초기값
   currentTick: 0,
 
   player: {
@@ -380,6 +470,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     officeLevel: 1,
     lastDayChange: 0,
     previousDayAssets: 50_000_000,
+    lastDailyTradeResetDay: 0,
+    dailyTradeCount: 0,
   },
 
   companies: [],
@@ -427,6 +519,35 @@ export const useGameStore = create<GameStore>((set, get) => ({
   playerProfile: defaultProfile(),
   personalizationEnabled: false,
 
+  // ✨ UX Enhancement System
+  animationQueue: { queue: [], current: null, currentStepIndex: 0, isPlaying: false },
+  monthlyCards: {
+    availableCards: [],
+    selectedCardIds: [],
+    isDrawn: false,
+    isSelectionComplete: false,
+    activeCards: [],
+    drawMonth: 0,
+    selectionDeadlineTick: 0,
+  },
+  eventChains: { chains: [], completedChainIds: [], lastChainEndTick: 0 },
+  employeeBios: {},
+  employeeSkillPaths: {},
+  economicPressure: {
+    currentTier: 'beginner',
+    previousTier: 'beginner',
+    monthlyTaxPaid: 0,
+    totalTaxPaid: 0,
+    consecutiveHighPerformanceMonths: 0,
+    negativeEventMultiplier: 1.0,
+    performanceHistory: [],
+    reliefEligible: false,
+  },
+  milestones: { milestones: {}, totalUnlocked: 0, lastCheckedTick: 0 },
+  corporateSkills: { skills: createInitialCorporateSkills(), totalUnlocked: 0, totalSpent: 0 },
+  training: { programs: [], completedCount: 0, totalTraineesGraduated: 0 },
+  hourlyAccumulators: { salaryPaid: 0, taxPaid: 0 },
+
   /* ── Game Actions ── */
   startGame: (difficulty, targetAsset, customInitialCash) => {
     const dcfg = DIFFICULTY_TABLE[difficulty]
@@ -472,6 +593,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         officeLevel: 1,
         lastDayChange: 0,
         previousDayAssets: initialCash,
+        lastDailyTradeResetDay: 0, // ✨ 하루 거래 제한 초기화
+        dailyTradeCount: 0, // ✨ 하루 거래 제한 초기화
       },
       companies,
       events: [],
@@ -495,6 +618,34 @@ export const useGameStore = create<GameStore>((set, get) => ({
       autoSellPercent: 10,
       // Personalization: sync lastUpdatedDay with game start day
       playerProfile: { ...defaultProfile(), lastUpdatedDay: 1 },
+      // ✨ UX Enhancement System reset
+      animationQueue: { queue: [], current: null, currentStepIndex: 0, isPlaying: false },
+      monthlyCards: {
+        availableCards: [],
+        selectedCardIds: [],
+        isDrawn: false,
+        isSelectionComplete: false,
+        activeCards: [],
+        drawMonth: 0,
+        selectionDeadlineTick: 0,
+      },
+      eventChains: { chains: [], completedChainIds: [], lastChainEndTick: 0 },
+      employeeBios: {},
+      employeeSkillPaths: {},
+      economicPressure: {
+        currentTier: 'beginner',
+        previousTier: 'beginner',
+        monthlyTaxPaid: 0,
+        totalTaxPaid: 0,
+        consecutiveHighPerformanceMonths: 0,
+        negativeEventMultiplier: 1.0,
+        performanceHistory: [],
+        reliefEligible: false,
+      },
+      milestones: { milestones: {}, totalUnlocked: 0, lastCheckedTick: 0 },
+      corporateSkills: { skills: createInitialCorporateSkills(), totalUnlocked: 0, totalSpent: 0 },
+      training: { programs: [], completedCount: 0, totalTraineesGraduated: 0 },
+      hourlyAccumulators: { salaryPaid: 0, taxPaid: 0 },
     })
 
     deleteSave()
@@ -553,6 +704,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
         mood: emp.mood ?? 50,
         deskId: emp.deskId ?? null,
         seatIndex: emp.seatIndex ?? null,
+        // 신규 스킬 시스템 필드 마이그레이션
+        learnedCorporateSkills: emp.learnedCorporateSkills ?? [],
+        activeTrainingId: emp.activeTrainingId ?? null,
+        unlockedSkills: emp.unlockedSkills ?? [],
+        badges: emp.badges ?? [],
       })),
     }
 
@@ -608,6 +764,34 @@ export const useGameStore = create<GameStore>((set, get) => ({
       realizedTrades: data.realizedTrades ?? [],
       monthlyCashFlowSummaries: data.monthlyCashFlowSummaries ?? [],
       cashFlowAnomalies: [],
+      // ✨ UX Enhancement System (v7 migration with defaults)
+      animationQueue: data.animationQueue ?? { queue: [], current: null, currentStepIndex: 0, isPlaying: false },
+      monthlyCards: data.monthlyCards ?? {
+        availableCards: [],
+        selectedCardIds: [],
+        isDrawn: false,
+        isSelectionComplete: false,
+        activeCards: [],
+        drawMonth: 0,
+        selectionDeadlineTick: 0,
+      },
+      eventChains: data.eventChains ?? { chains: [], completedChainIds: [], lastChainEndTick: 0 },
+      employeeBios: data.employeeBios ?? {},
+      employeeSkillPaths: data.employeeSkillPaths ?? {},
+      economicPressure: data.economicPressure ?? {
+        currentTier: 'beginner',
+        previousTier: 'beginner',
+        monthlyTaxPaid: 0,
+        totalTaxPaid: 0,
+        consecutiveHighPerformanceMonths: 0,
+        negativeEventMultiplier: 1.0,
+        performanceHistory: [],
+        reliefEligible: false,
+      },
+      milestones: data.milestones ?? { milestones: {}, totalUnlocked: 0, lastCheckedTick: 0 },
+      corporateSkills: data.corporateSkills ?? { skills: createInitialCorporateSkills(), totalUnlocked: 0, totalSpent: 0 },
+      training: data.training ?? { programs: [], completedCount: 0, totalTraineesGraduated: 0 },
+      hourlyAccumulators: { salaryPaid: 0, taxPaid: 0 }, // Always reset on load to prevent double-counting across save/load
       windows: [],
       nextZIndex: 1,
       windowIdCounter: 0,
@@ -666,6 +850,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
       cashFlowLog: s.cashFlowLog,
       realizedTrades: s.realizedTrades,
       monthlyCashFlowSummaries: s.monthlyCashFlowSummaries,
+      // ✨ UX Enhancement System (v7)
+      animationQueue: s.animationQueue,
+      monthlyCards: s.monthlyCards,
+      eventChains: s.eventChains,
+      employeeBios: s.employeeBios,
+      employeeSkillPaths: s.employeeSkillPaths,
+      economicPressure: s.economicPressure,
+      milestones: s.milestones,
+      corporateSkills: s.corporateSkills,
+      training: s.training,
+      hourlyAccumulators: s.hourlyAccumulators,
     }
     saveGame(data)
   },
@@ -826,6 +1021,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
     let newProposals = [...s.proposals]
     const newEvents: typeof s.officeEvents = []
 
+    // ✨ Corporate Skill 효과를 루프 전에 한 번만 계산
+    const corpEffects = s.getCorporateEffects()
+
+    // ✨ AI Enhancement: Check portfolio for Stop Loss / Take Profit triggers
+    // ✨ Corporate Skill conditional 효과 (stopLoss/takeProfit) 도 함께 적용
+    for (const analyst of analysts) {
+      const exitProposals = checkPortfolioExits(analyst, s.player.portfolio, s.companies, absoluteTick, newProposals, corpEffects)
+      if (exitProposals.length > 0) {
+        newProposals = [...newProposals, ...exitProposals]
+        for (const proposal of exitProposals) {
+          newEvents.push({
+            timestamp: absoluteTick,
+            type: 'proposal_created',
+            emoji: '🎯',
+            message: `${analyst.name}: ${proposal.ticker} 자동 손익실현 (${proposal.confidence >= 80 ? '손절' : '익절'})`,
+            employeeIds: [analyst.id],
+          })
+        }
+      }
+    }
+
     for (const analyst of analysts) {
       // Adjacency bonus: lower confidence threshold if Manager is adjacent
       const adjBonus = calculateAdjacencyBonus(analyst, 'manager', s.player.employees, s.player.officeLayout)
@@ -836,15 +1052,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
         : s.companies.filter((c) => c.status !== 'acquired').slice(0, 5) // fallback: first 5 if no sector assigned
 
       for (const company of targetCompanies) {
-        const result = analyzeStock(company, company.priceHistory, analyst, adjBonus)
+        const result = analyzeStock(company, company.priceHistory, analyst, adjBonus, [], corpEffects)
         if (!result) continue
 
-        const proposal = generateProposal(analyst, company, result, absoluteTick, newProposals)
+        const proposal = generateProposal(analyst, company, result, absoluteTick, newProposals, s.player.cash, corpEffects)
         if (!proposal) continue
 
-        // Check max pending
+        // Check max pending (corporate skill bonus applied)
+        const maxPending = TRADE_AI_CONFIG.MAX_PENDING_PROPOSALS + corpEffects.maxPendingProposals
         const pendingCount = newProposals.filter((p) => p.status === 'PENDING').length
-        if (pendingCount >= TRADE_AI_CONFIG.MAX_PENDING_PROPOSALS) break
+        if (pendingCount >= maxPending) break
 
         newProposals = [...newProposals, proposal]
 
@@ -1044,8 +1261,43 @@ export const useGameStore = create<GameStore>((set, get) => ({
    * - Insufficient funds → FAILED status
    */
   processTraderTick: () => {
-    const s = get()
+    let s = get() // ✨ let으로 변경: 리셋 후 재할당 가능
     if (!s.player.officeLayout) return
+
+    // ✨ 하루 거래 제한: 날짜가 바뀌면 카운터 리셋
+    const currentDay = s.time.day // GameTime의 day 필드 사용 (1~30)
+    if (currentDay !== s.player.lastDailyTradeResetDay) {
+      set((st) => ({
+        player: {
+          ...st.player,
+          lastDailyTradeResetDay: currentDay,
+          dailyTradeCount: 0,
+        },
+      }))
+      s = get() // ✨ 리셋 후 최신 상태로 업데이트
+    }
+
+    // ✨ 하루 거래 제한: 최대 3회 체크
+    if (s.player.dailyTradeCount >= 3) {
+      // Cooldown: 하루에 한 번만 경고 (스팸 방지)
+      const lastLimitWarning = s.officeEvents
+        .filter((ev) => ev.type === 'warning' && ev.message.includes('하루 거래 한도'))
+        .at(-1)
+      const absoluteTick = getAbsoluteTimestamp(s.time, s.config.startYear)
+      if (!lastLimitWarning || absoluteTick - lastLimitWarning.timestamp > 3600) {
+        set((st) => ({
+          officeEvents: [...st.officeEvents, {
+            timestamp: absoluteTick,
+            type: 'warning',
+            emoji: '⏸️',
+            message: '하루 거래 한도 도달 (3회). 내일 다시 시도하세요.',
+            employeeIds: [],
+          }].slice(-200),
+        }))
+      }
+      return
+    }
+
     const approvedProposals = s.proposals.filter((p) => p.status === 'APPROVED')
     if (approvedProposals.length === 0) return
 
@@ -1068,7 +1320,64 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // Check if trading is allowed (circuit breaker + VI)
     if (!get().canTrade(proposal.companyId)) return
 
-    const result = executeProposal(proposal, trader, company.price, s.player.cash, adjBonus)
+    // ✨ Trading Limits: Check trader's per-trade limits
+    if (trader?.tradingLimits?.enabled) {
+      const limits = trader.tradingLimits
+      const tradeAmount = proposal.targetPrice * proposal.quantity
+
+      if (proposal.direction === 'buy' && limits.maxBuyAmount !== null && tradeAmount > limits.maxBuyAmount) {
+        // Reject: exceeds buy limit
+        set((st) => ({
+          proposals: st.proposals.map((p) =>
+            p.id === proposal.id
+              ? {
+                  ...p,
+                  status: 'REJECTED' as ProposalStatus,
+                  reviewedByEmployeeId: trader.id,
+                  reviewedAt: absoluteTick,
+                  rejectReason: 'exceeds_buy_limit',
+                }
+              : p,
+          ),
+          officeEvents: [...st.officeEvents, {
+            timestamp: absoluteTick,
+            type: 'trade_rejected',
+            emoji: '🚫',
+            message: `${trader.name}: 매수 한도 초과 (${(tradeAmount / 1_000_000).toFixed(1)}M > ${(limits.maxBuyAmount! / 1_000_000).toFixed(1)}M)`,
+            employeeIds: [trader.id],
+          }].slice(-200),
+        }))
+        return
+      }
+
+      if (proposal.direction === 'sell' && limits.maxSellAmount !== null && tradeAmount > limits.maxSellAmount) {
+        // Reject: exceeds sell limit
+        set((st) => ({
+          proposals: st.proposals.map((p) =>
+            p.id === proposal.id
+              ? {
+                  ...p,
+                  status: 'REJECTED' as ProposalStatus,
+                  reviewedByEmployeeId: trader.id,
+                  reviewedAt: absoluteTick,
+                  rejectReason: 'exceeds_sell_limit',
+                }
+              : p,
+          ),
+          officeEvents: [...st.officeEvents, {
+            timestamp: absoluteTick,
+            type: 'trade_rejected',
+            emoji: '🚫',
+            message: `${trader.name}: 매도 한도 초과 (${(tradeAmount / 1_000_000).toFixed(1)}M > ${(limits.maxSellAmount! / 1_000_000).toFixed(1)}M)`,
+            employeeIds: [trader.id],
+          }].slice(-200),
+        }))
+        return
+      }
+    }
+
+    const corpEffectsForTrade = s.getCorporateEffects()
+    const result = executeProposal(proposal, trader, company.price, s.player.cash, adjBonus, company.volatility ?? 0.2, corpEffectsForTrade)
 
     if (result.success) {
       // Compute toast significance
@@ -1139,6 +1448,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             cash: newCash,
             portfolio: newPortfolio,
             totalAssetValue: newCash + calcPortfolioValue(newPortfolio, st.companies),
+            dailyTradeCount: st.player.dailyTradeCount + 1, // ✨ 하루 거래 카운트 증가
             employees: st.player.employees.map((e) => {
               if (
                 e.id === proposal.createdByEmployeeId ||
@@ -1307,8 +1617,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const changePercent =
           previousAssets > 0 ? ((currentAssets - previousAssets) / previousAssets) * 100 : 0
 
+        // Cooldown decay: -1 per day (was monthly)
+        const decayedEmployees = s.player.employees.map((emp) => ({
+          ...emp,
+          praiseCooldown: Math.max(0, (emp.praiseCooldown ?? 0) - 1),
+          scoldCooldown: Math.max(0, (emp.scoldCooldown ?? 0) - 1),
+        }))
+
         updatedPlayer = {
           ...s.player,
+          employees: decayedEmployees,
           lastDayChange: changePercent,
           previousDayAssets: currentAssets,
         }
@@ -1330,106 +1648,63 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
-  /* ── Monthly Processing: salary deduction + stamina drain ── */
-  processMonthly: () => {
-    const state = get()
-    const monthNum = (state.time.year - state.config.startYear) * 12 + state.time.month
+  /* ── Hourly Processing: salary/tax/stamina/mood/XP distributed per-hour ── */
+  processHourly: () => {
+    const s = get()
+    if (s.player.employees.length === 0 && s.economicPressure.currentTier === 'beginner') return
 
-    if (monthNum <= state.lastProcessedMonth) return
+    const HPM = TIME_CONFIG.HOURS_PER_MONTH // 300
+    const dcfg = s.difficultyConfig
 
-    const dcfg = state.difficultyConfig
+    set((st) => {
+      // 1. Hourly salary (rounded to prevent floating-point accumulation drift)
+      const hourlySalary = Math.round(st.player.employees.reduce((sum, emp) => sum + emp.salary / HPM, 0))
 
-    set((s) => {
-      // Calculate total salary
-      const totalSalary = s.player.employees.reduce((sum, emp) => sum + emp.salary, 0)
+      // 2. Hourly wealth tax (rounded)
+      const totalAssets = st.player.cash + calcPortfolioValue(st.player.portfolio, st.companies)
+      const { tax: taxCfg } = getTierConfig(st.economicPressure.currentTier)
+      let taxRate = taxCfg.monthlyTaxRate
+      if (st.economicPressure.reliefEligible) {
+        taxRate *= RELIEF_TAX_DISCOUNT
+      }
+      const hourlyTax = Math.round(totalAssets * taxRate / HPM)
 
-      // Process employee stamina:
-      // - Drain stamina from work this month
-      // - Exhausted employees (stamina=0) do NOT recover → must be fired/rested
-      // - Non-exhausted employees recover a small amount
-      const updatedEmployees = s.player.employees.map((emp) => {
-        const drain = 10 * dcfg.staminaDrainMultiplier
+      // 3. Deduct cash
+      const totalDeduction = hourlySalary + hourlyTax
+      const newCash = Math.max(0, st.player.cash - totalDeduction)
+
+      // 4. Process employees: stamina drain/recovery, mood drift, XP
+      let firstLevelUp: LevelUpEvent | null = null
+      const updatedEmployees = st.player.employees.map((emp) => {
+        // Stamina drain
+        const drain = (10 * dcfg.staminaDrainMultiplier) / HPM
         let newStamina = emp.stamina - drain
 
-        // Recovery only if employee still has some stamina after drain
+        // Recovery only if employee still has stamina after drain
         if (newStamina > 0) {
-          newStamina = Math.min(emp.maxStamina, newStamina + emp.bonus.staminaRecovery)
+          const recovery = emp.bonus.staminaRecovery / HPM
+          newStamina = Math.min(emp.maxStamina, newStamina + recovery)
         } else {
-          newStamina = 0 // Fully exhausted — no recovery until rest
+          newStamina = 0
         }
 
-        const sprite =
-          newStamina <= 20
-            ? ('exhausted' as const)
-            : newStamina <= 60
-              ? ('typing' as const)
-              : ('idle' as const)
-
-        // Growth system: cooldown decay & mood drift
-        const newPraiseCooldown = Math.max(0, (emp.praiseCooldown ?? 0) - 1)
-        const newScoldCooldown = Math.max(0, (emp.scoldCooldown ?? 0) - 1)
+        // Mood drift: toward 50
         const currentMood = emp.mood ?? 50
-        const newMood = currentMood + (currentMood < 50 ? 2 : currentMood > 50 ? -1 : 0)
+        const moodDelta = (currentMood < 50 ? 2 : currentMood > 50 ? -1 : 0) / HPM
+        const newMood = Math.max(0, Math.min(100, currentMood + moodDelta))
 
-        return {
-          ...emp,
-          stamina: newStamina,
-          sprite,
-          praiseCooldown: newPraiseCooldown,
-          scoldCooldown: newScoldCooldown,
-          mood: Math.max(0, Math.min(100, newMood)),
+        // Sprite update based on stamina
+        const sprite: Employee['sprite'] =
+          newStamina <= 20 ? 'exhausted' : newStamina <= 60 ? 'typing' : 'idle'
+
+        // XP accumulation — skip if exhausted after drain
+        if (newStamina <= 0) {
+          return { ...emp, stamina: newStamina, sprite, mood: newMood }
         }
-      })
 
-      const newCash = Math.max(0, s.player.cash - totalSalary)
-
-      return {
-        lastProcessedMonth: monthNum,
-        player: {
-          ...s.player,
-          cash: newCash,
-          employees: updatedEmployees,
-          monthlyExpenses: totalSalary,
-          totalAssetValue: newCash + calcPortfolioValue(s.player.portfolio, s.companies),
-        },
-      }
-    })
-
-    // Record salary cash flow and detect deficit
-    if (state.player.employees.length > 0) {
-      const totalSalary = state.player.employees.reduce((sum, emp) => sum + emp.salary, 0)
-      if (totalSalary > 0) {
-        const preCash = state.player.cash
-        const actualDeducted = Math.min(totalSalary, preCash)
-        get().recordCashFlow('SALARY', -actualDeducted, `${state.time.month}월 급여 (${state.player.employees.length}명)`)
-
-        // Warn player if salary exceeds available cash (deficit clamped to 0)
-        if (totalSalary > preCash) {
-          const deficit = totalSalary - preCash
-          set((st) => ({
-            cashFlowAnomalies: [
-              ...st.cashFlowAnomalies,
-              `급여 부족! ${Math.round(deficit).toLocaleString()}원 미지급 (현금 부족으로 0원 처리)`,
-            ].slice(-50),
-          }))
-        }
-      }
-    }
-
-    // Purge old cash flow entries + anomaly detection
-    get().purgeCashFlowLog()
-
-    // Grant monthly XP to working employees (single batch set)
-    set((s) => {
-      let firstLevelUp: LevelUpEvent | null = null
-      const leveledUpEmployeeIds: string[] = [] // Track employees who leveled up
-      const batchEmployees = s.player.employees.map((emp) => {
-        if (emp.stamina <= 0) return emp
-
-        let totalXP = XP_AMOUNTS.MONTHLY_WORK
-        if (emp.stamina > emp.maxStamina * 0.5) {
-          totalXP += XP_AMOUNTS.PERFECT_STAMINA
-        }
+        const hourlyXP = XP_AMOUNTS.MONTHLY_WORK / HPM
+        const bonusXP = newStamina > emp.maxStamina * 0.5 ? XP_AMOUNTS.PERFECT_STAMINA / HPM : 0
+        const totalXP = hourlyXP + bonusXP
 
         const currentLevel = emp.level ?? 1
         const currentXP = (emp.xp ?? 0) + totalXP
@@ -1441,12 +1716,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
           const newBadge = badgeForLevel(newLevel)
           const oldTitle = emp.title ?? 'intern'
           const logEntry = {
-            day: (s.time.year - s.config.startYear) * 360 + (s.time.month - 1) * 30 + s.time.day,
+            day: (st.time.year - st.config.startYear) * 360 + (st.time.month - 1) * 30 + st.time.day,
             event: 'LEVEL_UP' as const,
             description: `Lv.${newLevel} 달성!${newTitle !== oldTitle ? ` ${newTitle.toUpperCase()}로 승급!` : ''}`,
           }
 
-          // Queue first level-up for UI display
           if (!firstLevelUp) {
             firstLevelUp = {
               employeeId: emp.id,
@@ -1458,11 +1732,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
             }
           }
 
-          // ✨ Track leveled up employee for badge update
-          leveledUpEmployeeIds.push(emp.id)
-
           return {
             ...emp,
+            stamina: newStamina,
+            sprite,
+            mood: newMood,
             level: newLevel,
             xp: currentXP - xpNeeded,
             xpToNextLevel: xpForLevel(newLevel),
@@ -1474,21 +1748,117 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
         return {
           ...emp,
-          level: currentLevel,
+          stamina: newStamina,
+          sprite,
+          mood: newMood,
           xp: currentXP,
-          xpToNextLevel: xpNeeded,
-          title: emp.title ?? titleForLevel(currentLevel),
-          badge: emp.badge ?? badgeForLevel(currentLevel),
         }
       })
 
       return {
-        player: { ...s.player, employees: batchEmployees },
+        player: {
+          ...st.player,
+          cash: newCash,
+          employees: updatedEmployees,
+          totalAssetValue: newCash + calcPortfolioValue(st.player.portfolio, st.companies),
+        },
+        hourlyAccumulators: {
+          salaryPaid: st.hourlyAccumulators.salaryPaid + hourlySalary,
+          taxPaid: st.hourlyAccumulators.taxPaid + hourlyTax,
+        },
         ...(firstLevelUp ? { pendingLevelUp: firstLevelUp } : {}),
       }
     })
+  },
 
-    // Note: Badge updates happen in processEmployeeTick (every 10 ticks) when skills change
+  /* ── Monthly Processing: cashflow recording + monthly events ── */
+  processMonthly: () => {
+    const state = get()
+    const monthNum = (state.time.year - state.config.startYear) * 12 + state.time.month
+
+    if (monthNum <= state.lastProcessedMonth) return
+
+    // Record accumulated salary/tax from hourly processing
+    const accum = state.hourlyAccumulators
+    const totalSalaryOwed = state.player.employees.reduce((sum, emp) => sum + emp.salary, 0)
+
+    set((s) => ({
+      lastProcessedMonth: monthNum,
+      player: {
+        ...s.player,
+        monthlyExpenses: accum.salaryPaid,
+      },
+      // Reset accumulators for next month
+      hourlyAccumulators: { salaryPaid: 0, taxPaid: 0 },
+    }))
+
+    // Record salary cash flow (single monthly entry from accumulated hourly deductions)
+    if (accum.salaryPaid > 0) {
+      get().recordCashFlow('SALARY', -accum.salaryPaid, `${state.time.month}월 급여 (${state.player.employees.length}명)`)
+    }
+
+    // Detect salary deficit (hourly cash clamping may have underpaid)
+    if (totalSalaryOwed > 0 && accum.salaryPaid < totalSalaryOwed * 0.95) {
+      const deficit = totalSalaryOwed - accum.salaryPaid
+      set((st) => ({
+        cashFlowAnomalies: [
+          ...st.cashFlowAnomalies,
+          `급여 부족! ${Math.round(deficit).toLocaleString()}원 미지급 (현금 부족으로 일부 미지급)`,
+        ].slice(-50),
+      }))
+    }
+
+    // Record tax cash flow
+    if (accum.taxPaid > 0) {
+      get().recordCashFlow('TAX' as CashFlowCategory, -accum.taxPaid, `부유세 (${state.economicPressure.currentTier} 구간)`)
+
+      // Update economic pressure tax tracking
+      set((st) => ({
+        economicPressure: {
+          ...st.economicPressure,
+          monthlyTaxPaid: accum.taxPaid,
+          totalTaxPaid: st.economicPressure.totalTaxPaid + accum.taxPaid,
+        },
+      }))
+    }
+
+    // Purge old cash flow entries + anomaly detection
+    get().purgeCashFlowLog()
+
+    // 경제적 압박: 부의 구간 업데이트 + 실적 기록 (세금은 이미 hourly에서 처리)
+    get().updateWealthTier()
+    get().recordPerformance()
+
+    // 월간 카드 뽑기
+    get().drawMonthlyCards()
+
+    // 직원 바이오 월간 업데이트 (근속, 감정, 목표)
+    const latestState = get()
+    latestState.player.employees.forEach((emp) => {
+      const bio = latestState.employeeBios[emp.id]
+      if (bio) {
+        set((st) => ({
+          employeeBios: {
+            ...st.employeeBios,
+            [emp.id]: { ...st.employeeBios[emp.id], monthsEmployed: bio.monthsEmployed + 1 },
+          },
+        }))
+        latestState.updateGoalProgress(emp.id)
+        latestState.updateEmotion(emp.id)
+      }
+    })
+
+    // 이벤트 체인: 15% 확률로 새 체인 시작
+    {
+      const chainState = get().eventChains
+      const tick = get().currentTick
+      if (canStartChain(chainState, tick) && Math.random() < 0.15) {
+        const chain = selectChain(get().time.year, chainState.completedChainIds)
+        if (chain) {
+          get().startEventChain(chain.id)
+        }
+      }
+    }
 
     // Personalization: Update profile on month end
     if (get().personalizationEnabled) {
@@ -1504,23 +1874,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return
     }
 
+    // 포지션 제한 검증
+    const posLimit = get().enforcePositionLimit(companyId, shares)
+    if (!posLimit.allowed) return
+    const limitedShares = Math.min(shares, posLimit.maxShares)
+
     set((s) => {
-      if (shares <= 0) return s
+      if (limitedShares <= 0) return s
       const company = s.companies.find((c) => c.id === companyId)
       if (!company) return s
-      const cost = company.price * shares
+      const cost = company.price * limitedShares
       if (cost > s.player.cash) return s
 
       const existing = s.player.portfolio[companyId]
       const newPosition: PortfolioPosition = existing
         ? {
             companyId,
-            shares: existing.shares + shares,
+            shares: existing.shares + limitedShares,
             avgBuyPrice:
-              (existing.avgBuyPrice * existing.shares + company.price * shares) /
-              (existing.shares + shares),
+              (existing.avgBuyPrice * existing.shares + company.price * limitedShares) /
+              (existing.shares + limitedShares),
           }
-        : { companyId, shares, avgBuyPrice: company.price }
+        : { companyId, shares: limitedShares, avgBuyPrice: company.price }
 
       const newCash = s.player.cash - cost
       const newPortfolio = { ...s.player.portfolio, [companyId]: newPosition }
@@ -1549,7 +1924,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         action: 'buy',
         companyId,
         ticker: company.ticker,
-        qty: shares,
+        qty: limitedShares,
         price: company.price,
       })
     }
@@ -1558,7 +1933,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     {
       const c = get().companies.find((co) => co.id === companyId)
       if (c) {
-        get().recordCashFlow('TRADE_BUY', -(c.price * shares), `${c.ticker} ${shares}주 매수`, { companyId, ticker: c.ticker, shares })
+        get().recordCashFlow('TRADE_BUY', -(c.price * limitedShares), `${c.ticker} ${limitedShares}주 매수`, { companyId, ticker: c.ticker, shares: limitedShares })
       }
     }
 
@@ -1567,6 +1942,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (emps.length > 0) {
       const lucky = emps[Math.floor(Math.random() * emps.length)]
       get().gainXP(lucky.id, XP_AMOUNTS.TRADE_SUCCESS, 'trade_success')
+    }
+
+    // ✨ Queue trade animation
+    {
+      const c = get().companies.find((co) => co.id === companyId)
+      if (c) {
+        get().queueAnimation(
+          createTradeAnimationSequence({
+            action: 'buy',
+            companyName: c.name,
+            ticker: c.ticker,
+            shares: limitedShares,
+            price: c.price,
+            totalCost: c.price * limitedShares,
+          })
+        )
+      }
     }
   },
 
@@ -1652,6 +2044,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (emps.length > 0) {
       const lucky = emps[Math.floor(Math.random() * emps.length)]
       get().gainXP(lucky.id, XP_AMOUNTS.TRADE_SUCCESS, 'trade_success')
+    }
+
+    // ✨ Queue trade animation
+    if (company) {
+      const pnl = (company.price - preSellAvgBuyPrice) * shares
+      get().queueAnimation(
+        createTradeAnimationSequence({
+          action: 'sell',
+          companyName: company.name,
+          ticker: company.ticker,
+          shares,
+          price: company.price,
+          totalCost: company.price * shares,
+          profitLoss: pnl,
+        })
+      )
     }
   },
 
@@ -1929,6 +2337,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
         // ✨ Trade AI Pipeline: Analyst sector assignment
         assignedSectors: role === 'analyst' ? generateAssignedSectors() : undefined,
 
+        // ✨ Stop Loss/Take Profit 기본값 활성화
+        stopLossTakeProfit: {
+          enabled: true,
+          stopLossPercent: -10,   // -10% 손절
+          takeProfitPercent: 15,  // +15% 익절
+        },
+
         // ✨ Growth System
         level: 1,
         xp: 0,
@@ -1975,6 +2390,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (newEmp) {
       const signingBonus = newEmp.salary * 3
       get().recordCashFlow('HIRE_BONUS', -signingBonus, `${newEmp.name} 채용 보너스`, { employeeId: newEmp.id })
+      // 바이오 자동 생성
+      get().createEmployeeBio(newEmp.id)
     }
   },
 
@@ -2029,8 +2446,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
         return changed ? { ...p, ...updates } : p
       })
 
+      // Training program cleanup: 해고 직원을 수강생/강사에서 제거
+      const cleanedPrograms = s.training.programs.map((p) => {
+        if (p.status !== 'in_progress') return p
+        const wasTrainee = p.traineeIds.includes(id)
+        const wasInstructor = p.instructorId === id
+        if (!wasTrainee && !wasInstructor) return p
+        return {
+          ...p,
+          traineeIds: p.traineeIds.filter((tid) => tid !== id),
+          instructorId: wasInstructor ? null : p.instructorId,
+        }
+      })
+
       return {
         proposals: updatedProposals,
+        training: { ...s.training, programs: cleanedPrograms },
         player: {
           ...s.player,
           employees: s.player.employees.filter((e) => e.id !== id),
@@ -2052,6 +2483,36 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const newBadges = generateBadgesFromSkills(emp.skills)
       const updatedEmployees = [...s.player.employees]
       updatedEmployees[empIdx] = { ...emp, badges: newBadges }
+
+      return {
+        player: { ...s.player, employees: updatedEmployees },
+      }
+    }),
+
+  /* ── Set Trading Limits for Employee ── */
+  setTradingLimits: (employeeId, limits) =>
+    set((s) => {
+      const empIdx = s.player.employees.findIndex((e) => e.id === employeeId)
+      if (empIdx === -1) return s
+
+      const emp = s.player.employees[empIdx]
+      const updatedEmployees = [...s.player.employees]
+      updatedEmployees[empIdx] = { ...emp, tradingLimits: limits ?? undefined }
+
+      return {
+        player: { ...s.player, employees: updatedEmployees },
+      }
+    }),
+
+  /* ── Set Stop Loss / Take Profit for Employee ── */
+  setStopLossTakeProfit: (employeeId, config) =>
+    set((s) => {
+      const empIdx = s.player.employees.findIndex((e) => e.id === employeeId)
+      if (empIdx === -1) return s
+
+      const emp = s.player.employees[empIdx]
+      const updatedEmployees = [...s.player.employees]
+      updatedEmployees[empIdx] = { ...emp, stopLossTakeProfit: config ?? undefined }
 
       return {
         player: { ...s.player, employees: updatedEmployees },
@@ -2140,6 +2601,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
         institutional: '기관 매매',
         proposals: '제안서 목록',
         acquisition: '기업 인수(M&A)',
+        dashboard: '대시보드',
+        achievement_log: '달성 기록',
+        monthly_cards: '월간 카드',
+        event_chain_tracker: '이벤트 체인',
+        skill_library: '스킬 도감',
+        training_center: '교육 센터',
       }
 
       const win: WindowState = {
@@ -2550,6 +3017,629 @@ export const useGameStore = create<GameStore>((set, get) => ({
       windowIdCounter: nextId,
       nextZIndex: nextZ,
     })
+  },
+
+  /* ── UX Enhancement: Animation Queue ── */
+  queueAnimation: (sequence) => {
+    set((s) => ({
+      animationQueue: {
+        ...s.animationQueue,
+        queue: [...s.animationQueue.queue, sequence].sort((a, b) => {
+          const priorityOrder = { high: 0, normal: 1, low: 2 }
+          return priorityOrder[a.priority] - priorityOrder[b.priority]
+        }),
+      },
+    }))
+  },
+
+  startAnimation: () => {
+    set((s) => {
+      if (s.animationQueue.isPlaying || s.animationQueue.queue.length === 0) return s
+      const [next, ...rest] = s.animationQueue.queue
+      return {
+        animationQueue: {
+          queue: rest,
+          current: next,
+          currentStepIndex: 0,
+          isPlaying: true,
+        },
+      }
+    })
+  },
+
+  completeAnimation: () => {
+    set((s) => ({
+      animationQueue: {
+        ...s.animationQueue,
+        current: null,
+        currentStepIndex: 0,
+        isPlaying: false,
+      },
+    }))
+  },
+
+  cancelAnimation: () => {
+    set({
+      animationQueue: { queue: [], current: null, currentStepIndex: 0, isPlaying: false },
+    })
+  },
+
+  /* ── UX Enhancement: Monthly Cards ── */
+  drawMonthlyCards: () => {
+    const s = get()
+    // 이미 이번 달에 뽑았으면 스킵
+    if (s.monthlyCards.isDrawn && s.monthlyCards.drawMonth === s.time.month) return
+
+    const cards = drawCards(s.time.year)
+    const currentTimestamp = getAbsoluteTimestamp(s.time, s.config.startYear)
+
+    set({
+      monthlyCards: {
+        ...s.monthlyCards,
+        availableCards: cards,
+        selectedCardIds: [],
+        isDrawn: true,
+        isSelectionComplete: false,
+        drawMonth: s.time.month,
+        selectionDeadlineTick: currentTimestamp + 100, // ~10시간 후 자동 선택
+      },
+    })
+
+    // 카드 드로우 윈도우 자동 열기
+    get().openWindow('monthly_cards')
+  },
+
+  selectCard: (cardId) => {
+    set((s) => {
+      if (s.monthlyCards.isSelectionComplete) return s
+
+      const isAlreadySelected = s.monthlyCards.selectedCardIds.includes(cardId)
+      let newSelected: string[]
+
+      if (isAlreadySelected) {
+        // 선택 해제
+        newSelected = s.monthlyCards.selectedCardIds.filter((id) => id !== cardId)
+      } else if (s.monthlyCards.selectedCardIds.length < 2) {
+        // 새로 선택 (최대 2장)
+        newSelected = [...s.monthlyCards.selectedCardIds, cardId]
+      } else {
+        return s // 이미 2장 선택됨
+      }
+
+      return {
+        monthlyCards: {
+          ...s.monthlyCards,
+          selectedCardIds: newSelected,
+        },
+      }
+    })
+  },
+
+  applyCardEffects: () => {
+    const s = get()
+    if (s.monthlyCards.isSelectionComplete || s.monthlyCards.selectedCardIds.length === 0) return
+
+    const selectedCards = s.monthlyCards.availableCards.filter((c) =>
+      s.monthlyCards.selectedCardIds.includes(c.id),
+    )
+    const currentTimestamp = getAbsoluteTimestamp(s.time, s.config.startYear)
+
+    const newActiveCards = selectedCards.map((card) => ({
+      card,
+      remainingTicks: card.effects[0]?.duration ?? 360,
+      appliedAt: currentTimestamp,
+    }))
+
+    set((st) => ({
+      monthlyCards: {
+        ...st.monthlyCards,
+        isSelectionComplete: true,
+        activeCards: [...st.monthlyCards.activeCards, ...newActiveCards],
+      },
+    }))
+  },
+
+  expireCards: () => {
+    set((s) => ({
+      monthlyCards: {
+        ...s.monthlyCards,
+        activeCards: s.monthlyCards.activeCards
+          .map((ac) => ({ ...ac, remainingTicks: ac.remainingTicks - 1 }))
+          .filter((ac) => ac.remainingTicks > 0),
+      },
+    }))
+  },
+
+  /* ── UX Enhancement: Event Chains ── */
+  startEventChain: (chainId) => {
+    const s = get()
+    const currentTick = s.currentTick
+    const chainState = initChainState(chainId, currentTick)
+
+    set((st) => ({
+      eventChains: {
+        ...st.eventChains,
+        chains: [...st.eventChains.chains, chainState],
+      },
+    }))
+
+    // 첫 주차 이벤트 수정자를 시장 이벤트로 추가
+    const modifiers = getCurrentWeekModifiers(chainState)
+    if (modifiers) {
+      const template = EVENT_CHAIN_TEMPLATES.find((c) => c.id === chainId)
+      if (template) {
+        const evt: MarketEvent = {
+          id: `chain_${chainId}_w0`,
+          title: `[${template.icon} ${template.title}] ${modifiers.title}`,
+          description: modifiers.description,
+          type: template.category === 'global' ? 'global' : 'sector',
+          impact: {
+            driftModifier: modifiers.driftModifier,
+            volatilityModifier: modifiers.volatilityModifier,
+            severity: 'medium',
+          },
+          duration: 168,
+          remainingTicks: 70,
+          startTimestamp: { ...s.time },
+          affectedSectors: modifiers.affectedSectors,
+          affectedCompanies: modifiers.affectedCompanyIds,
+        }
+        set((st) => ({ events: [evt, ...st.events] }))
+      }
+    }
+
+    // 이벤트 체인 트래커 창 열기
+    get().openWindow('event_chain_tracker')
+  },
+
+  advanceChain: () => {
+    const s = get()
+    const activeChain = s.eventChains.chains.find((c) => c.status === 'active')
+    if (!activeChain) return
+
+    const currentTick = s.currentTick
+    const advanced = advanceChainWeek(activeChain, currentTick)
+
+    set((st) => ({
+      eventChains: {
+        ...st.eventChains,
+        chains: st.eventChains.chains.map((c) =>
+          c.chainId === activeChain.chainId ? advanced : c,
+        ),
+        ...(advanced.status === 'completed'
+          ? {
+              completedChainIds: [...st.eventChains.completedChainIds, activeChain.chainId],
+              lastChainEndTick: currentTick,
+            }
+          : {}),
+      },
+    }))
+
+    // 새 주차 이벤트 수정자 추가
+    if (advanced.status === 'active') {
+      const modifiers = getCurrentWeekModifiers(advanced)
+      if (modifiers) {
+        const template = EVENT_CHAIN_TEMPLATES.find((c) => c.id === activeChain.chainId)
+        if (template) {
+          const evt: MarketEvent = {
+            id: `chain_${activeChain.chainId}_w${advanced.currentWeek}`,
+            title: `[${template.icon} ${template.title}] ${modifiers.title}`,
+            description: modifiers.description,
+            type: template.category === 'global' ? 'global' : 'sector',
+            impact: {
+              driftModifier: modifiers.driftModifier,
+              volatilityModifier: modifiers.volatilityModifier,
+              severity: 'medium',
+            },
+            duration: 168,
+            remainingTicks: 70,
+            startTimestamp: { ...s.time },
+            affectedSectors: modifiers.affectedSectors,
+            affectedCompanies: modifiers.affectedCompanyIds,
+          }
+          set((st) => ({ events: [evt, ...st.events] }))
+        }
+      }
+    }
+  },
+
+  resolveChain: (chainId) => {
+    set((s) => ({
+      eventChains: {
+        ...s.eventChains,
+        chains: s.eventChains.chains.map((c) =>
+          c.chainId === chainId ? { ...c, status: 'completed' as const } : c
+        ),
+        completedChainIds: [...s.eventChains.completedChainIds, chainId],
+        lastChainEndTick: s.currentTick,
+      },
+    }))
+  },
+
+  /* ── UX Enhancement: Employee Bio ── */
+  createEmployeeBio: (employeeId) => {
+    const s = get()
+    const employee = s.player.employees.find((e) => e.id === employeeId)
+    if (!employee || s.employeeBios[employeeId]) return
+
+    const currentTick = getAbsoluteTimestamp(s.time, s.config.startYear)
+    const bio = createBio(employee, currentTick)
+    set((st) => ({
+      employeeBios: { ...st.employeeBios, [employeeId]: bio },
+    }))
+  },
+
+  updateGoalProgress: (employeeId) => {
+    const s = get()
+    const bio = s.employeeBios[employeeId]
+    const employee = s.player.employees.find((e) => e.id === employeeId)
+    if (!bio || !employee) return
+
+    const currentTick = getAbsoluteTimestamp(s.time, s.config.startYear)
+    const { updatedBio, completedGoalTitles } = updateGoals(bio, employee, currentTick)
+
+    // 목표 달성 시 라이프 이벤트 추가
+    const newEvents = completedGoalTitles.map((title) => ({
+      id: `evt_goal_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'goal_completed' as const,
+      title: '목표 달성',
+      description: `"${title}" 목표를 달성했습니다!`,
+      occurredAtTick: currentTick,
+      emotionalImpact: 'proud' as const,
+    }))
+
+    set((st) => ({
+      employeeBios: {
+        ...st.employeeBios,
+        [employeeId]: {
+          ...updatedBio,
+          lifeEvents: [...updatedBio.lifeEvents, ...newEvents].slice(-20),
+          currentEmotion: newEvents.length > 0 ? 'proud' : updatedBio.currentEmotion,
+        },
+      },
+    }))
+  },
+
+  addLifeEvent: (employeeId, event) => {
+    set((s) => {
+      const bio = s.employeeBios[employeeId]
+      if (!bio) return s
+      return {
+        employeeBios: {
+          ...s.employeeBios,
+          [employeeId]: {
+            ...bio,
+            lifeEvents: [...bio.lifeEvents.slice(-19), event],
+          },
+        },
+      }
+    })
+  },
+
+  updateEmotion: (employeeId) => {
+    const s = get()
+    const bio = s.employeeBios[employeeId]
+    const employee = s.player.employees.find((e) => e.id === employeeId)
+    if (!bio || !employee) return
+
+    const newEmotion = inferEmotion(employee)
+    if (newEmotion === bio.currentEmotion) return
+
+    const currentTick = getAbsoluteTimestamp(s.time, s.config.startYear)
+    set((st) => ({
+      employeeBios: {
+        ...st.employeeBios,
+        [employeeId]: {
+          ...bio,
+          currentEmotion: newEmotion,
+          emotionHistory: [...bio.emotionHistory, { emotion: newEmotion, tick: currentTick }].slice(-10),
+        },
+      },
+    }))
+  },
+
+  deleteEmployeeBio: (employeeId) => {
+    set((s) => {
+      const { [employeeId]: _, ...rest } = s.employeeBios
+      return { employeeBios: rest }
+    })
+  },
+
+  /* ── UX Enhancement: Skill Paths ── */
+  selectSkillPath: (employeeId, path) => {
+    set((s) => ({
+      employeeSkillPaths: {
+        ...s.employeeSkillPaths,
+        [employeeId]: {
+          selectedPath: path,
+          pathLevel: 0,
+          unlockedBonuses: [],
+        },
+      },
+    }))
+  },
+
+  calculatePathBonuses: (employeeId) => {
+    const s = get()
+    const pathState = s.employeeSkillPaths[employeeId]
+    const employee = s.player.employees.find((e) => e.id === employeeId)
+    if (!pathState || !employee) return []
+    return calculateBonuses(pathState, employee.level ?? 1)
+  },
+
+  /* ── UX Enhancement: Economic Pressure ── */
+  updateWealthTier: () => {
+    const s = get()
+    const totalAssets = s.player.cash + calcPortfolioValue(s.player.portfolio, s.companies)
+    const updated = updateTier(s.economicPressure, totalAssets)
+    if (updated !== s.economicPressure) {
+      set({ economicPressure: updated })
+    }
+  },
+
+  applyWealthTax: () => {
+    const s = get()
+    const totalAssets = s.player.cash + calcPortfolioValue(s.player.portfolio, s.companies)
+    const { taxAmount, updatedPressure } = calculateMonthlyTax(s.economicPressure, totalAssets)
+
+    if (taxAmount > 0) {
+      const newCash = Math.max(0, s.player.cash - taxAmount)
+      set((st) => ({
+        player: { ...st.player, cash: newCash },
+        economicPressure: updatedPressure,
+      }))
+      get().recordCashFlow('TAX' as CashFlowCategory, -taxAmount, `부유세 (${s.economicPressure.currentTier} 구간)`)
+    }
+  },
+
+  enforcePositionLimit: (companyId, shares) => {
+    const s = get()
+    const totalAssets = s.player.cash + calcPortfolioValue(s.player.portfolio, s.companies)
+    const company = s.companies.find((c) => c.id === companyId)
+    if (!company) return { allowed: true, maxShares: shares }
+
+    const currentPosition = s.player.portfolio[companyId]
+    const currentShares = currentPosition?.shares ?? 0
+
+    return checkPositionLimit(
+      s.economicPressure.currentTier,
+      totalAssets,
+      currentShares * company.price,
+      currentShares,
+      company.price,
+      shares,
+    )
+  },
+
+  recordPerformance: () => {
+    const s = get()
+    const totalAssets = s.player.cash + calcPortfolioValue(s.player.portfolio, s.companies)
+    const lastPerf = s.economicPressure.performanceHistory
+    const startAssets = lastPerf.length > 0
+      ? lastPerf[lastPerf.length - 1].endAssets
+      : totalAssets
+
+    const updated = recordMonthlyPerformance(
+      s.economicPressure,
+      s.time.year,
+      s.time.month,
+      startAssets,
+      totalAssets,
+      s.economicPressure.monthlyTaxPaid,
+    )
+    set({ economicPressure: updated })
+  },
+
+  /* ── UX Enhancement: Milestones ── */
+  checkMilestones: () => {
+    const s = get()
+    // Initialize milestones if empty
+    let currentMilestones = s.milestones.milestones
+    if (Object.keys(currentMilestones).length === 0) {
+      currentMilestones = createInitialMilestones()
+    }
+
+    const rankings = s.calculateRankings()
+    const playerRank = rankings.find((r) => r.isPlayer)?.rank ?? 99
+
+    const ctx: MilestoneContext = {
+      totalAssets: s.player.totalAssetValue,
+      cash: s.player.cash,
+      portfolioCount: Object.keys(s.player.portfolio).length,
+      employeeCount: s.player.employees.length,
+      yearsPassed: s.time.year - s.config.startYear,
+      totalTrades: 0,
+      currentYear: s.time.year,
+      officeLevel: s.player.officeLevel,
+      competitorRank: playerRank,
+    }
+
+    let totalUnlocked = s.milestones.totalUnlocked
+    const updated = { ...currentMilestones }
+    for (const def of MILESTONE_DEFINITIONS) {
+      const milestone = updated[def.id]
+      if (!milestone || milestone.isUnlocked) continue
+
+      const currentValue = def.checkFn(ctx)
+      if (currentValue >= def.targetValue) {
+        updated[def.id] = { ...milestone, isUnlocked: true, unlockedAt: s.currentTick }
+        totalUnlocked++
+
+        // Queue celebration animation
+        get().queueAnimation(
+          createMilestoneAnimationSequence({
+            title: milestone.title,
+            description: milestone.description,
+            icon: milestone.icon,
+          })
+        )
+      }
+    }
+
+    set({
+      milestones: {
+        milestones: updated,
+        totalUnlocked,
+        lastCheckedTick: s.currentTick,
+      },
+    })
+  },
+
+  /* ── Corporate Skill System ── */
+  unlockCorporateSkill: (skillId) => {
+    const s = get()
+    const { skills } = s.corporateSkills
+    const validation = validateUnlock(skillId, skills, s.player.cash)
+    if (!validation.canUnlock) {
+      return { success: false, reason: validation.reason }
+    }
+
+    const skill = skills[skillId]
+    const newSkills = unlockCorpSkill(skillId, skills, s.currentTick)
+    const stats = calculateUnlockStats(newSkills)
+
+    set({
+      player: { ...s.player, cash: s.player.cash - skill.cost },
+      corporateSkills: {
+        skills: newSkills,
+        totalUnlocked: stats.totalUnlocked,
+        totalSpent: stats.totalSpent,
+      },
+    })
+
+    // 현금 흐름 기록
+    s.recordCashFlow('SKILL_RESET', -skill.cost, `회사 스킬 해금: ${skill.name}`)
+
+    return { success: true }
+  },
+
+  getCorporateEffects: () => {
+    return aggregateCorporateEffects(get().corporateSkills.skills)
+  },
+
+  /* ── Training System ── */
+  startTraining: (skillId, traineeIds, instructorId = null) => {
+    const s = get()
+    const skill = s.corporateSkills.skills[skillId]
+    if (!skill) return { success: false, reason: '존재하지 않는 스킬입니다.' }
+
+    const validation = canStartTraining(skill, traineeIds, s.player.employees, s.training.programs, s.player.cash)
+    if (!validation.canStart) return { success: false, reason: validation.reason }
+
+    const program = createTrainingProgram(skill, traineeIds, instructorId, s.currentTick)
+    const totalCost = calcTrainingCost(program)
+
+    set((st) => ({
+      player: {
+        ...st.player,
+        cash: st.player.cash - totalCost,
+        employees: st.player.employees.map((e) =>
+          program.traineeIds.includes(e.id)
+            ? { ...e, activeTrainingId: program.id }
+            : e,
+        ),
+      },
+      training: {
+        ...st.training,
+        programs: [...st.training.programs, program],
+      },
+    }))
+
+    s.recordCashFlow('SKILL_RESET', -totalCost, `교육 프로그램: ${program.name}`)
+    return { success: true }
+  },
+
+  advanceTrainingTick: () => {
+    const s = get()
+    if (s.training.programs.length === 0) return
+
+    const activePrograms = s.training.programs.filter((p) => p.status === 'in_progress')
+    if (activePrograms.length === 0) return
+
+    let updatedPrograms = [...s.training.programs]
+    let updatedEmployees = [...s.player.employees]
+    let completedDelta = 0
+    let graduatedDelta = 0
+
+    for (const program of activePrograms) {
+      const { program: advanced, reachedCheckpoint } = advanceTraining(program, s.currentTick)
+
+      // 체크포인트 도달 시 자동 처리
+      let finalProgram = advanced
+      if (reachedCheckpoint) {
+        const trainees = updatedEmployees.filter((e) => program.traineeIds.includes(e.id))
+        const result = resolveCheckpoint(advanced, reachedCheckpoint.atProgress, trainees)
+        finalProgram = result.program
+
+        // XP/스트레스 적용
+        updatedEmployees = updatedEmployees.map((e) => {
+          let updated = e
+          if (result.xpRewards[e.id]) {
+            updated = { ...updated, xp: (updated.xp ?? 0) + result.xpRewards[e.id] }
+          }
+          if (result.stressChanges[e.id]) {
+            updated = { ...updated, stress: Math.min(100, (updated.stress ?? 0) + result.stressChanges[e.id]) }
+          }
+          return updated
+        })
+      }
+
+      // 수료 처리
+      if (finalProgram.status === 'completed' && program.status === 'in_progress') {
+        const skill = s.corporateSkills.skills[finalProgram.targetSkillId]
+        if (skill) {
+          const passCount = finalProgram.checkpoints.filter((cp) => cp.passed === true).length
+          // 졸업 인원은 실제 traineeIds 수로 카운트 (map 외부에서 계산)
+          graduatedDelta += finalProgram.traineeIds.length
+          updatedEmployees = updatedEmployees.map((e) => {
+            if (finalProgram.traineeIds.includes(e.id)) {
+              return applyGraduation(e, skill, passCount)
+            }
+            return e
+          })
+        }
+        completedDelta++
+      }
+
+      updatedPrograms = updatedPrograms.map((p) => (p.id === program.id ? finalProgram : p))
+    }
+
+    // 오래된 완료 프로그램 정리 (최대 20개 유지)
+    const completed = updatedPrograms.filter((p) => p.status === 'completed' || p.status === 'cancelled')
+    if (completed.length > 20) {
+      const toRemove = completed.slice(0, completed.length - 20).map((p) => p.id)
+      updatedPrograms = updatedPrograms.filter((p) => !toRemove.includes(p.id))
+    }
+
+    set((st) => ({
+      player: { ...st.player, employees: updatedEmployees },
+      training: {
+        programs: updatedPrograms,
+        completedCount: st.training.completedCount + completedDelta,
+        totalTraineesGraduated: st.training.totalTraineesGraduated + graduatedDelta,
+      },
+    }))
+  },
+
+  cancelTrainingProgram: (programId) => {
+    const s = get()
+    const program = s.training.programs.find((p) => p.id === programId)
+    if (!program || program.status !== 'in_progress') return
+
+    set((st) => ({
+      player: {
+        ...st.player,
+        employees: st.player.employees.map((e) =>
+          e.activeTrainingId === programId ? { ...e, activeTrainingId: null } : e,
+        ),
+      },
+      training: {
+        ...st.training,
+        programs: st.training.programs.map((p) =>
+          p.id === programId ? cancelTraining(p) : p,
+        ),
+      },
+    }))
   },
 
   /* ── Flash ── */
@@ -3426,7 +4516,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ...emp,
         mood: Math.min(100, (emp.mood ?? 50) + 15),
         satisfaction: Math.min(100, (emp.satisfaction ?? 50) + 5),
-        praiseCooldown: 1, // 1 month cooldown (decremented per-month in processMonthly)
+        praiseCooldown: 30, // 30-day cooldown (decremented daily in advanceHour)
         growthLog: [
           ...(emp.growthLog ?? []),
           { day: gameDay, event: 'PRAISED' as const, description: '칭찬을 받았다!' },
@@ -3456,7 +4546,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         mood: Math.max(0, (emp.mood ?? 50) - 10),
         stress: Math.min(100, (emp.stress ?? 0) + 8),
         satisfaction: Math.max(0, (emp.satisfaction ?? 50) - 3),
-        scoldCooldown: 1, // 1 month cooldown
+        scoldCooldown: 30, // 30-day cooldown (decremented daily in advanceHour)
         // If exhausted, resume work
         sprite: emp.sprite === 'exhausted' ? 'typing' : emp.sprite,
         stamina: emp.sprite === 'exhausted' ? Math.max(10, emp.stamina) : emp.stamina,
@@ -3643,12 +4733,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     })
 
-    // 버프 재계산
+    // 버프 재계산 + 현금 흐름 기록
     get().recalculateGridBuffs()
+    get().recordCashFlow('OFFICE_FURNITURE', -catalog.cost, `가구 구매: ${type}`)
     return true
   },
 
   removeFurniture: (furnitureId) => {
+    const preFurniture = get().player.officeGrid?.furniture.find((f) => f.id === furnitureId)
+
     set((s) => {
       const grid = s.player.officeGrid
       if (!grid) return s
@@ -3682,6 +4775,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
 
     get().recalculateGridBuffs()
+    if (preFurniture) {
+      const refund = preFurniture.cost * 0.5
+      get().recordCashFlow('OFFICE_FURNITURE', refund, `가구 환불: ${preFurniture.type}`)
+    }
   },
 
   assignEmployeeSeat: (employeeId, x, y) => {
@@ -3789,26 +4886,42 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
         // Expire orphaned PENDING proposals from resigned employee
         // APPROVED proposals stay APPROVED (fallback system handles them)
-        set((st) => ({
-          proposals: st.proposals.map((p) => {
-            const isRelated =
-              p.createdByEmployeeId === id || p.reviewedByEmployeeId === id || p.executedByEmployeeId === id
-            if (!isRelated) return p
+        set((st) => {
+          // Training program cleanup: 퇴사 직원을 수강생/강사에서 제거
+          const cleanedPrograms = st.training.programs.map((p) => {
+            if (p.status !== 'in_progress') return p
+            const wasTrainee = p.traineeIds.includes(id)
+            const wasInstructor = p.instructorId === id
+            if (!wasTrainee && !wasInstructor) return p
+            return {
+              ...p,
+              traineeIds: p.traineeIds.filter((tid) => tid !== id),
+              instructorId: wasInstructor ? null : p.instructorId,
+            }
+          })
 
-            if (p.status === 'PENDING') {
-              return { ...p, status: 'EXPIRED' as ProposalStatus }
-            }
-            if (p.status === 'APPROVED') {
-              // Clear employee references but keep APPROVED for fallback execution
-              const updates: Partial<typeof p> = {}
-              if (p.createdByEmployeeId === id) updates.createdByEmployeeId = id // keep original creator for audit
-              if (p.reviewedByEmployeeId === id) updates.reviewedByEmployeeId = null
-              if (p.executedByEmployeeId === id) updates.executedByEmployeeId = null
-              return Object.keys(updates).length > 0 ? { ...p, ...updates } : p
-            }
-            return p
-          }),
-        }))
+          return {
+            training: { ...st.training, programs: cleanedPrograms },
+            proposals: st.proposals.map((p) => {
+              const isRelated =
+                p.createdByEmployeeId === id || p.reviewedByEmployeeId === id || p.executedByEmployeeId === id
+              if (!isRelated) return p
+
+              if (p.status === 'PENDING') {
+                return { ...p, status: 'EXPIRED' as ProposalStatus }
+              }
+              if (p.status === 'APPROVED') {
+                // Clear employee references but keep APPROVED for fallback execution
+                const updates: Partial<typeof p> = {}
+                if (p.createdByEmployeeId === id) updates.createdByEmployeeId = id // keep original creator for audit
+                if (p.reviewedByEmployeeId === id) updates.reviewedByEmployeeId = null
+                if (p.executedByEmployeeId === id) updates.executedByEmployeeId = null
+                return Object.keys(updates).length > 0 ? { ...p, ...updates } : p
+              }
+              return p
+            }),
+          }
+        })
         state.addNews({
           id: `news-resign-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           timestamp: { ...state.time },
@@ -3828,21 +4941,32 @@ export const useGameStore = create<GameStore>((set, get) => ({
       (state.time.month - 1) * 30 +
       state.time.day,
     )
-    const hrResult = processHRAutomation(updatedEmployees, state.player.cash, gameDays)
 
-    // HR 알림 뉴스
-    hrResult.alerts.forEach((alert) => {
-      state.addNews({
-        id: `news-hr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        timestamp: { ...state.time },
-        headline: alert.title,
-        body: alert.content,
-        isBreaking: alert.criticalCount > 2,
-        sentiment: 'negative',
-        relatedCompanies: [],
-        impactSummary: `${alert.criticalCount}명 긴급 관리`,
+    // ✨ 하루에 1번만 실행 (쿨다운 체크)
+    let hrResult: HRAutomationResult
+    if (gameDays !== state.lastHRProcessDay) {
+      hrResult = processHRAutomation(updatedEmployees, state.player.cash, gameDays)
+
+      // HR 알림 뉴스
+      hrResult.alerts.forEach((alert) => {
+        state.addNews({
+          id: `news-hr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          timestamp: { ...state.time },
+          headline: alert.title,
+          body: alert.content,
+          isBreaking: alert.criticalCount > 2,
+          sentiment: 'negative',
+          relatedCompanies: [],
+          impactSummary: `${alert.criticalCount}명 긴급 관리`,
+        })
       })
-    })
+
+      // 쿨다운 업데이트
+      set({ lastHRProcessDay: gameDays })
+    } else {
+      // 오늘 이미 실행됨 - 직원 상태만 반환 (비용 청구 없음)
+      hrResult = { updatedEmployees, cashSpent: 0, reports: [], alerts: [] }
+    }
 
     // 행동 맵 생성
     const behaviorMap: Record<string, string> = {}
@@ -3889,6 +5013,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (hrResult.cashSpent > 0) {
       get().recordCashFlow('HR_CARE', -hrResult.cashSpent, `HR 자동 관리 비용`)
     }
+
+    // ✨ Training System: 교육 프로그램 진행
+    get().advanceTrainingTick()
   },
 
   /* ── Personalization Actions ── */
@@ -4123,6 +5250,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   removeDesk: (deskId: string) => {
+    const preDesk = get().player.officeLayout?.desks.find((d) => d.id === deskId)
+
     set((s) => {
       const layout = s.player.officeLayout
       if (!layout) return s
@@ -4152,10 +5281,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     })
 
+    if (preDesk) {
+      const refund = Math.floor(preDesk.cost * 0.5)
+      get().recordCashFlow('OFFICE_FURNITURE', refund, `책상 환불`)
+    }
     soundManager.playClick()
   },
 
   removeDecoration: (decorationId: string) => {
+    const preDecoration = get().player.officeLayout?.decorations.find((d) => d.id === decorationId)
+
     set((s) => {
       const layout = s.player.officeLayout
       if (!layout) return s
@@ -4177,6 +5312,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     })
 
+    if (preDecoration) {
+      const refund = Math.floor(preDecoration.cost * 0.5)
+      get().recordCashFlow('OFFICE_FURNITURE', refund, `장식 환불: ${preDecoration.type}`)
+    }
     soundManager.playClick()
   },
 

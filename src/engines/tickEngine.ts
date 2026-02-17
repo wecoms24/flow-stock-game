@@ -20,6 +20,7 @@ import { SECTOR_CORRELATION, SPILLOVER_FACTOR } from '../data/sectorCorrelation'
 import type { Sector, MarketEvent } from '../types'
 import { getBusinessHourIndex, getAbsoluteTimestamp } from '../config/timeConfig'
 import { MARKET_IMPACT_CONFIG } from '../config/marketImpactConfig'
+import { autoSelectCards } from './cardDrawEngine'
 
 /* ── Tick Engine: 1-hour time control system ── */
 
@@ -58,6 +59,9 @@ export function startTickLoop() {
 
     // Advance game time
     state.advanceHour()
+
+    // Hourly processing: salary/tax/stamina/mood/XP (distributed per-hour)
+    useGameStore.getState().processHourly()
 
     // Re-read state after time advancement
     const current = useGameStore.getState()
@@ -222,6 +226,21 @@ export function startTickLoop() {
         return [main, ...spillovers]
       })
 
+    // Monthly Card effects → event modifiers
+    const cardModifiers = current.monthlyCards.activeCards
+      .filter((ac) => ac.remainingTicks > 0)
+      .flatMap((ac) =>
+        ac.card.effects.map((eff) => ({
+          driftModifier: eff.driftModifier,
+          volatilityModifier: eff.volatilityModifier,
+          affectedCompanies: eff.targetCompanyId ? [eff.targetCompanyId] : undefined,
+          affectedSectors: eff.targetSector ? [eff.targetSector as Sector] : undefined,
+          propagation: 1.0,
+          companySensitivities: {} as Record<string, number>,
+        })),
+      )
+    eventModifiers.push(...cardModifiers)
+
     // Build sentiment data for worker (skip if inactive for performance)
     let sentimentData: { globalDrift: number; volatilityMultiplier: number; sectorDrifts: Record<string, number> } | null = null
     if (isSentimentActive()) {
@@ -385,6 +404,32 @@ export function startTickLoop() {
       if (hourIndex % 10 === 0) {
         const rankings = current.calculateRankings()
         checkRankChanges(rankings)
+      }
+    }
+
+    // Monthly Card System: 효과 만료 + 타임아웃 자동 선택
+    {
+      const cardState = useGameStore.getState().monthlyCards
+      // 활성 카드 효과 만료 (매 틱)
+      if (cardState.activeCards.length > 0) {
+        useGameStore.getState().expireCards()
+      }
+      // 선택 타임아웃: 자동 선택 (10시간 후)
+      if (cardState.isDrawn && !cardState.isSelectionComplete && cardState.selectionDeadlineTick > 0) {
+        const absTime = getAbsoluteTimestamp(current.time, current.config.startYear)
+        if (absTime >= cardState.selectionDeadlineTick) {
+          const autoIds = autoSelectCards(cardState.availableCards)
+          autoIds.forEach((id) => useGameStore.getState().selectCard(id))
+          useGameStore.getState().applyCardEffects()
+        }
+      }
+    }
+
+    // Event Chain: 주간 진행 (매주 월요일 = day 1, 8, 15, 22, 29에 해당하는 날의 9시)
+    if ([1, 8, 15, 22, 29].includes(current.time.day) && current.time.hour === 10) {
+      const chainState = useGameStore.getState().eventChains
+      if (chainState.chains.some((c) => c.status === 'active')) {
+        useGameStore.getState().advanceChain()
       }
     }
 
