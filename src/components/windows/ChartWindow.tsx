@@ -555,15 +555,11 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
             value={selectedId}
             onChange={(e) => setSelectedId(e.target.value)}
           >
-            {filteredCompanies.map((c) => {
-              const changePercent = ((c.price - c.previousPrice) / c.previousPrice) * 100
-              const arrow = changePercent >= 0 ? '▲' : '▼'
-              return (
-                <option key={c.id} value={c.id}>
-                  {c.ticker} {arrow} {changePercent.toFixed(1)}% - {c.name}
-                </option>
-              )
-            })}
+            {filteredCompanies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.ticker} - {c.name}
+              </option>
+            ))}
           </select>
           <span className="text-[9px] text-retro-gray shrink-0">
             {filteredCompanies.length}개
