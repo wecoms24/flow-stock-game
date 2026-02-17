@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useGameStore } from './stores/gameStore'
 import { initTickEngine, startTickLoop, destroyTickEngine } from './engines/tickEngine'
+import { validateSkillTree } from './systems/skillSystem'
 import { StartScreen } from './components/desktop/StartScreen'
 import { StockTicker } from './components/desktop/StockTicker'
 import { Taskbar } from './components/desktop/Taskbar'
@@ -31,6 +32,14 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    // ✨ RPG Skill Tree: Validate skill tree on game start
+    const validation = validateSkillTree()
+    if (!validation.valid) {
+      console.error('❌ Skill tree validation failed:', validation.errors)
+    } else {
+      console.log('✅ Skill tree validation passed')
+    }
+
     initTickEngine()
     startTickLoop()
     return () => destroyTickEngine()

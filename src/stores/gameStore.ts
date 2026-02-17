@@ -22,8 +22,9 @@ import type {
   OrderFlow,
   Institution,
   Sector,
+  LimitOrder,
 } from '../types'
-import type { OfficeGrid, FurnitureType, FurnitureItem } from '../types/office'
+import type { OfficeGrid, FurnitureType, FurnitureItem, OfficeLayout, DeskType, DecorationType, DeskItem, DecorationItem } from '../types/office'
 import type { TradeProposal, ProposalStatus } from '../types/trade'
 import type { PlayerEvent, PlayerProfile } from '../types/personalization'
 import type { MnaDeal } from '../engines/mnaEngine'
@@ -38,8 +39,15 @@ import { DIFFICULTY_TABLE } from '../data/difficulty'
 import { generateEmployeeName, resetNamePool, generateRandomTraits, generateInitialSkills, generateAssignedSectors } from '../data/employees'
 import { calculateMarketSentiment } from '../engines/tickEngine'
 import { TRAIT_DEFINITIONS } from '../data/traits'
-import { FURNITURE_CATALOG, canBuyFurniture } from '../data/furniture'
+import { FURNITURE_CATALOG, canBuyFurniture, DESK_CATALOG, DECORATION_CATALOG } from '../data/furniture'
 import { saveGame, loadGame, deleteSave } from '../systems/saveSystem'
+import {
+  grantSkillPointsOnLevelUp,
+  migrateEmployeeToSkillTree,
+  unlockSkill,
+  resetSkillTree,
+} from '../systems/skillSystem'
+import { calculateResetCost } from '../config/skillBalance'
 import {
   generateCompetitors,
   processAITrading,
@@ -57,6 +65,7 @@ import { processHRAutomation } from '../engines/hrAutomation'
 import { cleanupChatterCooldown, getPipelineMessage } from '../data/chatter'
 import { cleanupInteractionCooldowns } from '../engines/employeeInteraction'
 import { resetNewsEngine } from '../engines/newsEngine'
+import { generateBadgesFromSkills } from '../utils/badgeConverter' // ✨ 신규: 뱃지 생성
 import { resetSentiment } from '../engines/sentimentEngine'
 import { analyzeStock, generateProposal } from '../engines/tradePipeline/analystLogic'
 import { evaluateRisk } from '../engines/tradePipeline/managerLogic'
@@ -170,6 +179,14 @@ interface GameStore {
   processManagerTick: () => void
   processTraderTick: () => void
 
+  // AI Architect (Week 4 Integration)
+  aiProposal: import('../systems/aiArchitect').LayoutProposal | null
+
+  // Actions - AI Architect
+  generateAIProposal: (maxMoves?: number, maxPurchases?: number) => void
+  applyAIProposal: () => void
+  rejectAIProposal: () => void
+
   // Competitor system
   competitors: Competitor[]
   competitorCount: number // 0 = disabled, 1-5 = active
@@ -190,7 +207,7 @@ interface GameStore {
   personalizationEnabled: boolean
 
   // Actions - Personalization
-  logPlayerEvent: (kind: PlayerEvent['kind'], metadata: Record<string, any>) => void
+  logPlayerEvent: (kind: PlayerEvent['kind'], metadata: Record<string, unknown>) => void
   updateProfileOnDayEnd: () => void
   updateProfileOnMonthEnd: () => void
   setPersonalizationEnabled: (enabled: boolean) => void
@@ -226,6 +243,7 @@ interface GameStore {
   // Actions - Employees
   hireEmployee: (role: EmployeeRole) => void
   fireEmployee: (id: string) => void
+  updateEmployeeBadges: (employeeId: string) => void
   upgradeOffice: () => void
 
   // Actions - Competitors
@@ -248,7 +266,11 @@ interface GameStore {
   scoldEmployee: (employeeId: string) => void
   dismissLevelUp: () => void
 
-  // Actions - Office Grid (Sprint 2)
+  // Actions - RPG Skill Tree System
+  unlockEmployeeSkill: (employeeId: string, skillId: string) => { success: boolean; reason?: string }
+  resetEmployeeSkillTree: (employeeId: string) => { success: boolean; cost: number; reason?: string }
+
+  // Actions - Office Grid (Sprint 2, 레거시)
   initializeOfficeGrid: () => void
   placeFurniture: (type: FurnitureType, x: number, y: number) => boolean
   removeFurniture: (furnitureId: string) => void
@@ -256,6 +278,17 @@ interface GameStore {
   unassignEmployeeSeat: (employeeId: string) => void
   recalculateGridBuffs: () => void
   processEmployeeTick: () => void
+
+  // Actions - Office Dot Layout (새 시스템)
+  initializeOfficeLayout: () => void
+  buyDesk: (type: import('../types/office').DeskType, x: number, y: number) => boolean
+  buyDecoration: (type: import('../types/office').DecorationType, x: number, y: number) => boolean
+  removeDesk: (deskId: string) => void
+  removeDecoration: (decorationId: string) => void
+  assignEmployeeToDesk: (employeeId: string, deskId: string) => boolean
+  unassignEmployeeFromDesk: (employeeId: string) => void
+  moveDeskPosition: (deskId: string, x: number, y: number) => void
+  moveDecorationPosition: (decorationId: string, x: number, y: number) => void
 
   // Actions - Windows
   openWindow: (type: WindowState['type'], props?: Record<string, unknown>) => void
@@ -273,6 +306,7 @@ interface GameStore {
   pendingIPOs: Array<{ slotIndex: number; spawnTick: number; newCompany: Company }>
   playerAcquisitionHistory: import('../types').PlayerAcquisitionHistory[]
   lastPlayerAcquisitionTick: number
+  isAcquiring: boolean // 중복 인수 방지 플래그
 
   // Actions - M&A
   getActiveCompanies: () => Company[]
@@ -282,6 +316,14 @@ interface GameStore {
   processScheduledIPOs: () => void
   applyAcquisitionExchange: (deal: MnaDeal) => void
   playerAcquireCompany: (targetId: string, premium: number, layoffRate: number) => void
+
+  // Limit Order System
+  limitOrders: LimitOrder[]
+
+  // Actions - Limit Orders
+  createLimitOrder: (companyId: string, targetPrice: number, shares: number) => void
+  cancelLimitOrder: (orderId: string) => void
+  processLimitOrders: () => void // 매 틱마다 호출, 조건 달성 시 자동 실행
 
   // Flash
   triggerFlash: () => void
@@ -336,6 +378,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   pendingIPOs: [],
   playerAcquisitionHistory: [],
   lastPlayerAcquisitionTick: 0,
+  isAcquiring: false,
+  limitOrders: [],
 
   competitors: [],
   competitorCount: 0,
@@ -344,6 +388,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   officeEvents: [],
   employeeBehaviors: {},
   proposals: [],
+  aiProposal: null, // Week 4 Integration
   orderFlowByCompany: {},
   institutions: [],
 
@@ -423,6 +468,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     deleteSave()
 
     const store = get()
+
+    // Initialize institutional flow for all sectors (10 sectors)
+    // This ensures institutionFlowHistory has initial data for all companies
+    for (let sectorIndex = 0; sectorIndex < 10; sectorIndex++) {
+      store.updateInstitutionalFlowForSector(sectorIndex)
+    }
+
     store.openWindow('portfolio')
     store.openWindow('chart')
     store.openWindow('news')
@@ -439,13 +491,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // Reconstruct companies from save + base data
     const companies = COMPANIES.map((base) => {
       const saved = data.companies.find((s) => s.id === base.id)
-      if (!saved) return { ...base, priceHistory: [base.price] }
+      if (!saved) return { ...base, priceHistory: [base.price], institutionFlowHistory: [] }
       return {
         ...base,
         price: saved.price,
         previousPrice: saved.previousPrice,
         priceHistory: saved.priceHistory,
         marketCap: saved.price * 1_000_000,
+        // Migrate institutionFlowHistory if missing (for old save files)
+        institutionFlowHistory: (saved as any).institutionFlowHistory ?? [],
       }
     })
 
@@ -465,6 +519,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         xp: emp.xp ?? 0,
         xpToNextLevel: emp.xpToNextLevel ?? 100,
         mood: emp.mood ?? 50,
+        deskId: emp.deskId ?? null,
+        seatIndex: emp.seatIndex ?? null,
       })),
     }
 
@@ -521,6 +577,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
 
     const store = get()
+
+    // Initialize institutional flow if missing (for migrated old save files)
+    // Check if any company has empty institutionFlowHistory
+    const needsInitialization = store.companies.some(
+      (c) => !c.institutionFlowHistory || c.institutionFlowHistory.length === 0
+    )
+    if (needsInitialization) {
+      for (let sectorIndex = 0; sectorIndex < 10; sectorIndex++) {
+        store.updateInstitutionalFlowForSector(sectorIndex)
+      }
+    }
+
     store.openWindow('portfolio')
     store.openWindow('chart')
     store.openWindow('news')
@@ -1011,6 +1079,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
+  // AI Architect Actions (Week 4 Integration)
+  generateAIProposal: (maxMoves, maxPurchases) => generateAIProposalAction(maxMoves, maxPurchases),
+  applyAIProposal: () => applyAIProposalAction(),
+  rejectAIProposal: () => rejectAIProposalAction(),
+
   setSpeed: (speed) => {
     set((s) => ({ time: { ...s.time, speed } }))
     // Personalization: Log settings change
@@ -1092,6 +1165,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (newDay !== oldDay && get().personalizationEnabled) {
       get().updateProfileOnDayEnd()
     }
+
+    // Process limit orders (check every tick)
+    get().processLimitOrders()
   },
 
   /* ── Monthly Processing: salary deduction + stamina drain ── */
@@ -1162,6 +1238,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // Grant monthly XP to working employees (single batch set)
     set((s) => {
       let firstLevelUp: LevelUpEvent | null = null
+      const leveledUpEmployeeIds: string[] = [] // Track employees who leveled up
       const batchEmployees = s.player.employees.map((emp) => {
         if (emp.stamina <= 0) return emp
 
@@ -1197,6 +1274,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
             }
           }
 
+          // ✨ Track leveled up employee for badge update
+          leveledUpEmployeeIds.push(emp.id)
+
           return {
             ...emp,
             level: newLevel,
@@ -1223,6 +1303,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ...(firstLevelUp ? { pendingLevelUp: firstLevelUp } : {}),
       }
     })
+
+    // Note: Badge updates happen in processEmployeeTick (every 10 ticks) when skills change
 
     // Personalization: Update profile on month end
     if (get().personalizationEnabled) {
@@ -1615,6 +1697,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       })
 
+      // ✨ 뱃지 생성 (스킬 기반)
+      const badges = generateBadgesFromSkills(skills)
+
       const employee: Employee = {
         id: `emp-${++employeeIdCounter}`,
         name: generateEmployeeName(),
@@ -1629,13 +1714,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
         // ✨ Sprint 1: RPG System
         traits,
         skills,
+        badges, // ✨ 신규: 스킬 뱃지
         stress: 0,
         satisfaction: 100,
         seatIndex: null,
+        deskId: null,
 
         // ✨ Trade AI Pipeline: Analyst sector assignment
         assignedSectors: role === 'analyst' ? generateAssignedSectors() : undefined,
+
+        // ✨ Growth System
+        level: 1,
+        xp: 0,
+        xpToNextLevel: 1000,
       }
+
+      // ✨ RPG Skill Tree: Initialize progression system
+      migrateEmployeeToSkillTree(employee)
 
       // Deduct 3-month upfront signing bonus (adjusted salary)
       const newCash = s.player.cash - adjustedSalary * 3
@@ -1713,6 +1808,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
   },
 
+  /* ── Update Employee Badges when skills change ── */
+  updateEmployeeBadges: (employeeId) =>
+    set((s) => {
+      const empIdx = s.player.employees.findIndex((e) => e.id === employeeId)
+      if (empIdx === -1) return s
+
+      const emp = s.player.employees[empIdx]
+      if (!emp.skills) return s
+
+      const newBadges = generateBadgesFromSkills(emp.skills)
+      const updatedEmployees = [...s.player.employees]
+      updatedEmployees[empIdx] = { ...emp, badges: newBadges }
+
+      return {
+        player: { ...s.player, employees: updatedEmployees },
+      }
+    }),
+
   upgradeOffice: () =>
     set((s) => {
       const currentLevel = s.player.officeLevel
@@ -1781,6 +1894,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         trading: '매매 창',
         news: '뉴스',
         office: '사무실',
+        office_dot: '도트 사무실',
         ranking: '랭킹',
         office_history: '사무실 히스토리',
         employee_detail: '직원 상세',
@@ -2377,6 +2491,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   playerAcquireCompany: (targetId: string, premium: number, layoffRate: number) => {
     const state = get()
+
+    // 중복 인수 방지 체크
+    if (state.isAcquiring) {
+      console.warn('[Player M&A] Already processing an acquisition')
+      return
+    }
+
     const target = state.companies.find((c) => c.id === targetId)
     if (!target || target.status !== 'active') {
       console.error('[Player M&A] Target company not found or not active')
@@ -2395,6 +2516,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       console.warn('[Player M&A] Cooldown not expired (need 1 year gap)')
       return
     }
+
+    // 인수 처리 시작
+    set({ isAcquiring: true })
 
     console.log(
       `[Player M&A] Acquiring ${target.name} for ${(totalCost / 100_000_000).toFixed(0)}억 (${(premium * 100).toFixed(0)}% premium)`,
@@ -2469,31 +2593,43 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const targetIndex = state.companies.findIndex((c) => c.id === targetId)
     if (targetIndex >= 0) {
       const delayTicks = 180 + Math.random() * 180
-      import('../engines/mnaEngine').then(({ generateNewCompany }) => {
-        const newCompany = generateNewCompany(target)
-        get().scheduleIPO(targetIndex, delayTicks, newCompany)
-      })
+      import('../engines/mnaEngine')
+        .then(({ generateNewCompany }) => {
+          const newCompany = generateNewCompany(target)
+          get().scheduleIPO(targetIndex, delayTicks, newCompany)
+        })
+        .catch((err) => {
+          console.error('[Player M&A] Failed to schedule IPO:', err)
+        })
     }
 
     // M&A 뉴스 생성 (동적 import)
-    import('../engines/newsEngine').then(({ createMnaNews }) => {
-      const currentState = get()
-      const news = createMnaNews(
-        deal,
-        { id: playerAcquirerId, name: '당신', ticker: 'PLAYER', sector: target.sector },
-        target,
-        currentState.time,
-      )
-      set((s) => ({
-        news: [news, ...s.news],
-        unreadNewsCount: s.unreadNewsCount + 1,
-      }))
-    })
+    import('../engines/newsEngine')
+      .then(({ createMnaNews }) => {
+        const currentState = get()
+        const news = createMnaNews(
+          deal,
+          { id: playerAcquirerId, name: '당신', ticker: 'PLAYER', sector: target.sector },
+          target,
+          currentState.time,
+        )
+        set((s) => ({
+          news: [news, ...s.news],
+          unreadNewsCount: s.unreadNewsCount + 1,
+        }))
+      })
+      .catch((err) => {
+        console.error('[Player M&A] Failed to generate M&A news:', err)
+      })
 
     // 시장 심리 업데이트 (동적 import)
-    import('../engines/sentimentEngine').then(({ onMnaOccurred }) => {
-      onMnaOccurred(target.sector, layoffRate > 0.4)
-    })
+    import('../engines/sentimentEngine')
+      .then(({ onMnaOccurred }) => {
+        onMnaOccurred(target.sector, layoffRate > 0.4)
+      })
+      .catch((err) => {
+        console.error('[Player M&A] Failed to update sentiment:', err)
+      })
 
     // 토스트 알림
     set((s) => ({
@@ -2510,6 +2646,87 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }))
 
     soundManager.playClick()
+
+    // 인수 처리 완료
+    set({ isAcquiring: false })
+  },
+
+  /* ── Limit Order Actions ── */
+  createLimitOrder: (companyId, targetPrice, shares) => {
+    const state = get()
+    const position = state.player.portfolio[companyId]
+
+    if (!position || position.shares < shares) {
+      console.error('[Limit Order] Insufficient shares')
+      return
+    }
+
+    const orderId = `order_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+    const order: LimitOrder = {
+      id: orderId,
+      companyId,
+      type: 'SELL',
+      targetPrice,
+      shares,
+      createdTick: state.currentTick,
+    }
+
+    set((s) => ({
+      limitOrders: [...s.limitOrders, order],
+    }))
+
+    console.log(`[Limit Order] Created: ${shares}주 @${targetPrice.toLocaleString()}원`)
+  },
+
+  cancelLimitOrder: (orderId) => {
+    set((s) => ({
+      limitOrders: s.limitOrders.filter((o) => o.id !== orderId),
+    }))
+    console.log(`[Limit Order] Cancelled: ${orderId}`)
+  },
+
+  processLimitOrders: () => {
+    const state = get()
+    const { limitOrders, companies, player } = state
+
+    limitOrders.forEach((order) => {
+      const company = companies.find((c) => c.id === order.companyId)
+      if (!company) return
+
+      const position = player.portfolio[order.companyId]
+      if (!position || position.shares < order.shares) {
+        // 보유 주식이 부족하면 주문 취소
+        get().cancelLimitOrder(order.id)
+        return
+      }
+
+      // 목표가 달성 체크
+      if (order.type === 'SELL' && company.price >= order.targetPrice) {
+        console.log(
+          `[Limit Order] Triggered: ${company.ticker} ${order.shares}주 @${company.price.toLocaleString()}원`,
+        )
+
+        // 자동 매도 실행
+        get().sellStock(order.companyId, order.shares)
+
+        // 주문 제거
+        get().cancelLimitOrder(order.id)
+
+        // 토스트 알림
+        set((s) => ({
+          officeEvents: [
+            ...s.officeEvents,
+            {
+              timestamp: s.currentTick,
+              type: 'limit_order_executed',
+              emoji: '🎯',
+              message: `목표가 도달: ${company.name} ${order.shares}주 매도 (${company.price.toLocaleString()}원)`,
+              employeeIds: [],
+            },
+          ].slice(-200),
+        }))
+      }
+    })
   },
 
   /* ── Competitor Actions ── */
@@ -2826,6 +3043,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   /* ── Growth System (Sprint 3) ── */
   gainXP: (employeeId, amount, _source) => {
+    void _source // 향후 확장을 위해 보존 (로그, 분석 등)
     soundManager.playXPGain()
     set((s) => {
       const empIdx = s.player.employees.findIndex((e) => e.id === employeeId)
@@ -2851,7 +3069,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
 
         const updatedEmployees = [...s.player.employees]
-        updatedEmployees[empIdx] = {
+        const updatedEmp = {
           ...emp,
           level: newLevel,
           xp: currentXP - xpNeeded,
@@ -2860,6 +3078,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
           badge: newBadge,
           growthLog: [...(emp.growthLog ?? []), logEntry].slice(-50),
         }
+
+        // ✨ RPG Skill Tree: Grant Skill Points on level up
+        grantSkillPointsOnLevelUp(updatedEmp)
+
+        updatedEmployees[empIdx] = updatedEmp
 
         // Dispatch level-up event for UI effects
         const levelUpEvent: LevelUpEvent = {
@@ -2890,6 +3113,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       return { player: { ...s.player, employees: updatedEmployees } }
     })
+    // Note: Badge updates happen in processEmployeeTick when skills actually change
   },
 
   praiseEmployee: (employeeId) => {
@@ -2953,6 +3177,97 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   dismissLevelUp: () => set({ pendingLevelUp: null }),
 
+  /* ── RPG Skill Tree System ── */
+  unlockEmployeeSkill: (employeeId, skillId) => {
+    let result: { success: boolean; reason?: string } = { success: false, reason: '' }
+
+    set((s) => {
+      const empIdx = s.player.employees.findIndex((e) => e.id === employeeId)
+      if (empIdx === -1) {
+        result = { success: false, reason: '직원을 찾을 수 없습니다' }
+        return s
+      }
+
+      const emp = s.player.employees[empIdx]
+
+      // Unlock skill (modifies emp in place)
+      const unlockResult = unlockSkill(emp, skillId)
+
+      if (!unlockResult.success) {
+        result = unlockResult
+        return s
+      }
+
+      // Update employee in store
+      const updatedEmployees = [...s.player.employees]
+      updatedEmployees[empIdx] = { ...emp }
+
+      result = { success: true }
+      return { player: { ...s.player, employees: updatedEmployees } }
+    })
+
+    return result
+  },
+
+  resetEmployeeSkillTree: (employeeId) => {
+    let result: { success: boolean; cost: number; reason?: string } = {
+      success: false,
+      cost: 0,
+      reason: '',
+    }
+
+    set((s) => {
+      const empIdx = s.player.employees.findIndex((e) => e.id === employeeId)
+      if (empIdx === -1) {
+        result = { success: false, cost: 0, reason: '직원을 찾을 수 없습니다' }
+        return s
+      }
+
+      const emp = s.player.employees[empIdx]
+
+      // 리셋할 SP가 없는 경우
+      if (!emp.progression || emp.progression.spentSkillPoints === 0) {
+        result = { success: false, cost: 0, reason: '리셋할 스킬이 없습니다' }
+        return s
+      }
+
+      // 비용 계산
+      const cost = calculateResetCost(emp.progression.level)
+
+      // 현금 부족 확인
+      if (s.player.cash < cost) {
+        result = {
+          success: false,
+          cost,
+          reason: `현금이 부족합니다 (필요: ${cost.toLocaleString()}원)`,
+        }
+        return s
+      }
+
+      // 스킬 트리 리셋 (SP 환불, 스킬 제거)
+      resetSkillTree(emp)
+
+      // 현금 차감
+      const newCash = s.player.cash - cost
+
+      // 업데이트
+      const updatedEmployees = [...s.player.employees]
+      updatedEmployees[empIdx] = { ...emp }
+
+      result = { success: true, cost }
+      return {
+        player: {
+          ...s.player,
+          cash: newCash,
+          employees: updatedEmployees,
+          totalAssetValue: newCash + calcPortfolioValue(s.player.portfolio, s.companies),
+        },
+      }
+    })
+
+    return result
+  },
+
   /* ── Office Grid (Sprint 2) ── */
   initializeOfficeGrid: () => {
     set((s) => {
@@ -2986,7 +3301,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const catalog = FURNITURE_CATALOG[type]
 
     // 공간 확인
-    if (!isSpaceAvailable(x, y, catalog.size, grid)) {
+    const catalogSize = catalog.size ?? { width: 1, height: 1 }
+    if (!isSpaceAvailable(x, y, catalogSize, grid)) {
       console.warn('Space not available')
       return false
     }
@@ -2996,7 +3312,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       id: `furniture-${Date.now()}-${Math.random()}`,
       type,
       position: { x, y },
-      size: catalog.size,
+      size: catalogSize,
       buffs: catalog.buffs,
       cost: catalog.cost,
       sprite: catalog.sprite,
@@ -3009,8 +3325,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       grid.furniture.push(furniture)
 
       // 셀 점유 처리
-      for (let dy = 0; dy < catalog.size.height; dy++) {
-        for (let dx = 0; dx < catalog.size.width; dx++) {
+      for (let dy = 0; dy < catalogSize.height; dy++) {
+        for (let dx = 0; dx < catalogSize.width; dx++) {
           grid.cells[y + dy][x + dx].occupiedBy = furniture.id
           grid.cells[y + dy][x + dx].type = 'furniture'
         }
@@ -3233,10 +3549,37 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const behaviorMap: Record<string, string> = {}
     behaviors.forEach((b) => { behaviorMap[b.employeeId] = b.action })
 
+    // ✨ 스킬 변경 직후 뱃지 업데이트 (배치 처리)
+    const processedMap = new Map<string, Employee>()
+    hrResult.updatedEmployees.forEach((emp) => {
+      if (!emp.skills) {
+        processedMap.set(emp.id, emp)
+      } else {
+        const newBadges = generateBadgesFromSkills(emp.skills)
+        processedMap.set(emp.id, { ...emp, badges: newBadges })
+      }
+    })
+
+    // 병합 전략: 틱 처리 결과(stress/stamina/skills/badges)만 적용,
+    // 유저 액션 필드(deskId, seatIndex 등)는 현재 상태에서 보존
     set((s) => ({
       player: {
         ...s.player,
-        employees: hrResult.updatedEmployees,
+        employees: s.player.employees.map((currentEmp) => {
+          const processed = processedMap.get(currentEmp.id)
+          if (!processed) return currentEmp
+
+          return {
+            ...currentEmp,           // 현재 상태 보존 (deskId, seatIndex 등)
+            stress: processed.stress,
+            satisfaction: processed.satisfaction,
+            stamina: processed.stamina,
+            maxStamina: processed.maxStamina,
+            skills: processed.skills,
+            badges: processed.badges,
+            sprite: processed.sprite,
+          }
+        }),
         cash: Math.max(0, s.player.cash - hrResult.cashSpent),
       },
       officeEvents: [...s.officeEvents, ...officeEvents].slice(-200), // Keep last 200
@@ -3338,6 +3681,323 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return s
     })
   },
+
+  /* ── Office Dot Layout Actions ── */
+
+  initializeOfficeLayout: () => {
+    set((s) => {
+      if (s.player.officeLayout) return s // 이미 초기화됨
+
+      const layout = createInitialOfficeLayout()
+      return {
+        player: {
+          ...s.player,
+          officeLayout: layout,
+        },
+      }
+    })
+  },
+
+  buyDesk: (type: DeskType, x: number, y: number) => {
+    // 초기화 후 반드시 최신 상태 재조회 (stale state 방지)
+    if (!get().player.officeLayout) {
+      get().initializeOfficeLayout()
+    }
+    const state = get()
+    const layout = state.player.officeLayout
+    if (!layout) {
+      console.error('[buyDesk] officeLayout still null after init')
+      return false
+    }
+
+    const catalog = DESK_CATALOG[type]
+    const { officeLevel, cash } = state.player
+
+    if (layout.desks.length >= layout.maxDesks) {
+      console.warn(`[buyDesk] 최대 ${layout.maxDesks}개 도달`)
+      return false
+    }
+    if (catalog.unlockLevel && officeLevel < catalog.unlockLevel) {
+      console.warn(`[buyDesk] 레벨 ${catalog.unlockLevel} 필요`)
+      return false
+    }
+    if (cash < catalog.cost) {
+      console.warn(`[buyDesk] 자금 부족 (보유: ${cash}, 필요: ${catalog.cost})`)
+      return false
+    }
+
+    const deskId = `desk_${Date.now()}_${Math.random().toString(36).substring(7)}`
+    const newDesk: DeskItem = {
+      id: deskId,
+      type,
+      position: { x, y },
+      employeeId: null,
+      buffs: catalog.buffs,
+      cost: catalog.cost,
+      sprite: catalog.sprite,
+    }
+
+    set((s) => {
+      const currentLayout = s.player.officeLayout
+      if (!currentLayout) return s
+
+      return {
+        player: {
+          ...s.player,
+          cash: s.player.cash - catalog.cost,
+          officeLayout: {
+            ...currentLayout,
+            desks: [...currentLayout.desks, newDesk],
+          },
+          totalAssetValue: s.player.cash - catalog.cost + calcPortfolioValue(s.player.portfolio, s.companies),
+        },
+      }
+    })
+
+    console.log(`[buyDesk] ✅ 책상 구매 성공: ${type} at (${x},${y}), id=${deskId}`)
+    soundManager.playClick()
+    return true
+  },
+
+  buyDecoration: (type: DecorationType, x: number, y: number) => {
+    if (!get().player.officeLayout) {
+      get().initializeOfficeLayout()
+    }
+    const state = get()
+    if (!state.player.officeLayout) {
+      console.error('[buyDecoration] officeLayout still null after init')
+      return false
+    }
+
+    const catalog = DECORATION_CATALOG[type]
+    const { officeLevel, cash } = state.player
+
+    // 레벨 체크
+    if (catalog.unlockLevel && officeLevel < catalog.unlockLevel) {
+      console.warn(`Cannot buy decoration: 레벨 ${catalog.unlockLevel} 필요`)
+      return false
+    }
+
+    // 자금 체크
+    if (cash < catalog.cost) {
+      console.warn(`Cannot buy decoration: 자금 부족`)
+      return false
+    }
+
+    // 장식 생성
+    const decorationId = `deco_${Date.now()}_${Math.random().toString(36).substring(7)}`
+    const newDecoration: DecorationItem = {
+      id: decorationId,
+      type,
+      position: { x, y },
+      buffs: catalog.buffs,
+      cost: catalog.cost,
+      sprite: catalog.sprite,
+    }
+
+    set((s) => {
+      const currentLayout = s.player.officeLayout
+      if (!currentLayout) return s
+
+      return {
+        player: {
+          ...s.player,
+          cash: s.player.cash - catalog.cost,
+          officeLayout: {
+            ...currentLayout,
+            decorations: [...currentLayout.decorations, newDecoration],
+          },
+          totalAssetValue: s.player.cash - catalog.cost + calcPortfolioValue(s.player.portfolio, s.companies),
+        },
+      }
+    })
+
+    soundManager.playClick()
+    return true
+  },
+
+  removeDesk: (deskId: string) => {
+    set((s) => {
+      const layout = s.player.officeLayout
+      if (!layout) return s
+
+      const desk = layout.desks.find((d) => d.id === deskId)
+      if (!desk) return s
+
+      // 책상 제거 및 50% 환불
+      const refund = Math.floor(desk.cost * 0.5)
+      const updatedDesks = layout.desks.filter((d) => d.id !== deskId)
+
+      // 직원 배치 해제 (이뮤터블)
+      const updatedEmployees = desk.employeeId
+        ? s.player.employees.map((e) =>
+            e.id === desk.employeeId ? { ...e, deskId: null } : e
+          )
+        : s.player.employees
+
+      return {
+        player: {
+          ...s.player,
+          employees: updatedEmployees,
+          cash: s.player.cash + refund,
+          officeLayout: { ...layout, desks: updatedDesks },
+          totalAssetValue: s.player.cash + refund + calcPortfolioValue(s.player.portfolio, s.companies),
+        },
+      }
+    })
+
+    soundManager.playClick()
+  },
+
+  removeDecoration: (decorationId: string) => {
+    set((s) => {
+      const layout = s.player.officeLayout
+      if (!layout) return s
+
+      const decoration = layout.decorations.find((d) => d.id === decorationId)
+      if (!decoration) return s
+
+      // 장식 제거 및 50% 환불
+      const refund = Math.floor(decoration.cost * 0.5)
+      const updatedDecorations = layout.decorations.filter((d) => d.id !== decorationId)
+
+      return {
+        player: {
+          ...s.player,
+          cash: s.player.cash + refund,
+          officeLayout: { ...layout, decorations: updatedDecorations },
+          totalAssetValue: s.player.cash + refund + calcPortfolioValue(s.player.portfolio, s.companies),
+        },
+      }
+    })
+
+    soundManager.playClick()
+  },
+
+  assignEmployeeToDesk: (employeeId: string, deskId: string) => {
+    console.log(`[assignEmployeeToDesk] 호출: emp=${employeeId}, desk=${deskId}`)
+    const state = get()
+    const layout = state.player.officeLayout
+    if (!layout) {
+      console.error('[assignEmployeeToDesk] ❌ officeLayout 없음')
+      return false
+    }
+
+    const desk = layout.desks.find((d) => d.id === deskId)
+    if (!desk) {
+      console.error(`[assignEmployeeToDesk] ❌ 책상 ${deskId} 없음 (desks: ${layout.desks.map(d => d.id).join(',')})`)
+      return false
+    }
+
+    if (desk.employeeId) {
+      console.warn(`[assignEmployeeToDesk] ❌ 책상 이미 배치됨: ${desk.employeeId}`)
+      return false
+    }
+
+    const employee = state.player.employees.find((e) => e.id === employeeId)
+    if (!employee) {
+      console.error(`[assignEmployeeToDesk] ❌ 직원 ${employeeId} 없음`)
+      return false
+    }
+
+    set((s) => {
+      const currentLayout = s.player.officeLayout
+      if (!currentLayout) return s
+
+      const updatedDesks = currentLayout.desks.map((d) => {
+        if (employee.deskId && d.id === employee.deskId) {
+          return { ...d, employeeId: null }
+        }
+        if (d.id === deskId) {
+          return { ...d, employeeId }
+        }
+        return d
+      })
+
+      const updatedEmployees = s.player.employees.map((e) =>
+        e.id === employeeId ? { ...e, deskId } : e
+      )
+
+      return {
+        player: {
+          ...s.player,
+          employees: updatedEmployees,
+          officeLayout: { ...currentLayout, desks: updatedDesks },
+        },
+      }
+    })
+
+    console.log(`[assignEmployeeToDesk] ✅ 배치 성공: ${employee.name} → ${deskId}`)
+    soundManager.playClick()
+    return true
+  },
+
+  unassignEmployeeFromDesk: (employeeId: string) => {
+    set((s) => {
+      const layout = s.player.officeLayout
+      if (!layout) return s
+
+      const employee = s.player.employees.find((e) => e.id === employeeId)
+      if (!employee || !employee.deskId) return s
+
+      const employeeDeskId = employee.deskId
+
+      // 이뮤터블 업데이트
+      const updatedDesks = layout.desks.map((d) =>
+        d.id === employeeDeskId ? { ...d, employeeId: null } : d
+      )
+
+      const updatedEmployees = s.player.employees.map((e) =>
+        e.id === employeeId ? { ...e, deskId: null } : e
+      )
+
+      return {
+        player: {
+          ...s.player,
+          employees: updatedEmployees,
+          officeLayout: { ...layout, desks: updatedDesks },
+        },
+      }
+    })
+
+    soundManager.playClick()
+  },
+
+  moveDeskPosition: (deskId: string, x: number, y: number) => {
+    set((s) => {
+      const layout = s.player.officeLayout
+      if (!layout) return s
+
+      const updatedDesks = layout.desks.map((d) =>
+        d.id === deskId ? { ...d, position: { x, y } } : d
+      )
+
+      return {
+        player: {
+          ...s.player,
+          officeLayout: { ...layout, desks: updatedDesks },
+        },
+      }
+    })
+  },
+
+  moveDecorationPosition: (decorationId: string, x: number, y: number) => {
+    set((s) => {
+      const layout = s.player.officeLayout
+      if (!layout) return s
+
+      const updatedDecorations = layout.decorations.map((d) =>
+        d.id === decorationId ? { ...d, position: { x, y } } : d
+      )
+
+      return {
+        player: {
+          ...s.player,
+          officeLayout: { ...layout, decorations: updatedDecorations },
+        },
+      }
+    })
+  },
 }))
 
 /* ── Helper ── */
@@ -3406,6 +4066,108 @@ function isSpaceAvailable(
   }
 
   return true
+}
+
+/* ── AI Architect Actions (Week 4 Integration) ── */
+
+import { generateOptimalLayout } from '../systems/aiArchitect'
+
+// AI 배치 제안 생성
+function generateAIProposalAction(maxMoves: number = 999, maxPurchases: number = 999) {
+  const s = useGameStore.getState()
+  if (!s.player.officeGrid) return
+
+  try {
+    const proposal = generateOptimalLayout(
+      s.player.employees,
+      s.player.officeGrid,
+      s.player.cash,
+      0.1, // 예산 10%
+      maxMoves, // 최대 이동 제안 수
+      maxPurchases, // 최대 가구 구매 제안 수
+    )
+
+    useGameStore.setState({ aiProposal: proposal })
+  } catch (error) {
+    console.error('AI 제안 생성 실패:', error)
+    useGameStore.setState({ aiProposal: null })
+  }
+}
+
+// AI 제안 적용
+function applyAIProposalAction() {
+  const s = useGameStore.getState()
+  const proposal = s.aiProposal
+
+  if (!proposal || !s.player.officeGrid) {
+    console.warn('적용할 AI 제안이 없습니다')
+    return
+  }
+
+  const gridWidth = s.player.officeGrid.size.width
+
+  // 인덱스를 (x, y) 좌표로 변환
+  const indexToCoord = (index: number) => {
+    const x = index % gridWidth
+    const y = Math.floor(index / gridWidth)
+    return { x, y }
+  }
+
+  // 1. 직원 이동 및 배치
+  proposal.moves.forEach((move) => {
+    if (move.from === -1) {
+      // ✨ 미배치 직원: 신규 배치
+      const coord = indexToCoord(move.to)
+      s.assignEmployeeSeat(move.employeeId, coord.x, coord.y)
+    } else {
+      // 기존 직원 이동
+      // 기존 자리 해제
+      s.unassignEmployeeSeat(move.employeeId)
+      // 새 자리 배정
+      const coord = indexToCoord(move.to)
+      s.assignEmployeeSeat(move.employeeId, coord.x, coord.y)
+    }
+  })
+
+  // 2. 가구 구매 및 배치
+  proposal.purchases.forEach((purchase) => {
+    const totalCost = purchase.cost
+
+    // 자금 확인
+    if (s.player.cash >= totalCost) {
+      s.placeFurniture(purchase.type, purchase.x, purchase.y)
+      // placeFurniture에서 이미 cash 차감함
+    } else {
+      console.warn(`가구 구매 실패: 자금 부족 (${purchase.type})`)
+    }
+  })
+
+  // 3. 사운드 재생
+  import('../systems/soundManager').then(({ soundManager }) => {
+    soundManager.playAIApprove()
+  })
+
+  // 4. 제안 초기화
+  useGameStore.setState({ aiProposal: null })
+}
+
+// AI 제안 거절
+function rejectAIProposalAction() {
+  useGameStore.setState({ aiProposal: null })
+}
+
+/* ── Office Dot Layout System ── */
+
+/**
+ * 빈 도트 사무실 레이아웃 생성
+ */
+function createInitialOfficeLayout(): OfficeLayout {
+  return {
+    desks: [],
+    decorations: [],
+    maxDesks: 7, // CEO 1 + Analyst 2 + Manager 2 + Trader 2
+    canvasSize: { width: 600, height: 400 },
+  }
 }
 
 /* ── Console Tampering Detection ── */
