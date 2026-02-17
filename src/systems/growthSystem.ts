@@ -45,7 +45,7 @@ export const SKILL_UNLOCKS: Record<number, { name: string; description: string }
 
 /* ── XP Sources ── */
 export const XP_AMOUNTS = {
-  MONTHLY_WORK: 15, // 매월 근무
+  MONTHLY_WORK: 15, // 월간 총 XP (processHourly에서 /300 시간당 지급)
   TRADE_SUCCESS: 10, // 거래 성공 시
   PRAISE: 5, // 칭찬 받기
   PERFECT_STAMINA: 5, // 스태미너 50% 이상 유지
