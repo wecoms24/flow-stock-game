@@ -9,6 +9,7 @@ export const TIME_CONFIG = {
   LUNCH_HOUR: 12,
   DAYS_PER_MONTH: 30,
   MONTHS_PER_YEAR: 12,
+  HOURS_PER_MONTH: 300, // 10 hours/day × 30 days/month
 } as const
 
 /** 영업시간 인덱스 (0-9) — 기존 tick과 동일한 역할 */

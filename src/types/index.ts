@@ -97,6 +97,8 @@ export interface PlayerState {
   officeLayout?: import('./office').OfficeLayout // ✨ 도트 형식 사무실 (새 시스템)
   lastDayChange: number // Yesterday's asset value change percentage
   previousDayAssets: number // Asset value at previous day start for change calculation
+  lastDailyTradeResetDay: number // ✨ 하루 거래 제한: 마지막 리셋 날짜
+  dailyTradeCount: number // ✨ 하루 거래 제한: 오늘 실행된 거래 수
 }
 
 export interface Employee {
@@ -136,6 +138,30 @@ export interface Employee {
   // ✨ RPG Skill Tree System
   progression?: import('./skills').EmployeeProgression // 스킬 포인트 시스템
   unlockedSkills?: string[] // 해금한 스킬 노드 ID
+
+  // ✨ Corporate Skill Training
+  learnedCorporateSkills?: string[] // 교육 수료한 Corporate Skill ID
+  activeTrainingId?: string | null // 현재 수강 중인 교육 프로그램 ID
+
+  // ✨ Trading Limits (거래 한도 설정)
+  tradingLimits?: TradingLimits
+
+  // ✨ Stop Loss / Take Profit (자동 손익실현)
+  stopLossTakeProfit?: StopLossTakeProfit
+}
+
+/* ── Trading Limits Types ── */
+export interface TradingLimits {
+  maxBuyAmount: number | null // 최대 매수 금액 (null = 무제한)
+  maxSellAmount: number | null // 최대 매도 금액 (null = 무제한)
+  enabled: boolean // 한도 사용 여부
+}
+
+/* ── Stop Loss / Take Profit Types ── */
+export interface StopLossTakeProfit {
+  stopLossPercent: number | null // 손절 기준 (예: -5 = -5% 손실 시 매도)
+  takeProfitPercent: number | null // 익절 기준 (예: 10 = +10% 수익 시 매도)
+  enabled: boolean // 자동 손익실현 사용 여부
 }
 
 /* ── Employee Growth System Types ── */
@@ -390,6 +416,12 @@ export type WindowType =
   | 'institutional'
   | 'proposals'
   | 'acquisition'
+  | 'dashboard' // ✨ US2: 통합 대시보드
+  | 'achievement_log' // ✨ US2: 달성 기록
+  | 'monthly_cards' // ✨ US3: 월간 카드 선택
+  | 'event_chain_tracker' // ✨ US6: 이벤트 체인 트래커
+  | 'skill_library' // ✨ 스킬 도감/라이브러리
+  | 'training_center' // ✨ 교육 센터
 
 export type WindowLayoutPreset =
   | 'trading'
@@ -461,6 +493,24 @@ export interface LeaderboardEntry {
   timestamp: number
 }
 
+/* ── Milestone System Types ── */
+export interface Milestone {
+  id: string
+  title: string
+  description: string
+  icon: string
+  category: 'financial' | 'time' | 'achievement' | 'employee'
+  targetValue: number
+  isUnlocked: boolean
+  unlockedAt?: number // 달성 틱
+}
+
+export interface MilestoneProgress {
+  milestones: Record<string, Milestone>
+  totalUnlocked: number
+  lastCheckedTick: number
+}
+
 /* ── Save/Load types for IndexedDB ── */
 export interface SaveData {
   version: number
@@ -496,6 +546,25 @@ export interface SaveData {
   cashFlowLog?: import('./cashFlow').CashFlowEntry[]
   realizedTrades?: import('./cashFlow').RealizedTrade[]
   monthlyCashFlowSummaries?: import('./cashFlow').MonthlySummary[]
+
+  // ✨ UX Enhancement System (v7)
+  animationQueue?: import('./animation').AnimationQueueState
+  monthlyCards?: import('./newsCard').MonthlyCardDrawState
+  eventChains?: import('./eventChain').ActiveEventChainState
+  employeeBios?: Record<string, import('./employeeBio').EmployeeBio>
+  employeeSkillPaths?: Record<string, import('./skillPath').EmployeeSkillPathState>
+  economicPressure?: import('./economicPressure').EconomicPressure
+  milestones?: MilestoneProgress
+  corporateSkills?: import('./corporateSkill').CorporateSkillState
+  training?: import('./training').TrainingState
+
+  // Hourly processing accumulators (v8)
+  hourlyAccumulators?: HourlyAccumulators
+}
+
+export interface HourlyAccumulators {
+  salaryPaid: number
+  taxPaid: number
 }
 
 /* ── Investment Battle Mode Types ── */
