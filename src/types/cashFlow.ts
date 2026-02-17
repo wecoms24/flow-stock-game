@@ -13,6 +13,7 @@ export type CashFlowCategory =
   | 'SKILL_RESET'
   | 'MNA_ACQUISITION'
   | 'MNA_CASHOUT'
+  | 'TAX'
 
 export interface CashFlowEntry {
   tick: number
@@ -53,6 +54,7 @@ export interface MonthlySummary {
   skillResets: number
   mnaCosts: number
   mnaCashOuts: number
+  taxes: number  // ✨ 부유세 추가
   openingCash: number
   closingCash: number
 }
