@@ -8,9 +8,7 @@
  */
 
 import initSqlJs, { type Database } from 'sql.js'
-// vite-plugin-wasm이 빌드/dev 시점에 .wasm을 사전 컴파일 → WebAssembly.Module 반환
-// ?url suffix 없이 import해야 vite-plugin-wasm이 Module 객체로 변환함
-import sqlWasmModule from '../assets/sql-wasm.wasm'
+// sql-wasm.wasm은 public/에 위치 — vite-plugin-wasm 변환 없이 /sql-wasm.wasm 으로 정적 서빙
 
 export interface DailyPrice {
   open: number
@@ -54,21 +52,11 @@ class HistoricalDataService {
     onProgress?.(0)
 
     // 1) sql.js WASM 초기화
-    // instantiateWasm: URL fetch를 완전히 우회하고 vite-plugin-wasm이 사전 컴파일한
-    // WebAssembly.Module을 직접 인스턴스화. MIME type 오류 원천 차단.
-    // @types/sql.js에 instantiateWasm 필드가 없어 unknown 경유 캐스팅 사용.
-    const sqlConfig = {
-      instantiateWasm(
-        imports: WebAssembly.Imports,
-        successCallback: (instance: WebAssembly.Instance) => void,
-      ) {
-        void WebAssembly.instantiate(sqlWasmModule, imports).then((instance) =>
-          successCallback(instance),
-        )
-        return {}
-      },
-    }
-    const SQL = await initSqlJs(sqlConfig as unknown as Parameters<typeof initSqlJs>[0])
+    // public/sql-wasm.wasm → Vite가 변환 없이 /sql-wasm.wasm 으로 정적 서빙
+    // (vite-plugin-wasm은 src/ import만 처리, public/ 파일은 그대로 통과)
+    const SQL = await initSqlJs({
+      locateFile: (file: string) => (file === 'sql-wasm.wasm' ? '/sql-wasm.wasm' : file),
+    })
     onProgress?.(20)
 
     // 2) DB 파일 fetch
