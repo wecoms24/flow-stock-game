@@ -4,18 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Retro Stock OS is a stock market trading game with a Windows 95-inspired UI, built as a single-page React application. The game simulates 30 years of stock trading (1995-2025) with real-time price movements, market events, employee management, AI competitor battles, and multiple ending scenarios.
+Retro Stock OS is a stock market trading game with a Windows 95-inspired UI, built as a single-page React application. The game simulates 30 years of stock trading (1995-2025) with real-time price movements, market events, employee management, AI competitor battles, institutional investors, and multiple ending scenarios.
 
 ## Tech Stack
 
-- **Frontend**: React 19 + TypeScript 5.9 + Vite 7
+- **Frontend**: React 19 + TypeScript 5.9 (strict) + Vite 7
 - **State Management**: Zustand 5 (single centralized store)
 - **Styling**: TailwindCSS v4
 - **Charts**: Chart.js + react-chartjs-2
-- **Animation**: Motion (Framer Motion successor)
-- **Audio**: Web Audio API oscillators (8-bit sounds, zero network overhead)
+- **Animation**: Motion (Framer Motion successor) + canvas-confetti
+- **Audio**: Howler.js + Web Audio API oscillators (8-bit sounds)
 - **Price Engine**: Web Worker with Geometric Brownian Motion (GBM) simulation
-- **Persistence**: Dexie (IndexedDB wrapper)
+- **Persistence**: SQLite WASM (`@subframe7536/sqlite-wasm`) primary, Dexie (IndexedDB) fallback
+- **WASM Support**: `vite-plugin-wasm` + `vite-plugin-top-level-await`, COOP/COEP headers required
 
 ## Development Commands
 
@@ -24,18 +25,22 @@ npm run dev          # Start dev server with HMR
 npm run build        # Type-check (tsc -b) + production build
 npm run lint         # ESLint
 npm run preview      # Preview production build
-npm test             # Fast tests only (~7s, excludes simulation/performance)
-npm run test:unit    # Unit tests only
-npm run test:e2e     # E2E gameplay tests
-npm run test:sim     # Lightweight simulation tests (~2min)
+npm test             # Fast tests only (excludes simulation/performance)
+npm run test:unit    # Unit tests only (tests/unit/)
+npm run test:e2e     # E2E gameplay tests (tests/e2e/)
+npm run test:sim     # Lightweight simulation tests (~2min, excludes heavy)
 npm run test:sim:heavy # Full simulation incl. 5/10/20yr stress tests (~30min)
-npm run test:perf    # Performance benchmarks
+npm run test:perf    # Performance benchmarks (tests/performance/)
 npm run test:all     # Everything (30min+, use sparingly)
+npm run test:watch   # Watch mode
+npm run test:ui      # Vitest UI
 ```
+
+**Test Config**: `vitest.config.ts` (default: jsdom, 30s timeout, maxForks 4, excludes simulation/performance). `vitest.config.all.ts` (20min timeout, maxForks 2, includes all). Path alias: `@` → `./src`.
 
 ## Code Style
 
-- **Prettier**: No semicolons, single quotes, trailing commas, 100 char line width
+- **Prettier**: No semicolons, single quotes, trailing commas, tab width 2, 100 char line width
 - **File Naming**: PascalCase for components (`.tsx`), camelCase for utilities (`.ts`)
 - **Imports**: Group by external → internal → types, alphabetize within groups
 
@@ -43,54 +48,76 @@ npm run test:all     # Everything (30min+, use sparingly)
 
 ### State Management (Zustand)
 
-Single store at `src/stores/gameStore.ts` (~5500 LOC). All state mutations go through store actions. Business logic is delegated to `src/engines/` pure functions — store actions are thin wrappers (5-20 LOC each).
+Single store at `src/stores/gameStore.ts` (~5600 LOC). All state mutations go through store actions. Business logic is delegated to `src/engines/` pure functions — store actions are thin wrappers (5-20 LOC each).
 
 **Core State Shape**:
-- `time: GameTime` — Year/month/day/tick + speed/pause
+- `time: GameTime` — Year/month/day/hour + speed/pause
 - `player: PlayerState` — Cash, portfolio, employees[], officeGrid, officeLevel
-- `companies: Company[]` — 20 stocks across 5 sectors with prices/drift/volatility
+- `companies: Company[]` — 20 stocks across 10 sectors with prices/drift/volatility/regimeVolatilities
 - `competitors: Competitor[]` — AI rivals with independent portfolios and trading styles
-- `events: MarketEvent[]` — Active events modifying drift/volatility
+- `events: MarketEvent[]` — Active events modifying drift/volatility (with aftereffect decay)
 - `windows: WindowState[]` — Open window positions/z-index
 - `proposals: TradeProposal[]` — Trade AI pipeline proposals (PENDING→APPROVED→EXECUTED)
 - `taunts: TauntMessage[]` — AI competitor chat feed
-- `corporateSkills: Record<string, CorporateSkill>` — Company-level knowledge assets (해금/교육)
-- `trainingState: TrainingState` — Active training programs + history
-- `animationQueue: AnimationSequence[]` — Pending trade animations
-- `monthlyCards: NewsCard[]` — Current month's active cards
-- `eventChains: EventChainState[]` — Multi-week event chain progress
+- `corporateSkills: CorporateSkillState` — Company-level knowledge assets
+- `training: TrainingState` — Active training programs + history
+- `animationQueue: AnimationQueueState` — Pending trade animations
+- `monthlyCards: MonthlyCardDrawState` — Monthly card selection + active effects
+- `eventChains: ActiveEventChainState` — Multi-week event chain progress
 - `economicPressure: EconomicPressure` — Wealth tier + tax + position limits
+- `milestones: MilestoneProgress` — Achievement tracking
+- `marketRegime: RegimeState` — HMM regime detection (CALM/VOLATILE/CRISIS)
+- `circuitBreaker: CircuitBreakerState` — KOSPI circuit breaker (Level 1/2/3)
+- `institutions: Institution[]` — 100 institutional investors with fundamental-driven trading
+- `orderFlowByCompany: Record<string, OrderFlow>` — Market impact order flow (tanh model)
+- `playerProfile: PlayerProfile` — Risk tolerance, play pace, attention (personalization)
+- `limitOrders: LimitOrder[]` — Player limit orders
+- `cashFlowLog: CashFlowEntry[]` — Financial ledger
+- `realizedTrades: RealizedTrade[]` — Closed position P&L records
+- `monthlyCashFlowSummaries: MonthlySummary[]` — Monthly financial summaries
+- `hourlyAccumulators: HourlyAccumulators` — Salary/tax accumulation between monthly records
+- `employeeBios: Record<string, EmployeeBio>` — Employee personality/life events
+- `employeeBehaviors: Record<string, string>` — Employee behavior FSM states
+- `aiProposal: LayoutProposal | null` — AI Architect office layout proposal
+
+**10 Sectors**: `tech`, `finance`, `energy`, `healthcare`, `consumer`, `industrial`, `telecom`, `materials`, `utilities`, `realestate` — with inter-sector correlation matrix (`src/data/sectorCorrelation.ts`)
 
 **Key Patterns**:
 - Use selectors for performance: `useGameStore((s) => s.specificValue)`
 - Never subscribe to the whole store
-- Hourly processing (`processHourly`) handles salaries, taxes, stamina drain/recovery, mood drift, XP grants (distributed per-tick)
-- Monthly processing (`processMonthly`) handles cashflow recording, monthly cards, bio updates, event chains
-- Employee tick processing (`processEmployeeTick`) runs every 10 ticks
+- Hourly processing (`processHourly`) handles salaries, taxes, stamina drain/recovery, mood drift, XP grants
+- Monthly processing (`processMonthly`) handles cashflow recording, monthly cards, bio updates
+- Employee processing (`processEmployeeTick`) runs on configurable hour intervals based on employee count
 
 ### Game Engine Pipeline
 
-The tick engine (`src/engines/tickEngine.ts`) runs at `BASE_TICK_MS (200ms) / speed`:
+The tick engine (`src/engines/tickEngine.ts`) runs at `BASE_HOUR_MS (1000ms) / speed` — each interval = 1 game hour. Business hours are 9-18 (10 hours/day), 30 days/month.
 
 ```
-Each tick:
-1. advanceHour() — time progression (10 ticks = 1 day, 300 ticks = 1 month)
-2. processHourly() — salary/tax/stamina/mood/XP (distributed per-hour)
-3. Web Worker — GBM price calculation for all 20 companies
-4. updatePrices() — apply new prices to store
-5. Event system — decay active events, spawn new ones
-6. processEmployeeTick() (every 10 ticks) — stress/satisfaction/skills
-7. aggregateCorporateEffects() — compute global/conditional trade modifiers
-8. Trade AI Pipeline (with corporateEffects):
-   a. processAnalystTick() (tick%10===0) — scan sectors, generate proposals
-   b. processManagerTick() (tick%5===2) — approve/reject proposals
-   c. expireOldProposals() (tick%10===5) — clean stale proposals
-   d. processTraderTick() (every tick) — execute approved proposals
-9. advanceTraining() — progress active training programs, trigger checkpoints
-10. processAITrading() — competitor engine trades
-11. processEventChains() (weekly) — advance multi-week event chains
-12. processMonthly() (day 1, hour 9) — cashflow recording, monthly events
-13. Auto-save (every 300 ticks)
+Each hour:
+1. advanceHour() — time progression
+2. processHourly() — salary/tax/stamina/mood/XP
+3. detectAndUpdateRegime() — HMM market regime detection (CALM/VOLATILE/CRISIS)
+4. updateCircuitBreaker() — KOSPI-level circuit breaker check
+5. updateVIStates() — Volatility Interruption per-company (KRX ±3% rule)
+6. updateInstitutionalFlowForSector() — rotate sector for institutional flow (hour % 10)
+7. updateSessionOpenPrices() — at 9:00 each day
+8. processMonthly() — on day 1, hour 9
+9. M&A processing — quarterly (3/6/9/12月 30日 18時)
+10. Web Worker — GBM price calculation with sentiment/orderFlow/marketImpact/priceLimit data
+11. Sentiment decay — natural sentiment decay
+12. Event system — decay events, generate aftereffects (여진), spawn new events
+13. News engine — historical events (1995-2025) + chain events
+14. processEmployeeTick() — on hourIndex intervals (dynamic by empCount)
+15. Trade AI Pipeline:
+    a. processAnalystTick() (hourIndex%10===0) — stock analysis, generate proposals
+    b. processManagerTick() (hourIndex%5===2) — approve/reject proposals
+    c. expireOldProposals() (hourIndex%10===5) — clean stale proposals
+    d. processTraderTick() (every hour) — execute approved proposals
+16. processCompetitorTick() — AI trading (every 5 hours)
+17. Monthly Card system — effect expiry + auto-selection timeout
+18. Event Chains — weekly advancement (day 1/8/15/22/29 at 10:00)
+19. Auto-save (every 300 hours)
 ```
 
 Worker initialization happens in `App.tsx` useEffect. Speed changes trigger interval recalculation.
@@ -99,23 +126,54 @@ Worker initialization happens in `App.tsx` useEffect. Speed changes trigger inte
 
 | Engine | Purpose | Call Frequency |
 |--------|---------|----------------|
-| `tickEngine.ts` | Game loop coordinator | Every tick (200ms/speed) |
-| `competitorEngine.ts` | AI trading (4 strategies: Shark/Turtle/Surfer/Bear) | Every tick via tick distribution |
-| `officeSystem.ts` | Employee buff calculation + stress/satisfaction/skill updates | Every 10 ticks |
-| `hrAutomation.ts` | Auto stress care + quarterly training + weekly reports | Via processEmployeeTick |
-| `tradePipeline/analystLogic.ts` | Analyst stock analysis + proposal generation | Every 10 ticks (tick%10===0) |
-| `tradePipeline/managerLogic.ts` | Manager risk assessment + approve/reject | Every 5 ticks (tick%5===2) |
-| `tradePipeline/traderLogic.ts` | Trader order execution with slippage | Every tick (when APPROVED exists) |
-| `tradePipeline/adjacencyBonus.ts` | Office adjacency speed bonus calculation | Called by pipeline ticks |
-| `corporateSkillEngine.ts` | Corporate skill unlock/aggregate effects (pure functions) | On unlock + every tick aggregation |
-| `trainingEngine.ts` | Training program lifecycle (create/advance/checkpoint/graduate) | Every tick for active programs |
+| `tickEngine.ts` | Game loop coordinator | Every hour (1000ms/speed) |
+| `competitorEngine.ts` | AI trading (4 strategies: Shark/Turtle/Surfer/Bear) | Every 5 hours |
+| `officeSystem.ts` | Employee buff calculation + stress/satisfaction/skill updates | Variable by empCount |
+| `hrAutomation.ts` | Auto stress care + training + weekly reports | Via processEmployeeTick |
+| `tradePipeline/analystLogic.ts` | Analyst stock analysis + proposal generation | hourIndex%10===0 |
+| `tradePipeline/managerLogic.ts` | Manager risk assessment + approve/reject | hourIndex%5===2 |
+| `tradePipeline/traderLogic.ts` | Trader order execution with slippage | Every hour (when APPROVED exists) |
+| `tradePipeline/adjacencyBonus.ts` | Office adjacency speed bonus calculation | Called by pipeline |
+| `tradePipeline/profile.ts` | Trade pipeline profiling | Debug |
+| `corporateSkillEngine.ts` | Corporate skill unlock/aggregate effects (pure functions) | On unlock + every pipeline tick |
+| `trainingEngine.ts` | Training program lifecycle (create/advance/checkpoint/graduate) | Every hour for active programs |
 | `signalGenerationEngine.ts` | Badge-enhanced trade signal generation with noise filtering | Called by analystLogic |
+| `riskManagementEngine.ts` | Badge-based position sizing for Manager employees | Called by managerLogic |
+| `tradeExecutionEngine.ts` | Badge-based order execution for Traders (slippage/delay) | Called by traderLogic |
 | `animationEngine.ts` | Trade animation sequence execution (card flip/counter/particle) | On trade completion |
 | `cardDrawEngine.ts` | Monthly card weighted random selection + effect application | Monthly processing |
 | `employeeBioEngine.ts` | Employee personality/goals/life events/emotion management | Monthly + on events |
-| `skillPathEngine.ts` | Skill path branching (Trading/Analysis) + bonus calculation | On level-up + trade pipeline |
-| `eventChainEngine.ts` | Multi-week event FSM (state transitions/branching/resolution) | Weekly tick processing |
+| `employeeBehavior.ts` | Employee behavior FSM (WORKING/IDLE/BREAK/SOCIALIZING/PANIC) | Per employee tick |
+| `employeeInteraction.ts` | Adjacent employee auto-interaction with cooldowns | Per employee tick |
+| `skillPathEngine.ts` | Skill path branching (Trading/Analysis) + bonus calculation | On level-up + pipeline |
+| `eventChainEngine.ts` | Multi-week event FSM (state transitions/branching/resolution) | Weekly |
 | `economicPressureEngine.ts` | Wealth tier classification + tax + position limit enforcement | Monthly + on buy |
+| `mnaEngine.ts` | M&A evaluation + new company generation for IPOs | Quarterly |
+| `regimeEngine.ts` | Hidden Markov Model market regime detection, KOSPI index calc | Every hour |
+| `circuitBreakerEngine.ts` | KOSPI circuit breaker (Level 1/2/3 at -8%/-15%/-20%) | Every hour |
+| `viEngine.ts` | Volatility Interruption (±3% in 3 hours → 6-hour halt, KRX-style) | Every hour |
+| `institutionEngine.ts` | 100 institutional investors with fundamental/panic trading | Sector rotation |
+| `newsEngine.ts` | Historical event processing (1995-2025), chain events, M&A news | Every hour |
+| `sentimentEngine.ts` | Global + per-sector sentiment index with decay | Every hour |
+| `cashFlowTracker.ts` | Cash flow entries, monthly aggregation, anomaly detection | On transactions |
+
+### Market Systems
+
+**Market Regime** (`regimeEngine.ts`): HMM-based detection of CALM/VOLATILE/CRISIS states. Companies have `regimeVolatilities` per regime. KOSPI index calculated from all active companies.
+
+**Circuit Breaker** (`circuitBreakerEngine.ts`): KOSPI drops of -8% (L1), -15% (L2), -20% (L3) trigger market-wide halts. Session open tracking.
+
+**Volatility Interruption** (`viEngine.ts`): Per-company KRX-style VI — ±3% in 3 hours triggers 6-hour halt.
+
+**Price Limits** (`src/config/priceLimit.ts`): KRX rules — ±30% daily price change limit enforced in worker.
+
+**Market Impact** (`src/config/marketImpactConfig.ts`): Order flow → price impact via tanh model. `orderFlowByCompany` tracks net notional + trade count.
+
+**Sector Correlation** (`src/data/sectorCorrelation.ts`): 10×10 correlation matrix with `SPILLOVER_FACTOR=0.3` for cross-sector event propagation.
+
+**Institutional Investors** (`institutionEngine.ts`, `src/config/institutionConfig.ts`): 100 institutions with fundamental-driven + panic-sell trading. Sector rotation processing.
+
+**Sentiment** (`sentimentEngine.ts`): Global market sentiment + per-sector sentiment with natural decay. Events and M&A feed sentiment. Worker receives sentiment as drift/volatility modifiers.
 
 ### Competitor AI System
 
@@ -127,7 +185,7 @@ Worker initialization happens in `App.tsx` useEffect. Speed changes trigger inte
 
 All AIs can **panic sell** (뇌동매매) when portfolio drops >8% — configured in `PANIC_SELL_CONFIG`.
 
-Price history for technical analysis is maintained per-company (max 50 data points). AI processing is distributed across ticks via `PERFORMANCE_CONFIG.TICK_DISTRIBUTION` to avoid frame drops.
+Price history for technical analysis is maintained per-company (max 50 data points). AI processing distributed across hours to avoid frame drops.
 
 ### Employee RPG System
 
@@ -143,9 +201,13 @@ Furniture buffs × Trait effects × Employee interactions → Final multipliers
 
 **Growth System** (`src/systems/growthSystem.ts`): XP curve (`BASE_XP * level^1.5`), titles (intern→junior→senior→master), badge colors (gray→blue→purple→gold), skill unlocks at levels 10/20/30.
 
+**Skill Badges** (`src/data/skillBadges.ts`): 30 badges (10 trading + 10 analysis + 10 research) that modify pipeline behavior.
+
+**Employee Behavior FSM** (`employeeBehavior.ts`): States: WORKING → IDLE → BREAK → SOCIALIZING → PANIC. Adjacent employees interact automatically with cooldowns (`employeeInteraction.ts`).
+
 **Chatter** (`src/data/chatter.ts`): Priority-based speech bubbles with per-employee and per-template cooldowns. Call `cleanupChatterCooldown(id)` when employees leave.
 
-**HR Manager**: Auto-hirable role that runs `processHRAutomation` — counsels stressed employees (50K cost, -15 stress), trains skills quarterly (100K), generates weekly reports.
+**HR Manager**: Auto-hirable role that runs `processHRAutomation` — counsels stressed employees (50K cost, -15 stress), trains skills, generates weekly reports.
 
 ### Trade AI Pipeline (`src/engines/tradePipeline/`)
 
@@ -167,15 +229,13 @@ PENDING → APPROVED → EXECUTED (success)
 
 **Adjacency Bonus** (`adjacencyBonus.ts`): When Analyst sits next to Manager, or Manager next to Trader, pipeline gets speed bonuses:
 - Analyst: confidence threshold lowered (more proposals generated)
-- Manager: processes 2 proposals per tick instead of 1
+- Manager: processes 2 proposals per hour instead of 1
 - Trader: reduced slippage on execution
 
 **Fallback Behavior**:
 - No Manager → auto-approve with 30% mistake rate
 - No Trader → execute with 2x fee penalty
 - Stress 100 → skip pipeline processing for that employee
-
-**Visual Feedback** (`src/data/chatter.ts`): Pipeline events trigger speech bubbles via `getPipelineMessage()` and office events for toast notifications (`trade_executed`, `trade_failed`).
 
 **Key Store Actions**: `addProposal`, `updateProposalStatus`, `expireOldProposals`, `processAnalystTick`, `processManagerTick`, `processTraderTick`
 
@@ -193,8 +253,6 @@ Two-layer skill architecture: **Company-level knowledge assets** (CorporateSkill
 **Aggregation** (`aggregateCorporateEffects`): Iterates all unlocked skills, sums global effects, picks strongest conditional effects. Called before every trade pipeline tick.
 
 **Integration Points**: `AggregatedCorporateEffects` is passed to `analyzeStock()`, `generateProposal()`, `checkPortfolioExits()`, `executeEmployeeTrade()` in the trade pipeline.
-
-**Key Store Actions**: `unlockCorporateSkill`, `aggregateCorporateEffects` (via engine)
 
 ### Training System (`src/engines/trainingEngine.ts`, `src/data/trainingEvents.ts`)
 
@@ -215,8 +273,6 @@ Education program management connecting corporate skills to individual employee 
 - Boosts category-relevant stat (policy→research, tool→analysis, infrastructure→trading)
 - Unlocks `teachablePassiveId` in employee's RPG `unlockedSkills` (if defined in SKILL_TREE)
 
-**Key Store Actions**: `startTraining`, `advanceTraining`, `resolveCheckpoint`, `cancelTraining`
-
 ### RPG Skill Tree (`src/systems/skillSystem.ts`, `src/data/skillTree.ts`)
 
 30-node passive skill tree (10 Analysis + 10 Trading + 10 Research) with modifier-based effects.
@@ -226,12 +282,6 @@ Education program management connecting corporate skills to individual employee 
 - `operation: 'multiply'`: modifier 0.5 = 50% reduction (slippage, commission, delay)
 
 **Integration**: `getPassiveModifiers(employee, effectType)` called in `analystLogic.ts` (signalAccuracy), `traderLogic.ts` (slippage, commission), `managerLogic.ts` (riskThreshold)
-
-### Signal Generation Engine (`src/engines/signalGenerationEngine.ts`)
-
-Badge-enhanced trade signal generation with noise filtering.
-
-**`generateTradeSignals(employee, companies, marketEvents)`**: Produces `TradeSignal[]` with confidence and noise flag. Called by `analyzeStock()` to add badge bonus (max +20 confidence).
 
 ### M&A System (`src/engines/mnaEngine.ts`, `src/config/mnaConfig.ts`)
 
@@ -247,57 +297,99 @@ Corporate mergers and acquisitions system with quarterly evaluation, automatic I
 
 **Deal Execution** (`gameStore.executeAcquisition`):
 - Target status → `'acquired'`, `parentCompanyId` set to acquirer
-- Acquirer headcount increases by retained employees
 - Player/AI portfolios: target shares → forced cash-out at deal price
-- M&A news generated (`createMnaNews`)
-- Market sentiment impact (`onMnaOccurred`): large layoffs increase fear
+- M&A news generated via `newsEngine.ts`
+- Market sentiment impact via `sentimentEngine.ts`
 
-**IPO Scheduling** (`gameStore.scheduleIPO`):
-- Delay: 180-360 ticks (6-12 months) after acquisition
-- New company generation: 12 prefixes × 11 suffixes (e.g., "Neo Tech", "Quantum Industries")
-- Sector preserved, random price/volatility/drift
-- IPO executes when `currentTick >= spawnTick`, replaces slot
+**IPO Scheduling**: 180-360 hours delay. New company generated with sector preserved. IPO executes when elapsed, replaces slot.
 
-**Company Status**:
-- `'active'`: Normal trading
-- `'acquired'`: Delisted, trading halted, visible in UI as "인수됨" badge
-- Worker filters: `companies.filter(c => c.status !== 'acquired')` for price updates
+**Company Status**: `'active'` (normal) or `'acquired'` (delisted). Worker filters out acquired companies.
 
-**Key Store Actions**: `executeAcquisition`, `scheduleIPO`, `processScheduledIPOs`, `applyAcquisitionExchange`
+### Config Layer (`src/config/`)
+
+| Config | Purpose |
+|--------|---------|
+| `aiConfig.ts` | AI competitor strategies, PANIC_SELL_CONFIG, PERFORMANCE_CONFIG |
+| `tradeAIConfig.ts` | Trade pipeline thresholds, slippage, adjacency bonuses |
+| `mnaConfig.ts` | M&A deal parameters, cooldowns, premiums |
+| `timeConfig.ts` | Business hours (9-18), hours/day (10), `getAbsoluteTimestamp`, `getBusinessHourIndex` |
+| `priceLimit.ts` | KRX rules: ±30% daily limit, VI config, circuit breaker config |
+| `marketImpactConfig.ts` | Order flow → price impact (tanh model coefficients) |
+| `institutionConfig.ts` | 100 institutions, capital allocation, fundamental thresholds |
+| `balanceConfig.ts` | Centralized EMPLOYEE_BALANCE, OFFICE_BALANCE constants |
+| `skillBalance.ts` | SP per level, reset costs |
+| `economicPressureConfig.ts` | Wealth tier configs, tax discounts |
+| `aiArchitectConfig.ts` | AI office layout proposal frequency and balance |
 
 ### Data Layer (`src/data/`)
 
-- `companies.ts`: 20 companies across 5 sectors (Tech, Finance, Energy, Consumer, Healthcare)
+- `companies.ts`: 20 companies across 10 sectors with financials, eventSensitivity, regimeVolatilities
 - `events.ts`: 50+ market event templates with weighted spawn probabilities
+- `historicalEvents.ts`: Real 1995-2025 economic events (dot-com crash, 2008 crisis, etc.) with chain templates
+- `sectorCorrelation.ts`: 10×10 sector correlation matrix + SPILLOVER_FACTOR
 - `difficulty.ts`: Easy/Normal/Hard configs
 - `employees.ts`: Name pool + role-based skill generation
 - `traits.ts`: 10 personality traits with rarity and effect definitions
 - `furniture.ts`: 10 furniture types with buff effects and costs
-- `chatter.ts`: Employee speech bubble templates, selection logic, and pipeline message templates (`getPipelineMessage`)
-- `taunts.ts`: AI competitor trash-talk by situation (panic sell, rank change, overtake)
+- `chatter.ts`: Speech bubble templates, pipeline message templates (`getPipelineMessage`)
+- `taunts.ts`: AI competitor trash-talk by situation
 - `corporateSkills.ts`: 12 corporate skill definitions (3 tiers × 4 categories)
-- `skillTree.ts`: 30-node RPG passive skill tree (Analysis/Trading/Research branches)
+- `skillTree.ts`: 30-node RPG passive skill tree (Analysis/Trading/Research)
+- `skillBadges.ts`: 30 badges (10 trading + 10 analysis + 10 research) with effect mappings
 - `trainingEvents.ts`: Training checkpoint templates + duration/cost by tier
 - `newsCards.ts`: 50+ monthly card templates (5 sectors, 4 rarities)
 - `eventChains.ts`: 10+ multi-week event chain templates with branching
-- `milestones.ts`: Achievement milestone definitions (financial/time/performance)
+- `milestones.ts`: Achievement milestone definitions
 - `personalGoals.ts`: Employee personal goal templates by age/role
 - `skillPaths.ts`: Trading/Analysis path branching definitions (Lv5/10/20/30)
+- `officeBackgrounds.ts`: Office theme evolution by level (garage/startup/corporate/tower)
 
 ### Systems Layer (`src/systems/`)
 
-- `saveSystem.ts`: Dual-write (SQLite primary + IndexedDB fallback) save/load with auto-save
+- `saveSystem.ts`: SQLite primary + IndexedDB fallback save/load with auto-save
+- `saveSystemLegacy.ts`: Legacy IndexedDB-only implementation (retained for migration)
 - `growthSystem.ts`: XP curves, title/badge mapping, skill unlocks
-- `soundManager.ts`: Web Audio API 8-bit sound effects (oscillator-based, zero assets)
+- `soundManager.ts`: Audio management
 - `skillSystem.ts`: RPG skill tree operations (unlock, modifier calculation, migration, validation)
 - `animationScheduler.ts`: Priority queue + RAF coordination for trade animations (60Hz budget)
-- `featureFlags.ts`: Feature flag system for SQLite rollout and progressive feature enablement
+- `featureFlags.ts`: Feature flag system (`sqlite_enabled` default true)
+- `aiArchitect.ts` / `aiArchitectDot.ts`: AI office layout proposal system
+- `particleSystem.ts`: Particle effect system
+- `ambientRenderer.ts` / `emotionRenderer.ts`: Visual rendering systems
+- `spriteAnimator.ts` / `spritePlaceholder.ts`: Sprite animation and placeholder
+
+### Utilities (`src/utils/`)
+
+- `badgeConverter.ts`: Employee skill values (0-100) → SkillBadge array, `aggregateBadgeEffects`, `hasBadge`
+- `technicalIndicators.ts`: Shared `calculateMA()` and `calculateRSI()` for technical analysis
+- `floatingTextEmitter.ts`: Global event bus for floating text (separated for React Fast Refresh)
+- `performanceMonitor.ts`: FPS and rendering performance monitoring (dev mode only)
+- `skillFormatter.ts`: Korean-language labels for passive modifier targets
+- `tutorialStorage.ts`: localStorage persistence for TutorialState
+
+### Custom Hooks (`src/hooks/`)
+
+- `useAnimationSequence.ts`: Bridges store animationQueue → animationScheduler → sound/particles
+- `useNumberCounter.ts`: RAF-based number counting animation (from/to/duration/easing)
+- `useParticleEffect.ts`: React wrapper for `particleSystem.emitParticles()`
+- `useRankChangeNotification.ts`: Listens to DOM events for rank changes
 
 ### Window System
 
 All windows use `WindowFrame` for consistent drag/resize/close behavior. `windowId` (unique per instance) vs `windowType` (e.g., 'trading', 'chart'). Window state managed in Zustand store. Multiple instances of same type supported.
 
-**Window Types** (22 total): `portfolio`, `chart`, `trading`, `news`, `office`, `office_dot`, `office_history`, `employee_detail`, `ranking`, `settings`, `ending`, `institutional`, `proposals`, `acquisition`, `dashboard`, `achievement_log`, `monthly_cards`, `event_chain_tracker`, `skill_library`, `training_center`
+**Window Types** (20): `portfolio`, `chart`, `trading`, `news`, `office`, `office_dot`, `office_history`, `employee_detail`, `ranking`, `settings`, `ending`, `institutional`, `proposals`, `acquisition`, `dashboard`, `achievement_log`, `monthly_cards`, `event_chain_tracker`, `skill_library`, `training_center`
+
+**Window Layout Presets**: `trading`, `analysis`, `dashboard`, `ai-trading`, `institutional`, `comprehensive`
+
+### Storage System
+
+SQLite WASM (`@subframe7536/sqlite-wasm`) is the default storage backend. IndexedDB retained as fallback.
+
+- `saveSystem.ts` tries SQLite first, falls back to IndexedDB on failure
+- Migration from IndexedDB → SQLite via banner on app start (`App.tsx`)
+- Feature flag toggle available in Settings window
+- Migration status tracked in localStorage to prevent duplicate runs
 
 ## Key Workflows
 
@@ -329,7 +421,7 @@ All windows use `WindowFrame` for consistent drag/resize/close behavior. `window
 
 ## Common Gotchas
 
-1. **Tick timing**: Intervals are approximate; don't rely on exact timing
+1. **Hour timing**: Intervals are approximate (`BASE_HOUR_MS / speed`); don't rely on exact timing
 2. **Worker messages**: Prices update asynchronously; state changes are not immediate
 3. **Portfolio recalculation**: Happens every price update — use `useMemo` in components
 4. **Z-index**: Always use store's `nextZIndex` counter, never hardcode
@@ -338,7 +430,7 @@ All windows use `WindowFrame` for consistent drag/resize/close behavior. `window
 7. **HR cash safety**: HR automation spending uses `Math.max(0, cash - spent)` to prevent negative cash
 8. **setTimeout in useEffect**: Track timeout IDs in a `useRef<Set>` and clear on unmount to prevent memory leaks
 9. **Console tampering**: Production mode freezes `getState()` output to prevent cheating
-10. **AI tick distribution**: Competitor trading is spread across ticks to avoid frame drops — don't process all AIs on same tick
+10. **AI hour distribution**: Competitor trading spread across hours to avoid frame drops — don't process all AIs on same hour
 11. **Trade pipeline cleanup**: When firing/resigning employees, orphaned PENDING/APPROVED proposals must be expired or reassigned
 12. **Pipeline officeGrid guard**: All process*Tick actions must check `s.player.officeGrid` exists before calculating adjacency bonuses
 13. **Corporate effects aggregation**: Call `aggregateCorporateEffects(corporateSkills)` before trade pipeline ticks — results are passed to analyst/manager/trader logic
@@ -346,72 +438,20 @@ All windows use `WindowFrame` for consistent drag/resize/close behavior. `window
 15. **Skill tree modifier scale**: RPG passive `add` modifiers use `CONFIDENCE_SCALE_MULTIPLIER (100)` — modifier 0.1 = +10 points, NOT +0.1
 16. **teachablePassiveId guard**: `applyGraduation` checks `SKILL_TREE[passiveId]` exists before adding to `unlockedSkills` — undefined IDs are silently ignored
 17. **Corporate effects caps**: `slippageReduction` capped at 0.8, `commissionDiscount` at 0.5, `signalAccuracyBonus` at 0.5 — exceeding caps is clipped in `aggregateCorporateEffects`
-18. **Test process cleanup**: After running `vitest` or `playwright test`, always verify no orphan processes remain (`ps aux | grep vitest`). Long-running stress tests (e.g., `cashFlow5YearStress`) can timeout and leave zombie processes — kill them with `pkill -f vitest` before starting new test runs. Never run tests in background without a timeout limit.
-19. **Hourly accumulator pattern**: `processHourly()` deducts cash each tick but does NOT call `recordCashFlow()` — accumulators (`hourlyAccumulators.salaryPaid/taxPaid`) track totals, and `processMonthly()` records single monthly entries then resets accumulators. This prevents cashFlowLog explosion (300 entries/month → 1 entry/month).
-20. **Cooldown units**: `praiseCooldown` / `scoldCooldown` are in **days** (decremented in `advanceHour` on dayChanged), not months. Set to 30 for ~1 month cooldown.
-21. **HR stress threshold**: HR automation triggers at `stress > 80` (daily check), not 60 (was monthly). Training runs every 30 days.
+18. **Test process cleanup**: After running `vitest` or `playwright test`, verify no orphan processes remain (`ps aux | grep vitest`). Kill with `pkill -f vitest` before starting new test runs. Never run tests in background without a timeout limit.
+19. **Hourly accumulator pattern**: `processHourly()` deducts cash each hour but does NOT call `recordCashFlow()` — accumulators (`hourlyAccumulators.salaryPaid/taxPaid`) track totals, and `processMonthly()` records single monthly entries then resets accumulators
+20. **Cooldown units**: `praiseCooldown` / `scoldCooldown` are in **days** (decremented in `advanceHour` on dayChanged), not months. Set to 30 for ~1 month cooldown
+21. **HR stress threshold**: HR automation triggers at `stress > 80` (daily check). Training runs every 30 days
+22. **Acquired company filtering**: Worker, trading, and all UI must filter `companies.filter(c => c.status !== 'acquired')`. Forgetting this causes ghost price updates
+23. **Event aftereffects (여진)**: Expiring events spawn aftereffect events at 10% drift / 15% volatility for 50 hours. Already-aftereffect events don't spawn more
+24. **formatMoney duplication**: `formatMoney` is defined inline in multiple portfolio components (CashFlowTab, PnLTab, PortfolioWindow) — not centralized. Changes must be made in all locations
 
 ## Performance Considerations
 
 - **Memoization**: Chart data and grid calculations are expensive; always `useMemo`
 - **Selective re-renders**: Zustand selectors, not whole store subscriptions
 - **Worker offloading**: GBM calculations stay in Web Worker
-- **AI distribution**: `PERFORMANCE_CONFIG.TICK_DISTRIBUTION` spreads AI across 5 ticks
+- **AI distribution**: Competitor trading spread across hours
 - **Price history cap**: Max 50 data points per company for technical indicators
 - **Chatter cooldowns**: Per-employee minimum interval + per-template cooldown prevents spam
-
-## Active Technologies
-- TypeScript 5.9 (strict mode) + React 19, Zustand 5, Vite 7, TailwindCSS v4 (001-employee-trade-ai)
-- **SQLite (sql.js-httpvfs)** - Primary storage system for save data with multi-slot support (001-system-level-up)
-- Dexie (IndexedDB) - Legacy storage system, retained for migration and fallback (001-system-level-up)
-- TypeScript 5.9 (strict mode enabled) + React 19, Zustand 5, Motion (animation), Chart.js, TailwindCSS v4, Vite 7 (001-system-level-up)
-- **Phase 5: SQLite Migration Complete** - SQLite enabled by default with automatic migration prompt for existing users
-
-## Recent Changes
-- M&A System: Corporate mergers, acquisitions, IPOs with quarterly evaluation and forced portfolio exchanges
-- **001-employee-trade-ai**: Two-layer skill system (Corporate Skills + RPG Skill Tree), Training System, Signal Generation Engine, enhanced trade pipeline with corporate effects integration
-- **Phase 5 Complete: SQLite Default with Migration UI** - SQLite enabled by default, migration banner for IndexedDB users
-- **001-system-level-up (in progress)**: Animation system, dashboard, monthly cards, employee bio, skill paths, event chains, economic pressure
-
-## Storage System Migration Phases (001-system-level-up)
-
-### Phase 5: Deprecation & Migration UI (Complete ✅)
-- **Default Storage**: SQLite enabled by default (`sqlite_enabled: true` in `featureFlags.ts`)
-- **Migration Banner**: Automatic prompt for IndexedDB users on app start (`App.tsx`)
-  - Detects existing IndexedDB data via `hasSaveData()`
-  - Checks if SQLite migration already completed via `saveSlotExists(db, 'autosave')`
-  - Shows upgrade banner with "업그레이드" and "나중에" buttons
-  - Dismissible via localStorage (`migration_dismissed`)
-- **User Flow**:
-  - New users → SQLite by default (no migration needed)
-  - Existing users → Migration banner → One-click upgrade
-  - Dismissed banner → Never shown again (user choice preserved)
-- **Graceful Degradation**: IndexedDB code retained for fallback and migration
-- **Feature Flag**: Manual toggle still available in Settings window for advanced users
-
-### Phase 4: Settings UI (Complete ✅)
-- SQLite toggle in Settings window for user control (`SettingsWindow.tsx`)
-- Real-time backend detection (IndexedDB vs SQLite)
-- Migration status indicator in UI ("✅ 완료" / "⏳ 대기 중")
-- Auto-reload prompt when changing storage backend
-- Developer tools for migration reset (dev mode only via `import.meta.env.DEV`)
-- Retro Windows 95 themed UI components with consistent styling
-- Feature flag integration (`getFeatureFlag`, `setFeatureFlag`)
-- Migration status check via `getMigrationStatusPublic()`
-
-## Phase 3: SQLite Loading + Migration (Complete ✅)
-- SQLite read capability enabled via `sqlite_enabled` feature flag
-- `loadGame()` tries SQLite first, falls back to IndexedDB on failure (graceful degradation)
-- One-time migration: IndexedDB → SQLite on app start (`migration.ts`)
-- Migration validation: critical fields (cash, assets, employee count, tick) checked after migration
-- IndexedDB data preserved (never deleted) - remains backup until Phase 5
-- Migration status tracked in localStorage to prevent duplicate runs
-- Full Company objects migrated (not just truncated SaveData)
-- `hasSQLiteSave()` helper for checking SQLite save existence
-
-## Phase 2: Dual-Write Storage System (Complete ✅)
-- IndexedDB + SQLite dual-write mode for save data (graceful degradation)
-- Feature flag system (`featureFlags.ts`) for SQLite rollout control
-- `saveSystem.ts` coordinates both storage backends with Promise.allSettled
-- SQLite writes enabled when feature flag set
-- Legacy IndexedDB implementation preserved in `saveSystemLegacy.ts`
+- **Institutional sector rotation**: Only 1 sector processed per hour (hour % 10) to avoid processing all 100 institutions at once
