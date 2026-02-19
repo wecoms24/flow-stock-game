@@ -52,7 +52,7 @@ class HistoricalDataService {
 
     // 1) sql.js WASM 초기화
     const SQL = await initSqlJs({
-      locateFile: (file: string) => `https://sql.js.org/dist/${file}`,
+      locateFile: (file: string) => `/${file}`,
     })
     onProgress?.(20)
 
