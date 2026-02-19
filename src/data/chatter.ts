@@ -211,11 +211,58 @@ export const CHATTER_TEMPLATES: ChatterTemplate[] = [
     cooldownTicks: 3600,
   },
 
+  // 직무별 캐주얼 대화
+  {
+    id: 'analyst_casual',
+    category: 'random',
+    condition: (emp) => emp.role === 'analyst' && Math.random() < 0.02,
+    messages: [
+      'RSI가 과매수 구간인데... 조심해야겠어',
+      'MACD 골든크로스 나왔다!',
+      '이 종목 볼린저밴드 하단 터치했어요',
+      '섹터 로테이션 신호 잡혔어요',
+      '어제 리포트 피드백 아직 안 왔네...',
+      '차트 보면 볼수록 재밌어요',
+    ],
+    priority: 2,
+    cooldownTicks: 3600,
+  },
+  {
+    id: 'trader_casual',
+    category: 'random',
+    condition: (emp) => emp.role === 'trader' && Math.random() < 0.02,
+    messages: [
+      '호가창 움직임이 심상치 않아',
+      '체결 속도가 좀 느린데?',
+      '슬리피지 최소화해야지...',
+      '오늘 거래량 좀 많네요',
+      '주문 넣을 타이밍 보는 중...',
+      '손절은 빠르게, 익절은 천천히!',
+    ],
+    priority: 2,
+    cooldownTicks: 3600,
+  },
+  {
+    id: 'manager_casual',
+    category: 'random',
+    condition: (emp) => emp.role === 'manager' && Math.random() < 0.02,
+    messages: [
+      '포트폴리오 리밸런싱 시점인 것 같아요',
+      '리스크 관리가 제일 중요해',
+      '팀 성과 보고서 정리 중...',
+      '이번 달 목표 수익률 달성 가능할까?',
+      '신입 교육 스케줄 잡아야 하는데...',
+      '오늘 승인 건수가 좀 많네요',
+    ],
+    priority: 2,
+    cooldownTicks: 3600,
+  },
+
   // 랜덤
   {
     id: 'random_chat',
     category: 'random',
-    condition: () => Math.random() < 0.008,
+    condition: () => Math.random() < 0.025,
     messages: [
       '점심 뭐 먹지?',
       '오늘 날씨 좋네요',
@@ -251,7 +298,7 @@ export const CHATTER_TEMPLATES: ChatterTemplate[] = [
   {
     id: 'ai_moved_closer',
     category: 'random',
-    condition: () => false, // 외부에서 트리거
+    condition: () => false, // 이벤트 기반: triggerChatter()로만 트리거
     messages: [
       '여기가 훨씬 편한데? 😊',
       '자리 바꿔서 좋네요!',
@@ -264,12 +311,12 @@ export const CHATTER_TEMPLATES: ChatterTemplate[] = [
   {
     id: 'ai_furniture_placed',
     category: 'random',
-    condition: () => false, // 외부에서 트리거
+    condition: () => false, // 이벤트 기반: triggerChatter()로만 트리거
     messages: [
-      '커피머신이다!! ☕',
-      '휴게실 생겼다! 최고!',
+      '새 가구다! 좋아요!',
       '이제 좀 살 것 같아요',
       '회사가 신경 써주네요!',
+      '사무실이 점점 좋아지네요!',
     ],
     priority: 5,
     cooldownTicks: 7200,
@@ -277,7 +324,7 @@ export const CHATTER_TEMPLATES: ChatterTemplate[] = [
   {
     id: 'ai_synergy_boost',
     category: 'random',
-    condition: () => false, // 외부에서 트리거
+    condition: () => false, // 이벤트 기반: triggerChatter()로만 트리거
     messages: [
       '{partner}랑 같이 일하니까 효율 좋네요!',
       '팀워크가 훨씬 좋아진 것 같아요',
@@ -287,6 +334,46 @@ export const CHATTER_TEMPLATES: ChatterTemplate[] = [
     cooldownTicks: 7200,
   },
 ]
+
+/* ── 이벤트 기반 트리거 큐 ── */
+
+const pendingTriggeredMessages = new Map<string, string>()
+
+/**
+ * 특정 직원에게 이벤트 기반 말풍선을 예약
+ * @param employeeId 대상 직원 ID
+ * @param templateId 트리거할 템플릿 ID (e.g. 'ai_moved_closer')
+ * @param vars 템플릿 변수 치환 (e.g. { partner: '김철수' })
+ */
+export function triggerChatter(
+  employeeId: string,
+  templateId: string,
+  vars?: Record<string, string>,
+): void {
+  const template = CHATTER_TEMPLATES.find((t) => t.id === templateId)
+  if (!template) return
+  let msg = template.messages[Math.floor(Math.random() * template.messages.length)]
+  if (vars) {
+    for (const [key, val] of Object.entries(vars)) {
+      msg = msg.replaceAll(`{${key}}`, val)
+    }
+  }
+  // {partner} 폴백
+  msg = msg.replaceAll('{partner}', '동료')
+  pendingTriggeredMessages.set(employeeId, msg)
+}
+
+/**
+ * 예약된 이벤트 기반 말풍선 소비 (있으면 반환 후 제거)
+ */
+export function consumeTriggeredChatter(employeeId: string): string | null {
+  const msg = pendingTriggeredMessages.get(employeeId)
+  if (msg) {
+    pendingTriggeredMessages.delete(employeeId)
+    return msg
+  }
+  return null
+}
 
 /* ── Chatter Selection ── */
 
@@ -299,6 +386,7 @@ const lastChatterTick: Record<string, number> = {}
 export function selectChatter(
   employee: Employee,
   currentTick: number,
+  nearbyEmployees?: Employee[],
 ): string | null {
   const key = employee.id
 
@@ -323,7 +411,15 @@ export function selectChatter(
 
   // 최우선 순위 대사에서 랜덤 선택
   const template = candidates[0]
-  const message = template.messages[Math.floor(Math.random() * template.messages.length)]
+  let message = template.messages[Math.floor(Math.random() * template.messages.length)]
+
+  // {partner} 템플릿 변수 치환
+  if (message.includes('{partner}') && nearbyEmployees && nearbyEmployees.length > 0) {
+    const partner = nearbyEmployees[Math.floor(Math.random() * nearbyEmployees.length)]
+    message = message.replace('{partner}', partner.name)
+  } else if (message.includes('{partner}')) {
+    message = message.replace('{partner}', '동료')
+  }
 
   // 쿨다운 기록
   lastChatterTick[key] = currentTick
@@ -350,6 +446,7 @@ export function resetChatterCooldowns(): void {
   Object.keys(lastChatterTick).forEach((key) => {
     delete lastChatterTick[key]
   })
+  pendingTriggeredMessages.clear()
 }
 
 /* ── Pipeline Speech Bubble Templates ── */

@@ -45,7 +45,10 @@ import { updateTier, calculateMonthlyTax, checkPositionLimit, recordMonthlyPerfo
 import { OFFICE_BALANCE } from '../config/balanceConfig'
 import { getTierConfig, RELIEF_TAX_DISCOUNT } from '../config/economicPressureConfig'
 import { EMPLOYEE_ROLE_CONFIG } from '../types'
+import type { GameMode } from '../types'
 import { COMPANIES, initializeCompanyFinancials } from '../data/companies'
+import { KOSPI_COMPANIES } from '../data/kospiCompanies'
+import { historicalDataService } from '../services/historicalDataService'
 import { DIFFICULTY_TABLE } from '../data/difficulty'
 import { generateEmployeeName, resetNamePool, generateRandomTraits, generateInitialSkills, generateAssignedSectors } from '../data/employees'
 import { calculateMarketSentiment } from '../engines/tickEngine'
@@ -73,7 +76,7 @@ import { xpForLevel, titleForLevel, badgeForLevel, SKILL_UNLOCKS, XP_AMOUNTS } f
 import { soundManager } from '../systems/soundManager'
 import { updateOfficeSystem } from '../engines/officeSystem'
 import { processHRAutomation, type HRAutomationResult } from '../engines/hrAutomation'
-import { cleanupChatterCooldown, getPipelineMessage } from '../data/chatter'
+import { cleanupChatterCooldown, getPipelineMessage, resetChatterCooldowns } from '../data/chatter'
 import { cleanupInteractionCooldowns } from '../engines/employeeInteraction'
 import { createTradeAnimationSequence, createMilestoneAnimationSequence } from '../engines/animationEngine'
 import { MILESTONE_DEFINITIONS, createInitialMilestones, type MilestoneContext } from '../data/milestones'
@@ -222,7 +225,7 @@ interface GameStore {
   competitorCount: number // 0 = disabled, 1-5 = active
   competitorActions: CompetitorAction[] // Recent 100 actions
   taunts: TauntMessage[] // Recent 20 taunts
-  officeEvents: Array<{ timestamp: number; type: string; emoji: string; message: string; employeeIds: string[] }>
+  officeEvents: Array<{ timestamp: number; type: string; emoji: string; message: string; employeeIds: string[]; hour?: number }>
   employeeBehaviors: Record<string, string> // employeeId → action type (WORKING, IDLE, etc.)
 
   // Order Flow (Deep Market)
@@ -243,7 +246,7 @@ interface GameStore {
   setPersonalizationEnabled: (enabled: boolean) => void
 
   // Actions - Game
-  startGame: (difficulty: Difficulty, targetAsset?: number, customInitialCash?: number) => void
+  startGame: (difficulty: Difficulty, targetAsset?: number, customInitialCash?: number, gameMode?: GameMode) => void
   loadSavedGame: () => Promise<boolean>
   autoSave: () => void
   setSpeed: (speed: GameTime['speed']) => void
@@ -264,7 +267,7 @@ interface GameStore {
 
   // Actions - Market
   updatePrices: (prices: Record<string, number>) => void
-  updateSessionOpenPrices: () => void // Update session open prices at market open
+  updateSessionOpenPrices: (historicalOpens?: Record<string, number>) => void // Update session open prices at market open
   addEvent: (event: MarketEvent) => void
   addNews: (news: NewsItem) => void
   markNewsRead: () => void
@@ -352,6 +355,7 @@ interface GameStore {
   processScheduledIPOs: () => void
   applyAcquisitionExchange: (deal: MnaDeal) => void
   playerAcquireCompany: (targetId: string, premium: number, layoffRate: number) => void
+  executeKospiIPO: (companyId: string, ipoPrice: number) => void // KOSPI 모드 IPO 실행
 
   // Limit Order System
   limitOrders: LimitOrder[]
@@ -450,6 +454,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     initialCash: 50_000_000,
     maxCompanies: 100,
     targetAsset: 1_000_000_000,
+    gameMode: 'virtual',
   },
   difficultyConfig: DIFFICULTY_TABLE.normal,
   isGameStarted: false,
@@ -549,14 +554,56 @@ export const useGameStore = create<GameStore>((set, get) => ({
   hourlyAccumulators: { salaryPaid: 0, taxPaid: 0 },
 
   /* ── Game Actions ── */
-  startGame: (difficulty, targetAsset, customInitialCash) => {
+  startGame: (difficulty, targetAsset, customInitialCash, gameMode = 'virtual') => {
     const dcfg = DIFFICULTY_TABLE[difficulty]
-    const companies = COMPANIES.map((c) =>
-      initializeCompanyFinancials({
-        ...c,
-        priceHistory: [c.price],
+
+    // KOSPI 모드: 실제 종목 사용 + historicalDataService에서 실제 통계 로드
+    let companies: Company[]
+    if (gameMode === 'kospi' && historicalDataService.isReady) {
+      companies = KOSPI_COMPANIES.map((c) => {
+        const stats = c.historicalTicker
+          ? historicalDataService.getStockStats(c.historicalTicker)
+          : null
+
+        // IPO 전 종목은 delisted로 시작
+        if (stats?.ipoDate && parseInt(stats.ipoDate.substring(0, 4), 10) > dcfg.startYear) {
+          return initializeCompanyFinancials({
+            ...c,
+            status: 'delisted' as const,
+            price: 0,
+            previousPrice: 0,
+            basePrice: 0,
+            sessionOpenPrice: 0,
+            priceHistory: [],
+          })
+        }
+
+        // 실제 통계로 덮어쓰기
+        const realPrice = stats?.basePrice ?? c.price
+        return initializeCompanyFinancials({
+          ...c,
+          price: realPrice,
+          previousPrice: realPrice,
+          basePrice: realPrice,
+          sessionOpenPrice: realPrice,
+          priceHistory: [realPrice],
+          drift: stats?.annualDrift ?? c.drift,
+          volatility: stats?.annualVolatility ?? c.volatility,
+          regimeVolatilities: {
+            CALM: (stats?.annualVolatility ?? c.volatility) * 0.5,
+            VOLATILE: stats?.annualVolatility ?? c.volatility,
+            CRISIS: (stats?.annualVolatility ?? c.volatility) * 2.0,
+          },
+        })
       })
-    )
+    } else {
+      companies = COMPANIES.map((c) =>
+        initializeCompanyFinancials({
+          ...c,
+          priceHistory: [c.price],
+        })
+      )
+    }
 
     // Initialize institutions
     const institutions = generateInstitutions()
@@ -573,6 +620,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       initialCash,
       maxCompanies: dcfg.maxCompanies,
       targetAsset: targetAsset ?? 1_000_000_000,
+      gameMode,
     }
 
     set({
@@ -670,9 +718,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 엔진 내부 상태 리셋 (이전 세션 잔여 데이터 방지)
     resetNewsEngine()
     resetSentiment()
+    resetChatterCooldowns()
 
     // Reconstruct companies from save + base data
-    const companies = COMPANIES.map((base) => {
+    const loadedGameMode = (data.config as any).gameMode ?? 'virtual'
+    const baseCompanies = loadedGameMode === 'kospi' ? KOSPI_COMPANIES : COMPANIES
+    const companies = baseCompanies.map((base) => {
       const saved = data.companies.find((s) => s.id === base.id)
       if (!saved) return { ...base, priceHistory: [base.price], institutionFlowHistory: [] }
       return {
@@ -681,6 +732,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         previousPrice: saved.previousPrice,
         priceHistory: saved.priceHistory,
         marketCap: saved.price * 1_000_000,
+        status: (saved as any).status ?? 'active',
+        historicalTicker: base.historicalTicker,
         // Migrate institutionFlowHistory if missing (for old save files)
         institutionFlowHistory: (saved as any).institutionFlowHistory ?? [],
       }
@@ -712,9 +765,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       })),
     }
 
-    const migratedConfig = {
+    const migratedConfig: GameConfig = {
       ...data.config,
       targetAsset: data.config.targetAsset ?? 1_000_000_000,
+      gameMode: (data.config as any).gameMode ?? 'virtual',
     }
 
     // 컴페티터 필드 마이그레이션
@@ -1005,6 +1059,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             emoji: '😫',
             message: '직원들이 지쳐 거래를 중단했습니다!',
             employeeIds: pipelineEmployees.map((e) => e.id),
+            hour: s.time.hour,
           }].slice(-200),
         }))
       }
@@ -1037,6 +1092,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             emoji: '🎯',
             message: `${analyst.name}: ${proposal.ticker} 자동 손익실현 (${proposal.confidence >= 80 ? '손절' : '익절'})`,
             employeeIds: [analyst.id],
+            hour: s.time.hour,
           })
         }
       }
@@ -1078,6 +1134,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           emoji: result.isInsight ? '💡' : '📊',
           message: `${analyst.name}: ${msg}`,
           employeeIds: [analyst.id],
+          hour: s.time.hour,
         })
 
         break // One proposal per analyst per tick
@@ -1211,6 +1268,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         emoji: result.approved ? '✅' : '❌',
         message: `${managerName}: ${msg}`,
         employeeIds: [manager?.id ?? '', proposal.createdByEmployeeId].filter(Boolean),
+        hour: s.time.hour,
       })
 
       // Personalization: log approval bias if applied
@@ -1221,6 +1279,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           emoji: '🎯',
           message: `개인화 정책: 승인 임계치 ${result.approvalBias > 0 ? '+' : ''}${result.approvalBias} 적용`,
           employeeIds: [],
+          hour: s.time.hour,
         })
       }
     }
@@ -1292,6 +1351,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             emoji: '⏸️',
             message: '하루 거래 한도 도달 (3회). 내일 다시 시도하세요.',
             employeeIds: [],
+            hour: s.time.hour,
           }].slice(-200),
         }))
       }
@@ -1345,6 +1405,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             emoji: '🚫',
             message: `${trader.name}: 매수 한도 초과 (${(tradeAmount / 1_000_000).toFixed(1)}M > ${(limits.maxBuyAmount! / 1_000_000).toFixed(1)}M)`,
             employeeIds: [trader.id],
+            hour: s.time.hour,
           }].slice(-200),
         }))
         return
@@ -1370,6 +1431,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             emoji: '🚫',
             message: `${trader.name}: 매도 한도 초과 (${(tradeAmount / 1_000_000).toFixed(1)}M > ${(limits.maxSellAmount! / 1_000_000).toFixed(1)}M)`,
             employeeIds: [trader.id],
+            hour: s.time.hour,
           }].slice(-200),
         }))
         return
@@ -1470,6 +1532,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 emoji: '💰',
                 message: `${traderName}: ${execMsg}`,
                 employeeIds: [trader?.id ?? '', proposal.createdByEmployeeId].filter(Boolean),
+                hour: s.time.hour,
               }].slice(-200)
             : st.officeEvents,
         }
@@ -1546,6 +1609,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
               emoji: '💸',
               message: `${failTraderName}: ${failMsg}`,
               employeeIds: [trader?.id ?? '', proposal.createdByEmployeeId].filter(Boolean),
+              hour: s.time.hour,
             }].slice(-200)
           : st.officeEvents,
       }))
@@ -2149,7 +2213,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     }),
 
-  updateSessionOpenPrices: () =>
+  updateSessionOpenPrices: (historicalOpens) =>
     set((s) => {
       // Calculate KOSPI index at session open
       const kospiIndex = calculateKOSPIIndex(s.companies)
@@ -2157,9 +2221,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return {
         companies: s.companies.map((c) => {
           const resetVI = resetVIForNewDay(c)
+          // KOSPI 모드: 실제 시가가 제공되면 사용
+          const openPrice = historicalOpens?.[c.id] ?? c.price
           return {
             ...resetVI,
-            sessionOpenPrice: c.price, // Set session open to current price
+            sessionOpenPrice: openPrice,
+            // 실제 시가가 현재가와 다르면 가격도 보정
+            ...(historicalOpens?.[c.id] ? { price: openPrice, previousPrice: c.price } : {}),
           }
         }),
         circuitBreaker: resetCircuitBreakerForNewDay(kospiIndex),
@@ -2221,6 +2289,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           emoji,
           message,
           employeeIds: [],
+          hour: s.time.hour,
         })
       }
 
@@ -3817,6 +3886,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           emoji: '💰',
           message: `${target.name} M&A 정산: ${payout.toLocaleString()}원 (${profit >= 0 ? '+' : ''}${profitRate.toFixed(1)}%)`,
           employeeIds: [],
+          hour: s.time.hour,
         })
       }
 
@@ -4014,6 +4084,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           emoji: '🤝',
           message: `${target.name} 인수 완료 (${(totalCost / 100_000_000).toFixed(0)}억 원)`,
           employeeIds: [],
+          hour: s.time.hour,
         },
       ],
     }))
@@ -4022,6 +4093,37 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // 인수 처리 완료
     set({ isAcquiring: false })
+  },
+
+  executeKospiIPO: (companyId: string, ipoPrice: number) => {
+    set((s) => ({
+      companies: s.companies.map((c) => {
+        if (c.id !== companyId) return c
+        return {
+          ...c,
+          status: 'active' as const,
+          price: ipoPrice,
+          previousPrice: ipoPrice,
+          basePrice: ipoPrice,
+          sessionOpenPrice: ipoPrice,
+          priceHistory: [ipoPrice],
+          marketCap: ipoPrice * 1_000_000,
+        }
+      }),
+      news: [
+        {
+          id: `ipo-${companyId}-${s.time.year}`,
+          timestamp: { ...s.time },
+          headline: `[IPO] ${s.companies.find((c) => c.id === companyId)?.name ?? companyId} 상장!`,
+          body: `신규 종목이 KOSPI에 상장되었습니다. 상장가 ${ipoPrice.toLocaleString()}원`,
+          isBreaking: true,
+          sentiment: 'positive' as const,
+        },
+        ...s.news,
+      ],
+      unreadNewsCount: s.unreadNewsCount + 1,
+    }))
+    console.log(`[KOSPI IPO] ${companyId} 상장 @ ${ipoPrice.toLocaleString()}원`)
   },
 
   /* ── Auto-sell (Profit-Taking) Actions ── */
@@ -4055,6 +4157,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
               emoji: '📈',
               message: `자동 익절: ${ticker} +${returnPct.toFixed(1)}% 달성, ${shares}주 매도`,
               employeeIds: [],
+              hour: s.time.hour,
             },
           ].slice(-200),
         }))
@@ -4133,6 +4236,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
               emoji: '🎯',
               message: `목표가 도달: ${company.name} ${order.shares}주 매도 (${company.price.toLocaleString()}원)`,
               employeeIds: [],
+              hour: s.time.hour,
             },
           ].slice(-200),
         }))

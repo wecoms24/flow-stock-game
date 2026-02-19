@@ -11,7 +11,7 @@ import { TRAIT_DEFINITIONS } from '../../data/traits'
 import { TITLE_LABELS, BADGE_COLORS, badgeForLevel, titleForLevel } from '../../systems/growthSystem'
 import { ROLE_EMOJI, getMoodFace, BEHAVIOR_EMOJI } from '../../data/employeeEmoji'
 import { soundManager } from '../../systems/soundManager'
-import { selectChatter } from '../../data/chatter'
+import { selectChatter, selectContextualDialogue, consumeTriggeredChatter, triggerChatter } from '../../data/chatter'
 import { SpeechBubbleContainer } from '../office/SpeechBubble'
 import { emitFloatingText } from '../../utils/floatingTextEmitter'
 import { emitParticles } from '../../systems/particleSystem'
@@ -99,6 +99,8 @@ export function OfficeDotWindow() {
     openWindow,
   } = useGameStore()
   const employeeBehaviors = useGameStore((s) => s.employeeBehaviors)
+  const news = useGameStore((s) => s.news)
+  const circuitBreaker = useGameStore((s) => s.circuitBreaker)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -124,6 +126,7 @@ export function OfficeDotWindow() {
   const [autoPlaceMsg, setAutoPlaceMsg] = useState<string | null>(null)
   const autoPlaceMsgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [aiProposal, setAiProposal] = useState<(LayoutProposal & { moves: DotEmployeeMove[] }) | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null)
 
   useEffect(() => {
     if (!player.officeLayout) {
@@ -175,17 +178,64 @@ export function OfficeDotWindow() {
         position: { x: number; y: number }
       }> = []
 
+      // 최근 뉴스 감성 (최신 3개 기준)
+      const recentNews = news.slice(-3)
+      const recentSentiment: 'positive' | 'negative' | 'neutral' | undefined =
+        recentNews.length > 0
+          ? recentNews.filter((n) => n.sentiment === 'negative').length >= 2
+            ? 'negative'
+            : recentNews.filter((n) => n.sentiment === 'positive').length >= 2
+              ? 'positive'
+              : 'neutral'
+          : undefined
+
+      // 시장 추세 (KOSPI 세션 대비)
+      const kospiReturn = circuitBreaker.kospiSessionOpen > 0
+        ? (circuitBreaker.kospiCurrent - circuitBreaker.kospiSessionOpen) / circuitBreaker.kospiSessionOpen
+        : 0
+      const marketTrend: 'up' | 'down' | 'flat' =
+        kospiReturn > 0.01 ? 'up' : kospiReturn < -0.01 ? 'down' : 'flat'
+
       player.employees.forEach((emp) => {
         if (emp.deskId) {
           const desk = layout.desks.find((d) => d.id === emp.deskId)
           if (desk) {
-            const msg = selectChatter(emp, currentTick)
+            // 1순위: 이벤트 트리거 메시지 (AI 제안, 가구 배치 등)
+            const triggeredMsg = consumeTriggeredChatter(emp.id)
+            if (triggeredMsg) {
+              newBubbles.push({
+                id: `${emp.id}-${Date.now()}-${Math.random()}`,
+                employeeId: emp.id,
+                message: triggeredMsg,
+                position: { x: desk.position.x, y: Math.max(60, desk.position.y - 20) },
+              })
+              return
+            }
+
+            // 인접 직원 목록 (시너지 범위 내)
+            const nearbyEmps = player.employees.filter((other) => {
+              if (other.id === emp.id || !other.deskId) return false
+              const otherDesk = layout.desks.find((d) => d.id === other.deskId)
+              if (!otherDesk) return false
+              const dx = desk.position.x - otherDesk.position.x
+              const dy = desk.position.y - otherDesk.position.y
+              return Math.sqrt(dx * dx + dy * dy) < 120
+            })
+
+            // 2순위: 컨텍스트 기반 대화 (시장 상황 + 스트레스)
+            const contextMsg = selectContextualDialogue(emp, {
+              employeeStress: emp.stress,
+              recentSentiment,
+              marketTrend,
+            })
+            // 3순위: 일반 채터
+            const msg = contextMsg ?? selectChatter(emp, currentTick, nearbyEmps)
             if (msg) {
               newBubbles.push({
                 id: `${emp.id}-${Date.now()}-${Math.random()}`,
                 employeeId: emp.id,
                 message: msg,
-                position: { x: desk.position.x, y: desk.position.y - 20 },
+                position: { x: desk.position.x, y: Math.max(60, desk.position.y - 20) },
               })
             }
           }
@@ -198,7 +248,7 @@ export function OfficeDotWindow() {
     }, 2000)
 
     return () => clearInterval(interval)
-  }, [layout, player.employees, time.hour, time.day])
+  }, [layout, player.employees, time.hour, time.day, news, circuitBreaker])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -573,6 +623,16 @@ export function OfficeDotWindow() {
         buyDecoration(selectedDecorationType, snapped.x, snapped.y)
         soundManager.playClick()
         emitParticles('sparkle', snapped.x, snapped.y, 6)
+
+        // 가구 근처 직원에게 대화 트리거
+        for (const desk of layout.desks) {
+          if (!desk.employeeId) continue
+          const dx = desk.position.x - snapped.x
+          const dy = desk.position.y - snapped.y
+          if (Math.sqrt(dx * dx + dy * dy) < SYNERGY_RANGE) {
+            triggerChatter(desk.employeeId, 'ai_furniture_placed')
+          }
+        }
       }
 
       setPlacementMode(null)
@@ -642,21 +702,21 @@ export function OfficeDotWindow() {
 
   const handleDelete = (item: { type: 'desk' | 'decoration'; id: string }) => {
     if (item.type === 'desk') {
-      if (confirm('이 책상을 제거하시겠습니까? (50% 환불)')) {
-        removeDesk(item.id)
-        soundManager.playClick()
-      }
+      setConfirmDialog({
+        message: '이 책상을 제거하시겠습니까? (50% 환불)',
+        onConfirm: () => { removeDesk(item.id); soundManager.playClick() },
+      })
     } else {
-      if (confirm('이 장식을 제거하시겠습니까? (50% 환불)')) {
-        removeDecoration(item.id)
-        soundManager.playClick()
-      }
+      setConfirmDialog({
+        message: '이 장식을 제거하시겠습니까? (50% 환불)',
+        onConfirm: () => { removeDecoration(item.id); soundManager.playClick() },
+      })
     }
     setContextMenu(null)
   }
 
   return (
-    <div className="text-xs p-2 space-y-2 overflow-y-auto h-full">
+    <div className="relative text-xs p-2 space-y-2 overflow-y-auto h-full">
       {/* Header */}
       <div className="text-center">
         <div className="flex items-center justify-center gap-2">
@@ -1111,9 +1171,10 @@ export function OfficeDotWindow() {
                           size="sm"
                           variant="danger"
                           onClick={() => {
-                            if (confirm(`${emp.name}을(를) 해고하시겠습니까?`)) {
-                              fireEmployee(emp.id)
-                            }
+                            setConfirmDialog({
+                              message: `${emp.name}을(를) 해고하시겠습니까?`,
+                              onConfirm: () => fireEmployee(emp.id),
+                            })
                           }}
                           className="text-[9px] px-1"
                         >
@@ -1224,17 +1285,44 @@ export function OfficeDotWindow() {
           employees={player.employees}
           currentCash={player.cash}
           onApprove={() => {
-            // 1. 직원 이동 적용
+            // 1. 직원 이동 적용 + 이벤트 트리거 대화
+            const movedEmpIds: string[] = []
             for (const move of aiProposal.moves) {
               const dotMove = move as DotEmployeeMove
               if (dotMove.fromDeskId) {
                 unassignEmployeeFromDesk(dotMove.employeeId)
               }
               assignEmployeeToDesk(dotMove.employeeId, dotMove.toDeskId)
+              movedEmpIds.push(dotMove.employeeId)
+
+              // 이동된 직원에게 시너지 관련 대화 트리거
+              if (dotMove.fromDeskId) {
+                // 재배치 → 시너지 부스트
+                const nearbyEmp = player.employees.find((e) =>
+                  e.id !== dotMove.employeeId && e.deskId &&
+                  layout.desks.some((d) => d.id === e.deskId)
+                )
+                triggerChatter(dotMove.employeeId, 'ai_synergy_boost', {
+                  partner: nearbyEmp?.name ?? '동료',
+                })
+              } else {
+                // 신규 배치
+                triggerChatter(dotMove.employeeId, 'ai_moved_closer')
+              }
             }
-            // 2. 가구 구매 적용
+            // 2. 가구 구매 적용 + 주변 직원 대화 트리거
             for (const purchase of aiProposal.purchases) {
               buyDecoration(purchase.type as DecorationType, purchase.x, purchase.y)
+
+              // 가구 근처 직원에게 대화 트리거
+              for (const desk of layout.desks) {
+                if (!desk.employeeId || movedEmpIds.includes(desk.employeeId)) continue
+                const dx = desk.position.x - purchase.x
+                const dy = desk.position.y - purchase.y
+                if (Math.sqrt(dx * dx + dy * dy) < SYNERGY_RANGE) {
+                  triggerChatter(desk.employeeId, 'ai_furniture_placed')
+                }
+              }
             }
             // 3. 피드백
             soundManager.playClick()
@@ -1247,6 +1335,22 @@ export function OfficeDotWindow() {
           }}
           onClose={() => setAiProposal(null)}
         />
+      )}
+
+      {confirmDialog && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-50">
+          <div className="win-outset bg-win-face p-3 max-w-[280px] shadow-lg">
+            <div className="text-xs whitespace-pre-line mb-3">{confirmDialog.message}</div>
+            <div className="flex justify-end gap-1">
+              <RetroButton size="sm" onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null) }}>
+                확인
+              </RetroButton>
+              <RetroButton size="sm" onClick={() => setConfirmDialog(null)}>
+                취소
+              </RetroButton>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

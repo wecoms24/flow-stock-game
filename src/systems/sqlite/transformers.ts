@@ -61,8 +61,9 @@ export async function saveDataToSQLite(
         player_last_day_change, player_previous_day_assets,
         last_processed_month, last_mna_quarter, auto_sell_enabled, auto_sell_percent,
         market_regime, market_index_history, circuit_breaker,
-        cash_flow_log, realized_trades, monthly_summaries
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        cash_flow_log, realized_trades, monthly_summaries,
+        game_mode
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(slot_name) DO UPDATE SET
         updated_at = ?,
         current_tick = ?,
@@ -74,7 +75,8 @@ export async function saveDataToSQLite(
         last_processed_month = ?, last_mna_quarter = ?,
         auto_sell_enabled = ?, auto_sell_percent = ?,
         market_regime = ?, market_index_history = ?, circuit_breaker = ?,
-        cash_flow_log = ?, realized_trades = ?, monthly_summaries = ?
+        cash_flow_log = ?, realized_trades = ?, monthly_summaries = ?,
+        game_mode = ?
       RETURNING id;
     `, [
       slotName,
@@ -112,6 +114,7 @@ export async function saveDataToSQLite(
       data.cashFlowLog ? JSON.stringify(data.cashFlowLog) : null,
       data.realizedTrades ? JSON.stringify(data.realizedTrades) : null,
       data.monthlyCashFlowSummaries ? JSON.stringify(data.monthlyCashFlowSummaries) : null,
+      (data.config as any).gameMode ?? 'virtual',
       // ON CONFLICT UPDATE parameters
       now,
       data.currentTick ?? 0,
@@ -141,6 +144,7 @@ export async function saveDataToSQLite(
       data.cashFlowLog ? JSON.stringify(data.cashFlowLog) : null,
       data.realizedTrades ? JSON.stringify(data.realizedTrades) : null,
       data.monthlyCashFlowSummaries ? JSON.stringify(data.monthlyCashFlowSummaries) : null,
+      (data.config as any).gameMode ?? 'virtual',
     ])
 
     const saveId = (saveResult[0] as SaveRow).id
@@ -167,8 +171,9 @@ export async function saveDataToSQLite(
           status, parent_company_id, acquired_at_tick, headcount, layoff_rate_on_acquisition,
           price_history, financials, institution_flow, institution_flow_history,
           accumulated_institutional_shares, regime_volatilities, event_sensitivity, mna_history,
-          vi_triggered, vi_cooldown, vi_recent_prices
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+          vi_triggered, vi_cooldown, vi_recent_prices,
+          historical_ticker
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
         [
           saveId,
@@ -200,6 +205,7 @@ export async function saveDataToSQLite(
           c.viTriggered ? 1 : 0,
           c.viCooldown ?? 0,
           c.viRecentPrices ? JSON.stringify(c.viRecentPrices) : null,
+          c.historicalTicker ?? null,
         ],
       )
     }
@@ -481,6 +487,7 @@ export async function sqliteToSaveData(
       viTriggered: row.vi_triggered === 1,
       viCooldown: row.vi_cooldown,
       viRecentPrices: safeParseJSONOptional<number[]>(row.vi_recent_prices),
+      historicalTicker: (row as any).historical_ticker ?? undefined,
     }))
 
     // 3. Load employees
@@ -730,6 +737,7 @@ export async function sqliteToSaveData(
         initialCash: save.initial_cash,
         maxCompanies: 20, // Fixed for now
         targetAsset: 1_000_000_000_000, // Fixed for now
+        gameMode: ((save as any).game_mode ?? 'virtual') as 'virtual' | 'kospi',
       },
       time: {
         year: save.year,

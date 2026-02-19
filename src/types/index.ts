@@ -66,6 +66,8 @@ export interface Company {
   headcount?: number // 회사 전체 직원 수 (대략적 규모)
   layoffRateOnAcquisition?: number // 인수 시 해고 비율 (0~1)
   mnaHistory?: MnaHistoryEntry[] // M&A 이력
+  // KOSPI 하이브리드 모드 필드
+  historicalTicker?: string // KRX 종목코드 (KOSPI 모드용)
 }
 
 export type Sector =
@@ -459,6 +461,8 @@ export interface DifficultyConfig {
   staminaDrainMultiplier: number // how fast employees get tired
 }
 
+export type GameMode = 'virtual' | 'kospi'
+
 export interface GameConfig {
   difficulty: Difficulty
   startYear: number
@@ -466,6 +470,7 @@ export interface GameConfig {
   initialCash: number
   maxCompanies: number
   targetAsset: number
+  gameMode: GameMode // 'virtual' = 가상 종목, 'kospi' = 실제 KOSPI 데이터
 }
 
 export interface VictoryGoal {

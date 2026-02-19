@@ -2,9 +2,13 @@ import { useEffect, useState } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { RetroPanel } from '../ui/RetroPanel'
-import type { Difficulty } from '../../types'
+import type { Difficulty, GameMode } from '../../types'
 import { DIFFICULTY_TABLE, VICTORY_GOALS } from '../../data/difficulty'
 import { AUM_CONFIG } from '../../config/aiConfig'
+import type { SaveSlotInfo } from '../../systems/sqlite/types'
+import { initializeDB, listSaveSlots } from '../../systems/sqlite'
+import { getFeatureFlag } from '../../systems/featureFlags'
+import { historicalDataService } from '../../services/historicalDataService'
 
 interface StartScreenProps {
   hasSave: boolean
@@ -37,6 +41,14 @@ interface CompetitorSetup {
   isCustomAum: boolean
 }
 
+const DIFFICULTY_LABELS: Record<Difficulty, string> = {
+  easy: '쉬움',
+  normal: '보통',
+  hard: '어려움',
+}
+
+const COMPETITOR_STYLE_LABELS = ['공격형', '안정형', '추세추종', '역발상']
+
 export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
   const startGame = useGameStore((s) => s.startGame)
   const initializeCompetitors = useGameStore((s) => s.initializeCompetitors)
@@ -49,8 +61,15 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
     aumMultiplier: AUM_CONFIG.DEFAULT_MULTIPLIERS.normal,
     isCustomAum: false,
   })
+  const [showBattleConfig, setShowBattleConfig] = useState(false)
   const [selectedGoalIdx, setSelectedGoalIdx] = useState(1) // default: 억만장자 (10억)
-  const [customInitialCash, setCustomInitialCash] = useState<string>('') // 커스텀 초기 자본 (빈 문자열 = 난이도 기본값 사용)
+  const [customInitialCash, setCustomInitialCash] = useState<string>('')
+  const [saveSlots, setSaveSlots] = useState<SaveSlotInfo[]>([])
+  const [gameMode, setGameMode] = useState<GameMode>('virtual')
+  const [kospiDbLoading, setKospiDbLoading] = useState(false)
+  const [kospiDbProgress, setKospiDbProgress] = useState(0)
+  const [kospiDbReady, setKospiDbReady] = useState(false)
+  const [kospiDbError, setKospiDbError] = useState<string | null>(null)
 
   // Boot animation: reveal lines one by one
   useEffect(() => {
@@ -63,6 +82,21 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
     const timer = setTimeout(() => setBootLineIdx((i) => i + 1), delay)
     return () => clearTimeout(timer)
   }, [bootPhase, bootLineIdx])
+
+  // Load save slot info
+  useEffect(() => {
+    const loadSlots = async () => {
+      if (!getFeatureFlag('sqlite_enabled')) return
+      try {
+        const db = await initializeDB()
+        const slots = await listSaveSlots(db)
+        setSaveSlots(slots)
+      } catch {
+        // SQLite unavailable, ignore
+      }
+    }
+    loadSlots()
+  }, [])
 
   // Allow skipping boot with click/key
   const skipBoot = () => {
@@ -78,20 +112,39 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
   }
 
   const difficulties: { key: Difficulty; label: string; cash: string; desc: string }[] = [
-    { key: 'easy', label: 'Easy', cash: '1억원', desc: '넉넉한 자본, 낮은 변동성' },
-    { key: 'normal', label: 'Normal', cash: '5천만원', desc: '표준 밸런스' },
-    { key: 'hard', label: 'Hard', cash: '2천만원', desc: '높은 변동성, 빠른 스태미너 소모' },
+    { key: 'easy', label: '쉬움', cash: '1억원', desc: '넉넉한 자본, 낮은 변동성' },
+    { key: 'normal', label: '보통', cash: '5천만원', desc: '표준 밸런스' },
+    { key: 'hard', label: '어려움', cash: '2천만원', desc: '높은 변동성, 빠른 스태미너 소모' },
   ]
 
+  const handleGameModeChange = async (mode: GameMode) => {
+    setGameMode(mode)
+    setKospiDbError(null)
+
+    if (mode === 'kospi' && !historicalDataService.isReady) {
+      setKospiDbLoading(true)
+      setKospiDbProgress(0)
+      try {
+        await historicalDataService.initialize((pct) => setKospiDbProgress(pct))
+        setKospiDbReady(true)
+      } catch (err) {
+        setKospiDbError(err instanceof Error ? err.message : 'DB 로드 실패')
+        setGameMode('virtual') // 실패 시 가상 모드로 폴백
+      } finally {
+        setKospiDbLoading(false)
+      }
+    } else if (mode === 'kospi' && historicalDataService.isReady) {
+      setKospiDbReady(true)
+    }
+  }
+
   const handleStartGame = (difficulty: Difficulty) => {
-    // Parse custom initial cash (빈 문자열이면 undefined → 난이도 기본값 사용)
     const parsedCustomCash = customInitialCash.trim()
       ? parseInt(customInitialCash.replace(/[^0-9]/g, ''), 10)
       : undefined
     const initialCash = parsedCustomCash ?? DIFFICULTY_TABLE[difficulty].initialCash
 
     if (competitorSetup.enabled) {
-      // Use custom AUM if manually adjusted, otherwise use difficulty default
       const multiplier = competitorSetup.isCustomAum
         ? competitorSetup.aumMultiplier
         : (AUM_CONFIG.DEFAULT_MULTIPLIERS[difficulty] ?? AUM_CONFIG.DEFAULT_MULTIPLIERS.normal)
@@ -101,7 +154,7 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
       initializeCompetitors(competitorSetup.count, perCompetitorCash)
     }
 
-    startGame(difficulty, VICTORY_GOALS[selectedGoalIdx].targetAsset, parsedCustomCash)
+    startGame(difficulty, VICTORY_GOALS[selectedGoalIdx].targetAsset, parsedCustomCash, gameMode)
   }
 
   const competitorNames = [
@@ -111,8 +164,6 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
     { name: 'Ray Dalio-ma', icon: '🐻' },
     { name: 'George Soros-t', icon: '⚡' },
   ]
-
-  const competitorStyles = ['Aggressive', 'Conservative', 'Trend Follower', 'Contrarian']
 
   // ── Boot Phase ──
   if (bootPhase === 'booting') {
@@ -137,127 +188,133 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
     )
   }
 
+  const formatAssetShort = (n: number) => {
+    if (n >= 100_000_000) return `${(n / 100_000_000).toFixed(1)}억원`
+    if (n >= 10_000) return `${Math.floor(n / 10_000).toLocaleString()}만원`
+    return `${n.toLocaleString()}원`
+  }
+
   // ── Ready Phase (difficulty select) ──
   return (
-    <div className="fixed inset-0 bg-retro-darkblue flex items-center justify-center">
+    <div className="fixed inset-0 bg-retro-darkblue flex items-center justify-center overflow-y-auto py-4">
       <RetroPanel className="p-1 max-w-md w-full">
         <div className="bg-win-title-active text-win-title-text px-2 py-1 text-sm font-bold mb-1">
-          Retro Stock-OS 95 - Setup
+          Retro Stock-OS 95 - 게임 설정
         </div>
 
-        <div className="p-4 space-y-4">
-          <div className="text-center space-y-2">
+        <div className="p-4 space-y-3">
+          <div className="text-center space-y-1">
             <div className="text-2xl font-bold text-retro-darkblue">Retro Stock-OS 95</div>
             <div className="text-xs text-retro-gray">
               1995년부터 2025년까지, 30년간의 주식 투자 시뮬레이션
             </div>
           </div>
 
-          {/* Continue button */}
+          {/* Save Slot Display + Continue */}
           {hasSave && (
-            <>
-              <RetroButton variant="primary" size="lg" className="w-full" onClick={handleContinue}>
-                이어하기 (자동 저장)
-              </RetroButton>
-              <hr className="border-win-shadow" />
-            </>
+            <RetroPanel variant="inset" className="p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold mb-1">💾 저장된 게임</div>
+                  {saveSlots.length > 0 ? (
+                    saveSlots.map((slot) => (
+                      <div key={slot.id} className="text-[10px] text-retro-gray">
+                        {slot.year}년 {slot.month}월 · {DIFFICULTY_LABELS[slot.difficulty] ?? slot.difficulty} ·
+                        총자산 {formatAssetShort(slot.player_total_assets)}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-[10px] text-retro-gray">자동 저장 데이터</div>
+                  )}
+                </div>
+                <RetroButton variant="primary" onClick={handleContinue}>
+                  이어하기
+                </RetroButton>
+              </div>
+            </RetroPanel>
           )}
 
-          {/* Investment Battle Mode Setup */}
-          <RetroPanel variant="inset" className="p-3 space-y-3">
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="battle-mode"
-                className="w-4 h-4 accent-win-highlight"
-                checked={competitorSetup.enabled}
-                onChange={(e) =>
-                  setCompetitorSetup({ ...competitorSetup, enabled: e.target.checked })
-                }
-              />
-              <label htmlFor="battle-mode" className="text-sm font-bold cursor-pointer">
-                🥊 Investment Battle Mode
-              </label>
+          {/* Game Mode Selection */}
+          <RetroPanel variant="inset" className="p-3 space-y-2">
+            <div className="text-sm font-bold">📊 데이터 모드:</div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => handleGameModeChange('virtual')}
+                className={`p-2 text-left text-[11px] border rounded transition-colors ${
+                  gameMode === 'virtual'
+                    ? 'border-win-highlight bg-win-highlight/10 font-bold'
+                    : 'border-win-shadow bg-win-face hover:bg-win-highlight/5'
+                }`}
+              >
+                <div className="font-semibold">가상 주식</div>
+                <div className="text-retro-gray text-[10px]">100개 가상 종목</div>
+              </button>
+              <button
+                onClick={() => handleGameModeChange('kospi')}
+                disabled={kospiDbLoading}
+                className={`p-2 text-left text-[11px] border rounded transition-colors ${
+                  gameMode === 'kospi'
+                    ? 'border-win-highlight bg-win-highlight/10 font-bold'
+                    : 'border-win-shadow bg-win-face hover:bg-win-highlight/5'
+                } ${kospiDbLoading ? 'opacity-50 cursor-wait' : ''}`}
+              >
+                <div className="font-semibold">KOSPI 실제 데이터</div>
+                <div className="text-retro-gray text-[10px]">100개 실제 종목 (1995~2025)</div>
+              </button>
             </div>
-
-            {competitorSetup.enabled && (
-              <div className="space-y-3 pl-2 border-l-2 border-win-shadow">
-                {/* Competitor Count Slider */}
-                <div>
-                  <label className="block text-xs mb-1">
-                    Number of Rivals: <strong>{competitorSetup.count}</strong>
-                  </label>
-                  <input
-                    type="range"
-                    min={1}
-                    max={5}
-                    value={competitorSetup.count}
-                    onChange={(e) =>
-                      setCompetitorSetup({ ...competitorSetup, count: Number(e.target.value) })
-                    }
-                    className="w-full h-1 bg-win-shadow rounded appearance-none cursor-pointer accent-win-highlight"
-                  />
-                  <div className="flex justify-between text-[10px] text-retro-gray mt-1">
-                    <span>Easy (1)</span>
-                    <span>Hard (5)</span>
-                  </div>
+            {/* DB Loading Progress */}
+            {kospiDbLoading && (
+              <div className="space-y-1">
+                <div className="text-[10px] text-retro-gray">
+                  KOSPI 데이터 로딩 중... {kospiDbProgress}%
                 </div>
-
-                {/* AUM Multiplier Slider */}
-                <div>
-                  <label className="block text-xs mb-1">
-                    AUM: <strong>x{competitorSetup.aumMultiplier}</strong>
-                    <span className="text-retro-gray ml-1">
-                      (Normal 기준 경쟁자당{' '}
-                      {(
-                        (DIFFICULTY_TABLE.normal.initialCash * competitorSetup.aumMultiplier) /
-                        competitorSetup.count /
-                        10000
-                      ).toLocaleString()}
-                      만원)
-                    </span>
-                  </label>
-                  <input
-                    type="range"
-                    min={AUM_CONFIG.MIN_MULTIPLIER}
-                    max={AUM_CONFIG.MAX_MULTIPLIER}
-                    step={1}
-                    value={competitorSetup.aumMultiplier}
-                    onChange={(e) =>
-                      setCompetitorSetup({
-                        ...competitorSetup,
-                        aumMultiplier: Number(e.target.value),
-                        isCustomAum: true,
-                      })
-                    }
-                    className="w-full h-1 bg-win-shadow rounded appearance-none cursor-pointer accent-win-highlight"
+                <div className="w-full h-2 bg-win-shadow rounded overflow-hidden">
+                  <div
+                    className="h-full bg-win-highlight transition-all duration-300"
+                    style={{ width: `${kospiDbProgress}%` }}
                   />
-                  <div className="flex justify-between text-[10px] text-retro-gray mt-1">
-                    <span>x1 (동등)</span>
-                    <span>x100 (압도적)</span>
-                  </div>
-                </div>
-
-                {/* Rival Preview */}
-                <div>
-                  <div className="text-[10px] font-bold mb-1">Your Rivals:</div>
-                  <div className="grid grid-cols-2 gap-1">
-                    {competitorNames.slice(0, competitorSetup.count).map((rival, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center gap-1 p-1 bg-win-face rounded text-[10px]"
-                      >
-                        <span className="text-sm">{rival.icon}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="truncate font-semibold">{rival.name}</div>
-                          <div className="text-retro-gray">{competitorStyles[i % 4]}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               </div>
             )}
+            {kospiDbError && (
+              <div className="text-[10px] text-red-600">
+                DB 로드 실패: {kospiDbError}
+              </div>
+            )}
+            {gameMode === 'kospi' && kospiDbReady && (
+              <div className="text-[10px] text-stock-up font-bold">
+                KOSPI DB 로드 완료 — 삼성전자, SK하이닉스 등 실제 종목으로 플레이
+              </div>
+            )}
+          </RetroPanel>
+
+          {/* Battle Mode Toggle + Summary */}
+          <RetroPanel variant="inset" className="p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="battle-mode"
+                  className="w-4 h-4 accent-win-highlight"
+                  checked={competitorSetup.enabled}
+                  onChange={(e) => {
+                    setCompetitorSetup({ ...competitorSetup, enabled: e.target.checked })
+                    if (e.target.checked) setShowBattleConfig(true)
+                  }}
+                />
+                <label htmlFor="battle-mode" className="text-sm font-bold cursor-pointer">
+                  🥊 경쟁 모드
+                </label>
+              </div>
+              {competitorSetup.enabled && (
+                <button
+                  onClick={() => setShowBattleConfig(true)}
+                  className="text-[10px] text-blue-600 hover:underline"
+                >
+                  경쟁자 {competitorSetup.count}명 | AUM x{competitorSetup.aumMultiplier} ⚙️
+                </button>
+              )}
+            </div>
           </RetroPanel>
 
           {/* Victory Goal Selection */}
@@ -347,8 +404,12 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
                         </span>
                       </div>
                     </div>
-                    <RetroButton variant="primary" onClick={() => handleStartGame(d.key)}>
-                      {competitorSetup.enabled ? '⚔️ Battle!' : '시작'}
+                    <RetroButton
+                      variant="primary"
+                      onClick={() => handleStartGame(d.key)}
+                      disabled={gameMode === 'kospi' && !kospiDbReady}
+                    >
+                      {competitorSetup.enabled ? '⚔️ 대결!' : '시작'}
                     </RetroButton>
                   </div>
                 </RetroPanel>
@@ -361,6 +422,107 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
           </div>
         </div>
       </RetroPanel>
+
+      {/* Battle Config Modal */}
+      {showBattleConfig && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
+          <RetroPanel className="p-1 max-w-sm w-full mx-4">
+            <div className="bg-win-title-active text-win-title-text px-2 py-1 text-sm font-bold mb-1 flex justify-between items-center">
+              <span>🥊 경쟁 모드 설정</span>
+              <button
+                onClick={() => setShowBattleConfig(false)}
+                className="text-win-title-text hover:text-white text-xs px-1"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              {/* Competitor Count Slider */}
+              <div>
+                <label className="block text-xs mb-1">
+                  경쟁자 수: <strong>{competitorSetup.count}명</strong>
+                </label>
+                <input
+                  type="range"
+                  min={1}
+                  max={5}
+                  value={competitorSetup.count}
+                  onChange={(e) =>
+                    setCompetitorSetup({ ...competitorSetup, count: Number(e.target.value) })
+                  }
+                  className="w-full h-1 bg-win-shadow rounded appearance-none cursor-pointer accent-win-highlight"
+                />
+                <div className="flex justify-between text-[10px] text-retro-gray mt-1">
+                  <span>1명 (쉬움)</span>
+                  <span>5명 (어려움)</span>
+                </div>
+              </div>
+
+              {/* AUM Multiplier Slider */}
+              <div>
+                <label className="block text-xs mb-1">
+                  경쟁자 자금 배율: <strong>x{competitorSetup.aumMultiplier}</strong>
+                  <span className="text-retro-gray ml-1">
+                    (경쟁자당{' '}
+                    {(
+                      (DIFFICULTY_TABLE.normal.initialCash * competitorSetup.aumMultiplier) /
+                      competitorSetup.count /
+                      10000
+                    ).toLocaleString()}
+                    만원)
+                  </span>
+                </label>
+                <input
+                  type="range"
+                  min={AUM_CONFIG.MIN_MULTIPLIER}
+                  max={AUM_CONFIG.MAX_MULTIPLIER}
+                  step={1}
+                  value={competitorSetup.aumMultiplier}
+                  onChange={(e) =>
+                    setCompetitorSetup({
+                      ...competitorSetup,
+                      aumMultiplier: Number(e.target.value),
+                      isCustomAum: true,
+                    })
+                  }
+                  className="w-full h-1 bg-win-shadow rounded appearance-none cursor-pointer accent-win-highlight"
+                />
+                <div className="flex justify-between text-[10px] text-retro-gray mt-1">
+                  <span>x1 (동등)</span>
+                  <span>x100 (압도적)</span>
+                </div>
+              </div>
+
+              {/* Rival Preview */}
+              <div>
+                <div className="text-[10px] font-bold mb-1">참가 경쟁자:</div>
+                <div className="grid grid-cols-2 gap-1">
+                  {competitorNames.slice(0, competitorSetup.count).map((rival, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-1 p-1 bg-win-face rounded text-[10px]"
+                    >
+                      <span className="text-sm">{rival.icon}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate font-semibold">{rival.name}</div>
+                        <div className="text-retro-gray">{COMPETITOR_STYLE_LABELS[i % 4]}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <RetroButton
+                variant="primary"
+                className="w-full"
+                onClick={() => setShowBattleConfig(false)}
+              >
+                설정 완료
+              </RetroButton>
+            </div>
+          </RetroPanel>
+        </div>
+      )}
     </div>
   )
 }

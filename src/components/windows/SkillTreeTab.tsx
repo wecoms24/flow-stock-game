@@ -24,6 +24,11 @@ export function SkillTreeTab({ employee }: SkillTreeTabProps) {
   const selectSkillPath = useGameStore((s) => s.selectSkillPath)
   const pathState = useGameStore((s) => s.employeeSkillPaths[employee.id])
   const showPathSelection = canSelectPath(pathState, employee.level ?? 1)
+  const [dialog, setDialog] = useState<{
+    type: 'alert' | 'confirm'
+    message: string
+    onConfirm?: () => void
+  } | null>(null)
 
   const progression = employee.progression
   const skills = calculateEmployeeStats(employee)
@@ -33,7 +38,7 @@ export function SkillTreeTab({ employee }: SkillTreeTabProps) {
   const handleUnlockSkill = (skillId: string) => {
     const result = unlockEmployeeSkill(employee.id, skillId)
     if (!result.success) {
-      alert(result.reason)
+      setDialog({ type: 'alert', message: result.reason ?? '해금에 실패했습니다.' })
     } else {
       setSelectedSkill(null)
     }
@@ -42,7 +47,7 @@ export function SkillTreeTab({ employee }: SkillTreeTabProps) {
   const handleResetSkills = () => {
     // 리셋할 스킬이 없는 경우
     if (!progression || progression.spentSkillPoints === 0) {
-      alert('리셋할 스킬이 없습니다.')
+      setDialog({ type: 'alert', message: '리셋할 스킬이 없습니다.' })
       return
     }
 
@@ -50,24 +55,33 @@ export function SkillTreeTab({ employee }: SkillTreeTabProps) {
     const cost = calculateResetCost(progression.level)
     const confirmMessage = `스킬 트리를 리셋하시겠습니까?\n\n비용: ${cost.toLocaleString()}원\n환불 SP: ${progression.spentSkillPoints} SP\n\n모든 스킬이 초기화되고 사용한 SP가 환불됩니다.`
 
-    if (!confirm(confirmMessage)) {
-      return
-    }
-
-    // 리셋 실행
-    const result = resetEmployeeSkillTree(employee.id)
-    if (!result.success) {
-      alert(result.reason || '리셋에 실패했습니다.')
-    } else {
-      alert(`스킬 트리가 리셋되었습니다.\n환불된 SP: ${progression.spentSkillPoints}\n비용: ${result.cost.toLocaleString()}원`)
-      setSelectedSkill(null)
-    }
+    setDialog({
+      type: 'confirm',
+      message: confirmMessage,
+      onConfirm: () => {
+        const result = resetEmployeeSkillTree(employee.id)
+        // setTimeout으로 배치 분리 — confirm 닫힌 후 alert 표시
+        if (!result.success) {
+          setTimeout(() => {
+            setDialog({ type: 'alert', message: result.reason || '리셋에 실패했습니다.' })
+          }, 0)
+        } else {
+          setSelectedSkill(null)
+          setTimeout(() => {
+            setDialog({
+              type: 'alert',
+              message: `스킬 트리가 리셋되었습니다.\n환불된 SP: ${progression.spentSkillPoints}\n비용: ${result.cost.toLocaleString()}원`,
+            })
+          }, 0)
+        }
+      },
+    })
   }
 
   const nextBonus = pathState ? getNextBonus(pathState, employee.level ?? 1) : null
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
       {/* Skill Path Selection (레벨 5+ 미선택 시) */}
       {showPathSelection && (
         <div className="win-inset bg-yellow-50 p-2 mb-2 border-2 border-yellow-400">
@@ -259,6 +273,25 @@ export function SkillTreeTab({ employee }: SkillTreeTabProps) {
           </div>
         )
       })()}
+
+      {/* Inline Retro Dialog */}
+      {dialog && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-50">
+          <div className="win-outset bg-win-face p-3 max-w-[280px] shadow-lg">
+            <div className="text-xs whitespace-pre-line mb-3">{dialog.message}</div>
+            <div className="flex justify-end gap-1">
+              {dialog.type === 'confirm' && (
+                <RetroButton size="sm" onClick={() => { dialog.onConfirm?.(); setDialog(null) }}>
+                  확인
+                </RetroButton>
+              )}
+              <RetroButton size="sm" onClick={() => setDialog(null)}>
+                {dialog.type === 'confirm' ? '취소' : '확인'}
+              </RetroButton>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -9,6 +9,7 @@ type FilterCategory = 'all' | CorporateSkillCategory
 export function SkillLibraryWindow() {
   const [selectedCategory, setSelectedCategory] = useState<FilterCategory>('all')
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null)
+  const [dialogMsg, setDialogMsg] = useState<string | null>(null)
 
   const corporateSkills = useGameStore((s) => s.corporateSkills)
   const playerCash = useGameStore((s) => s.player.cash)
@@ -30,12 +31,12 @@ export function SkillLibraryWindow() {
   const handleUnlock = (skillId: string) => {
     const result = unlockCorporateSkill(skillId)
     if (!result.success) {
-      alert(result.reason)
+      setDialogMsg(result.reason ?? '해금에 실패했습니다.')
     }
   }
 
   return (
-    <div className="flex flex-col h-full text-xs">
+    <div className="flex flex-col h-full text-xs relative">
       {/* Header Stats */}
       <div className="win-inset bg-white p-2 mb-2">
         <div className="flex justify-between items-center">
@@ -100,6 +101,20 @@ export function SkillLibraryWindow() {
           playerCash={playerCash}
           onUnlock={() => handleUnlock(selectedSkill.id)}
         />
+      )}
+
+      {/* Retro Dialog */}
+      {dialogMsg && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-50">
+          <div className="win-outset bg-win-face p-3 max-w-[280px] shadow-lg">
+            <div className="text-xs whitespace-pre-line mb-3">{dialogMsg}</div>
+            <div className="flex justify-end">
+              <RetroButton size="sm" onClick={() => setDialogMsg(null)}>
+                확인
+              </RetroButton>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

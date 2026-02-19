@@ -28,6 +28,7 @@ export function SettingsWindow() {
   const [currentBackend, setCurrentBackend] = useState<'IndexedDB' | 'SQLite' | '확인 중...'>('확인 중...')
   const [isMigrationCompleted, setIsMigrationCompleted] = useState(false)
   const [needsReload, setNeedsReload] = useState(false)
+  const [dialog, setDialog] = useState<{ type: 'alert' | 'confirm'; message: string; onConfirm?: () => void } | null>(null)
 
   // Detect current backend on mount
   useEffect(() => {
@@ -56,12 +57,19 @@ export function SettingsWindow() {
   }
 
   const handleResetMigration = () => {
-    if (confirm('마이그레이션 상태를 초기화하시겠습니까?\n\n⚠️ 개발자 전용 기능입니다.')) {
-      resetMigrationStatus()
-      setIsMigrationCompleted(false)
-      soundManager.playClick()
-      alert('마이그레이션 상태가 초기화되었습니다.\n페이지를 새로고침하면 다시 마이그레이션이 실행됩니다.')
-    }
+    setDialog({
+      type: 'confirm',
+      message: '마이그레이션 상태를 초기화하시겠습니까?\n\n⚠️ 개발자 전용 기능입니다.',
+      onConfirm: () => {
+        resetMigrationStatus()
+        setIsMigrationCompleted(false)
+        soundManager.playClick()
+        // setTimeout으로 배치 분리 — confirm 닫힌 후 alert 표시
+        setTimeout(() => {
+          setDialog({ type: 'alert', message: '마이그레이션 상태가 초기화되었습니다.\n페이지를 새로고침하면 다시 마이그레이션이 실행됩니다.' })
+        }, 0)
+      },
+    })
   }
 
   return (
@@ -303,6 +311,24 @@ export function SettingsWindow() {
         <br />
         (c) 2026 Wecoms.co.ltd
       </div>
+
+      {dialog && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/30 z-50">
+          <div className="win-outset bg-win-face p-3 max-w-[280px] shadow-lg">
+            <div className="text-xs whitespace-pre-line mb-3">{dialog.message}</div>
+            <div className="flex justify-end gap-1">
+              {dialog.type === 'confirm' && (
+                <RetroButton size="sm" onClick={() => { dialog.onConfirm?.(); setDialog(null) }}>
+                  확인
+                </RetroButton>
+              )}
+              <RetroButton size="sm" onClick={() => setDialog(null)}>
+                {dialog.type === 'confirm' ? '취소' : '확인'}
+              </RetroButton>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

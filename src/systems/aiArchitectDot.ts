@@ -165,8 +165,12 @@ export function generateDotLayoutProposal(
     emp.deskId = bestDesk.id
   }
 
-  // 2. 배치된 직원 재배치 (20% 이상 개선 시)
+  // 2. 배치된 직원 재배치 (테마 기반 다양한 제안)
   const assigned = simEmps.filter((e) => e.deskId)
+  const themeRoll = Math.random()
+  const theme = themeRoll < 0.4 ? 'synergy' : themeRoll < 0.7 ? 'wellness' : themeRoll < 0.9 ? 'pipeline' : 'social'
+  const relocThreshold = 0.15 + Math.random() * 0.10 // 15~25% 개선 시 제안
+
   for (const emp of assigned) {
     if (moves.some((m) => m.employeeId === emp.id)) continue
 
@@ -192,9 +196,26 @@ export function generateDotLayoutProposal(
         layout.decorations,
         layout.canvasSize,
       )
-      if (altScore / Math.max(curScore, 1) >= 1.2) {
+      if (altScore / Math.max(curScore, 1) >= 1 + relocThreshold) {
         const fromGrid = toGridCoord(curDesk.position.x, curDesk.position.y)
         const toGrid = toGridCoord(altDesk.position.x, altDesk.position.y)
+
+        // 테마별 이유 텍스트
+        let reason: string
+        switch (theme) {
+          case 'synergy':
+            reason = `업무 효율 개선: ${curScore}점 → ${altScore}점`
+            break
+          case 'wellness':
+            reason = `${emp.name}님 스트레스 관리를 위한 재배치`
+            break
+          case 'pipeline':
+            reason = `분석가↔매니저 파이프라인 최적화`
+            break
+          case 'social':
+            reason = `${emp.name}님 소통 강화 배치`
+            break
+        }
 
         moves.push({
           employeeId: emp.id,
@@ -205,7 +226,7 @@ export function generateDotLayoutProposal(
           toDeskId: altDesk.id,
           fromCoord: fromGrid,
           toCoord: toGrid,
-          reason: `시너지 향상: ${curScore}→${altScore}`,
+          reason,
           scoreImprovement: altScore - curScore,
           currentScore: curScore,
           newScore: altScore,

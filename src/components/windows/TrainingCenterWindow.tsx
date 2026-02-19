@@ -10,7 +10,7 @@ export function TrainingCenterWindow() {
   const [mode, setMode] = useState<'programs' | 'new'>('programs')
 
   return (
-    <div className="flex flex-col h-full text-xs">
+    <div className="flex flex-col h-full text-xs relative">
       {/* Tab Bar */}
       <div className="flex gap-1 mb-2">
         <RetroButton
@@ -41,6 +41,7 @@ function ProgramList() {
   const corporateSkills = useGameStore((s) => s.corporateSkills)
   const employees = useGameStore((s) => s.player.employees)
   const cancelTrainingProgram = useGameStore((s) => s.cancelTrainingProgram)
+  const [dialog, setDialog] = useState<{ message: string; onConfirm?: () => void } | null>(null)
 
   const activePrograms = training.programs.filter((p) => p.status === 'in_progress')
   const completedPrograms = training.programs.filter((p) => p.status === 'completed').slice(-5)
@@ -75,9 +76,10 @@ function ProgramList() {
               skillName={getSkillName(prog.targetSkillId)}
               getEmployeeName={getEmployeeName}
               onCancel={() => {
-                if (confirm('정말 이 교육을 취소하시겠습니까?')) {
-                  cancelTrainingProgram(prog.id)
-                }
+                setDialog({
+                  message: '정말 이 교육을 취소하시겠습니까?',
+                  onConfirm: () => cancelTrainingProgram(prog.id),
+                })
               }}
             />
           ))}
@@ -107,6 +109,25 @@ function ProgramList() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Retro Dialog */}
+      {dialog && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/30 z-50">
+          <div className="win-outset bg-win-face p-3 max-w-[280px] shadow-lg">
+            <div className="text-xs whitespace-pre-line mb-3">{dialog.message}</div>
+            <div className="flex justify-end gap-1">
+              {dialog.onConfirm && (
+                <RetroButton size="sm" onClick={() => { dialog.onConfirm?.(); setDialog(null) }}>
+                  확인
+                </RetroButton>
+              )}
+              <RetroButton size="sm" onClick={() => setDialog(null)}>
+                {dialog.onConfirm ? '취소' : '확인'}
+              </RetroButton>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -202,6 +223,7 @@ function NewProgramForm({ onCreated }: NewProgramFormProps) {
 
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null)
   const [selectedTrainees, setSelectedTrainees] = useState<string[]>([])
+  const [dialogMsg, setDialogMsg] = useState<string | null>(null)
 
   // Skills that are unlocked and teachable
   const teachableSkills = useMemo(
@@ -251,7 +273,7 @@ function NewProgramForm({ onCreated }: NewProgramFormProps) {
       setSelectedTrainees([])
       onCreated()
     } else {
-      alert(result.reason)
+      setDialogMsg(result.reason ?? '교육을 시작할 수 없습니다.')
     }
   }
 
@@ -356,6 +378,20 @@ function NewProgramForm({ onCreated }: NewProgramFormProps) {
           >
             🎓 교육 시작
           </RetroButton>
+        </div>
+      )}
+
+      {/* Retro Dialog */}
+      {dialogMsg && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/30 z-50">
+          <div className="win-outset bg-win-face p-3 max-w-[280px] shadow-lg">
+            <div className="text-xs whitespace-pre-line mb-3">{dialogMsg}</div>
+            <div className="flex justify-end">
+              <RetroButton size="sm" onClick={() => setDialogMsg(null)}>
+                확인
+              </RetroButton>
+            </div>
+          </div>
         </div>
       )}
     </div>

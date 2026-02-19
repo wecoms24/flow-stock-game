@@ -291,7 +291,7 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
                         h.companyId === selectedId ? 'text-white/70' : 'text-retro-gray'
                       }`}
                     >
-                      {h.shares}주 / 평단 {h.avgBuyPrice.toLocaleString()}원
+                      {h.shares}주 / <span title="평균 매입 단가">평단</span> {h.avgBuyPrice.toLocaleString()}원
                     </div>
                   </div>
                   <div className="text-right ml-2">
@@ -392,7 +392,7 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
             })()}
             {/* VI Indicator */}
             {isVIHalted(company) && (
-              <span className="ml-2 text-xs text-yellow-600 font-bold animate-pulse">
+              <span className="ml-2 text-xs text-yellow-600 font-bold animate-pulse" title="변동성 완화장치 - 단기 급등락 시 거래 일시 정지">
                 ⚠️ VI 발동 중 ({getVIRemainingTicks(company)}h)
               </span>
             )}
@@ -538,7 +538,7 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
             <div className="flex justify-between">
               <span className="text-retro-gray">보유 {position.shares}주</span>
               <span className="text-retro-gray">
-                평단 {position.avgBuyPrice.toLocaleString()}원
+                <span title="평균 매입 단가">평단</span> {position.avgBuyPrice.toLocaleString()}원
               </span>
               <span
                 className={`font-bold ${

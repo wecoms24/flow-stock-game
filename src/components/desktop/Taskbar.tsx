@@ -21,6 +21,10 @@ const MENU_ITEMS = [
   { category: '관리', type: 'ranking' as WindowType, icon: 'ranking' as IconName, label: '랭킹', menuLabel: '랭킹' },
   { category: '관리', type: 'skill_library' as WindowType, icon: 'skill_book' as IconName, label: '스킬', menuLabel: '스킬 라이브러리' },
   { category: '관리', type: 'training_center' as WindowType, icon: 'graduation' as IconName, label: '교육', menuLabel: '교육 센터' },
+  { category: '관리', type: 'achievement_log' as WindowType, icon: 'ranking' as IconName, label: '업적', menuLabel: '업적 기록' },
+  { category: '정보', type: 'dashboard' as WindowType, icon: 'chart' as IconName, label: '대시보드', menuLabel: '종합 대시보드' },
+  { category: '정보', type: 'monthly_cards' as WindowType, icon: 'news' as IconName, label: '월간 카드', menuLabel: '이달의 카드' },
+  { category: '정보', type: 'event_chain_tracker' as WindowType, icon: 'news' as IconName, label: '이벤트', menuLabel: '이벤트 체인' },
   { category: '시스템', type: 'settings' as WindowType, icon: 'settings' as IconName, label: '설정', menuLabel: '설정' },
 ] as const
 
@@ -57,6 +61,7 @@ export function Taskbar() {
     openWindow,
     windows,
     minimizeWindow,
+    focusWindow,
     setSpeed,
     togglePause,
     unreadNewsCount,
@@ -215,7 +220,14 @@ export function Taskbar() {
             key={win.id}
             size="sm"
             className={`text-[10px] max-w-24 truncate ${win.isMinimized ? 'opacity-60' : ''}`}
-            onClick={() => minimizeWindow(win.id)}
+            onClick={() => {
+              if (win.isMinimized) {
+                minimizeWindow(win.id)  // 최소화 해제 (토글)
+                focusWindow(win.id)     // 복원 후 포커스
+              } else {
+                minimizeWindow(win.id)  // 최소화
+              }
+            }}
           >
             {win.title}
           </RetroButton>
@@ -279,7 +291,7 @@ export function Taskbar() {
       {circuitBreaker.isActive && circuitBreaker.remainingTicks > 0 && (
         <div
           className="win-inset px-2 py-0.5 text-[10px] shrink-0 flex items-center gap-1 bg-red-600 text-white font-bold animate-pulse"
-          title={`서킷브레이커 Level ${circuitBreaker.level} - KOSPI ${((circuitBreaker.kospiCurrent - circuitBreaker.kospiSessionOpen) / circuitBreaker.kospiSessionOpen * 100).toFixed(1)}%`}
+          title={`서킷브레이커 - 주가 급락 시 거래 일시 정지 (Level ${circuitBreaker.level}, KOSPI ${((circuitBreaker.kospiCurrent - circuitBreaker.kospiSessionOpen) / circuitBreaker.kospiSessionOpen * 100).toFixed(1)}%)`}
         >
           <span>🚨</span>
           <span>CB Lv{circuitBreaker.level}</span>

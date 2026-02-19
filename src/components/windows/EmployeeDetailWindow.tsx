@@ -34,6 +34,7 @@ interface EmployeeDetailWindowProps {
 
 export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) {
   const [activeTab, setActiveTab] = useState<'info' | 'skillTree' | 'bio'>('info')
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null)
   const employees = useGameStore((s) => s.player.employees)
   const time = useGameStore((s) => s.time)
   const praiseEmployee = useGameStore((s) => s.praiseEmployee)
@@ -85,7 +86,7 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
   )
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
       {/* Tab Buttons */}
       <div className="flex gap-1 p-2 border-b border-gray-400">
         <RetroButton
@@ -370,9 +371,10 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
           size="sm"
           variant="danger"
           onClick={() => {
-            if (confirm(`${emp.name}을(를) 해고하시겠습니까?`)) {
-              fireEmployee(emp.id)
-            }
+            setConfirmDialog({
+              message: `${emp.name}을(를) 해고하시겠습니까?`,
+              onConfirm: () => fireEmployee(emp.id),
+            })
           }}
           className="text-[10px]"
         >
@@ -435,6 +437,23 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
       ) : (
         <div className="flex-1 p-2 overflow-y-auto">
           <EmployeeBioPanel employeeId={emp.id} />
+        </div>
+      )}
+
+      {/* Retro Confirm Dialog */}
+      {confirmDialog && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-50">
+          <div className="win-outset bg-win-face p-3 max-w-[280px] shadow-lg">
+            <div className="text-xs whitespace-pre-line mb-3">{confirmDialog.message}</div>
+            <div className="flex justify-end gap-1">
+              <RetroButton size="sm" onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null) }}>
+                확인
+              </RetroButton>
+              <RetroButton size="sm" onClick={() => setConfirmDialog(null)}>
+                취소
+              </RetroButton>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -11,6 +11,19 @@ interface ValuationMethod {
   description: string
 }
 
+const SECTOR_LABELS: Record<string, string> = {
+  tech: '기술',
+  finance: '금융',
+  energy: '에너지',
+  healthcare: '헬스케어',
+  consumer: '소비재',
+  industrial: '산업재',
+  telecom: '통신',
+  materials: '소재',
+  utilities: '유틸리티',
+  realestate: '부동산',
+}
+
 export function AcquisitionWindow() {
   const companies = useGameStore((s) => s.companies)
   const player = useGameStore((s) => s.player)
@@ -46,9 +59,13 @@ export function AcquisitionWindow() {
         const volatilityRisk = Math.min(20, company.volatility * 100)
         const riskScore = Math.round(debtRisk + profitRisk + volatilityRisk)
 
-        // 시너지 점수 계산
+        // 시너지 점수 계산 — 플레이어 포트폴리오 기반 섹터 시너지
         const growthSynergy = Math.min(50, company.financials.growthRate * 100)
-        const sectorSynergy = 30
+        const sameSectorCount = Object.keys(player.portfolio).filter((cId) => {
+          const c = companies.find((comp) => comp.id === cId)
+          return c && c.sector === company.sector && player.portfolio[cId].shares > 0
+        }).length
+        const sectorSynergy = sameSectorCount === 0 ? 35 : sameSectorCount <= 3 ? 20 : 10
         const scaleSynergy = Math.min(20, (company.marketCap / 100_000_000_000) * 20)
         const synergy = Math.round(growthSynergy + sectorSynergy + scaleSynergy)
 
@@ -74,11 +91,12 @@ export function AcquisitionWindow() {
     const company = selectedTarget.company
     const marketCap = company.marketCap
 
-    // DCF (현금흐름할인법)
-    const dcfValue = company.financials.netIncome * 15 * 100_000_000 // 간단한 추정
+    // DCF (현금흐름할인법) — netIncome은 억 단위
+    const dcfValue = company.financials.netIncome * 15 * 100_000_000
 
-    // P/E 멀티플
-    const peValue = company.financials.eps * 5_000_000 * 12 // 업종 평균 PER 12 가정
+    // P/E 멀티플 — eps × 발행주식수 × PER 12
+    const sharesOutstanding = company.price > 0 ? company.marketCap / company.price : 1
+    const peValue = company.financials.eps * sharesOutstanding * 12
 
     // 장부가치
     const bookValue = marketCap * 0.8 // 간단한 추정
@@ -188,7 +206,7 @@ export function AcquisitionWindow() {
                     현재 인수 가능한 기업이 없습니다.
                     <br />
                     <span className="text-[10px]">
-                      (조건: 시총 하위 50% + 가격 20% 이상 하락)
+                      시장에서 부진한 기업을 인수할 수 있습니다
                     </span>
                   </div>
                 ) : (
@@ -244,7 +262,7 @@ export function AcquisitionWindow() {
                   <div className="border-b-2 border-retro-gray bg-retro-bg px-2 py-1">
                     <div className="font-bold text-xs">{selectedTarget.company.name}</div>
                     <div className="text-[10px] text-retro-gray">
-                      {selectedTarget.company.ticker} · {selectedTarget.company.sector}
+                      {selectedTarget.company.ticker} · {SECTOR_LABELS[selectedTarget.company.sector] ?? selectedTarget.company.sector}
                     </div>
                   </div>
                   <div className="flex-1 overflow-y-auto p-3 space-y-3">
@@ -517,7 +535,7 @@ export function AcquisitionWindow() {
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-blue-500" />
                     <span>산업 섹터:</span>
-                    <span className="flex-1 text-right">{selectedTarget.company.sector}</span>
+                    <span className="flex-1 text-right">{SECTOR_LABELS[selectedTarget.company.sector] ?? selectedTarget.company.sector}</span>
                   </div>
                 </div>
               </div>
@@ -717,7 +735,7 @@ export function AcquisitionWindow() {
                   </div>
                   <div className="flex items-start gap-2">
                     <span>•</span>
-                    <span>시장 점유율 확대: {selectedTarget.company.sector} 섹터 경쟁력 강화</span>
+                    <span>시장 점유율 확대: {SECTOR_LABELS[selectedTarget.company.sector] ?? selectedTarget.company.sector} 섹터 경쟁력 강화</span>
                   </div>
                   <div className="flex items-start gap-2">
                     <span>•</span>

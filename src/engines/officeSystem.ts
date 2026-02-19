@@ -23,6 +23,7 @@ export interface OfficeEvent {
   emoji: string
   message: string
   employeeIds: string[]
+  hour?: number
 }
 
 /* ── Buff Calculation ── */

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { formatHour } from '../../config/timeConfig'
 
@@ -23,6 +23,7 @@ export function NotificationCenter() {
   const officeEvents = useGameStore((s) => s.officeEvents)
   const hour = useGameStore((s) => s.time.hour)
   const [isOpen, setIsOpen] = useState(false)
+  const [lastReadIndex, setLastReadIndex] = useState(0)
 
   const notifications = useMemo(() => {
     return officeEvents
@@ -32,15 +33,22 @@ export function NotificationCenter() {
   }, [officeEvents])
 
   const unreadCount = useMemo(() => {
-    // 최근 10개를 읽지 않은 것으로 간주
-    return Math.min(notifications.length, 10)
-  }, [notifications])
+    return Math.max(0, notifications.length - lastReadIndex)
+  }, [notifications, lastReadIndex])
+
+  const handleToggle = useCallback(() => {
+    if (!isOpen) {
+      // 패널 열 때 현재 알림 수를 기록하여 읽음 처리
+      setLastReadIndex(notifications.length)
+    }
+    setIsOpen((prev) => !prev)
+  }, [isOpen, notifications.length])
 
   return (
     <div className="relative">
       {/* 알림 아이콘 버튼 */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleToggle}
         className="relative px-2 py-1 hover:bg-gray-200 active:bg-gray-300 flex items-center gap-1"
         title="알림 센터"
       >
@@ -61,8 +69,8 @@ export function NotificationCenter() {
             onClick={() => setIsOpen(false)}
           />
 
-          {/* 알림 패널 */}
-          <div className="absolute top-full right-0 mt-0.5 w-80 max-h-96 win-border bg-win-bg shadow-lg z-50 overflow-hidden">
+          {/* 알림 패널 — 태스크바가 하단 fixed이므로 위로 열림 */}
+          <div className="absolute bottom-full right-0 mb-0.5 w-80 max-h-96 win-border bg-win-bg shadow-lg z-50 overflow-hidden">
             {/* 헤더 */}
             <div className="bg-win-title text-white px-2 py-1 text-xs font-bold flex items-center justify-between">
               <span>알림 센터</span>
@@ -86,7 +94,7 @@ export function NotificationCenter() {
                         <span className="text-base flex-shrink-0">{evt.emoji}</span>
                         <div className="flex-1 min-w-0">
                           <div className="text-retro-gray mb-0.5">
-                            {formatHour(hour)}
+                            {formatHour(evt.hour ?? hour)}
                           </div>
                           <div className="break-words">{evt.message}</div>
                         </div>

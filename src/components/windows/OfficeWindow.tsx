@@ -70,6 +70,9 @@ export function OfficeWindow() {
   } = useGameStore()
   const employeeBehaviors = useGameStore((s) => s.employeeBehaviors)
 
+  // Dialog state (replaces native alert/confirm)
+  const [dialog, setDialog] = useState<{ type: 'alert' | 'confirm'; message: string; onConfirm?: () => void } | null>(null)
+
   // UI State
   const [placementMode, setPlacementMode] = useState<PlacementMode>(null)
   const [selectedFurnitureType, setSelectedFurnitureType] = useState<FurnitureType | null>(null)
@@ -219,9 +222,11 @@ export function OfficeWindow() {
       // Remove furniture or employee
       const furniture = grid.furniture.find((f) => f.id === cell.occupiedBy)
       if (furniture) {
-        if (confirm(`${FURNITURE_CATALOG[furniture.type].name}을(를) 제거하시겠습니까? (50% 환불)`)) {
-          removeFurniture(furniture.id)
-        }
+        setDialog({
+          type: 'confirm',
+          message: `${FURNITURE_CATALOG[furniture.type].name}을(를) 제거하시겠습니까? (50% 환불)`,
+          onConfirm: () => removeFurniture(furniture.id),
+        })
       } else {
         // Employee - open detail window
         const employee = player.employees.find((e) => e.id === cell.occupiedBy)
@@ -239,11 +244,11 @@ export function OfficeWindow() {
     const levelOk = !catalog.unlockLevel || player.officeLevel >= catalog.unlockLevel
 
     if (!levelOk) {
-      alert(`레벨 ${catalog.unlockLevel} 사무실이 필요합니다.`)
+      setDialog({ type: 'alert', message: `레벨 ${catalog.unlockLevel} 사무실이 필요합니다.` })
       return
     }
     if (!canAfford) {
-      alert(`자금이 부족합니다. ${catalog.cost.toLocaleString()}원이 필요합니다.`)
+      setDialog({ type: 'alert', message: `자금이 부족합니다. ${catalog.cost.toLocaleString()}원이 필요합니다.` })
       return
     }
 
@@ -325,7 +330,7 @@ export function OfficeWindow() {
   }
 
   return (
-    <div className="text-xs p-1 space-y-2 overflow-y-auto h-full">
+    <div className="text-xs p-1 space-y-2 overflow-y-auto h-full relative">
       {/* Header */}
       <div className="text-center">
         <div className="flex items-center justify-center gap-2">
@@ -347,10 +352,10 @@ export function OfficeWindow() {
 
               // 오피스 그리드 확인
               if (!player.officeGrid) {
-                alert(
-                  '⚠️ 오피스가 초기화되지 않았습니다.\n\n' +
-                  '게임을 시작하면 자동으로 오피스가 생성됩니다.'
-                )
+                setDialog({
+                  type: 'alert',
+                  message: '⚠️ 오피스가 초기화되지 않았습니다.\n\n게임을 시작하면 자동으로 오피스가 생성됩니다.',
+                })
                 console.error('❌ Office grid가 없습니다.')
                 return
               }
@@ -374,11 +379,10 @@ export function OfficeWindow() {
                 console.log('✅ AI 제안 생성 완료')
               } catch (error) {
                 console.error('❌ AI 제안 생성 중 오류:', error)
-                alert(
-                  '❌ AI 제안 생성 중 오류가 발생했습니다.\n\n' +
-                  '오류: ' + String(error) + '\n\n' +
-                  '브라우저 콘솔(F12)에서 자세한 정보를 확인하세요.'
-                )
+                setDialog({
+                  type: 'alert',
+                  message: '❌ AI 제안 생성 중 오류가 발생했습니다.\n\n오류: ' + String(error) + '\n\n브라우저 콘솔(F12)에서 자세한 정보를 확인하세요.',
+                })
               }
             }}
             className="text-[8px] bg-blue-600 hover:bg-blue-500"
@@ -725,9 +729,11 @@ export function OfficeWindow() {
                           size="sm"
                           variant="danger"
                           onClick={() => {
-                            if (confirm(`${emp.name}을(를) 해고하시겠습니까?`)) {
-                              fireEmployee(emp.id)
-                            }
+                            setDialog({
+                              type: 'confirm',
+                              message: `${emp.name}을(를) 해고하시겠습니까?`,
+                              onConfirm: () => fireEmployee(emp.id),
+                            })
                           }}
                           className="text-[8px]"
                         >
@@ -832,6 +838,25 @@ export function OfficeWindow() {
             soundManager.playAIProposalOpen()
           }}
         />
+      )}
+
+      {/* Retro Dialog Overlay */}
+      {dialog && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-50">
+          <div className="win-outset bg-win-face p-3 max-w-[280px] shadow-lg">
+            <div className="text-xs whitespace-pre-line mb-3">{dialog.message}</div>
+            <div className="flex justify-end gap-1">
+              {dialog.type === 'confirm' && (
+                <RetroButton size="sm" onClick={() => { dialog.onConfirm?.(); setDialog(null) }}>
+                  확인
+                </RetroButton>
+              )}
+              <RetroButton size="sm" onClick={() => setDialog(null)}>
+                {dialog.type === 'confirm' ? '취소' : '확인'}
+              </RetroButton>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

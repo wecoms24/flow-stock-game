@@ -241,7 +241,7 @@ export function RankingWindow() {
             <>
               {/* Header Stats */}
               <div className="p-2 bg-win-highlight border-2 border-win-shadow rounded shrink-0">
-                <div className="text-[10px] text-retro-gray">Your Rank</div>
+                <div className="text-[10px] text-retro-gray">내 순위</div>
                 <div className="text-2xl font-bold">
                   {playerRank === 1 && '🥇'}
                   {playerRank === 2 && '🥈'}
@@ -255,11 +255,11 @@ export function RankingWindow() {
                 <table className="w-full text-[11px]">
                   <thead className="sticky top-0 bg-win-face border-b-2 border-win-shadow">
                     <tr>
-                      <th className="p-1 text-left">Rank</th>
-                      <th className="p-1 text-left">Name</th>
-                      <th className="p-1 text-right">Assets</th>
-                      <th className="p-1 text-right">ROI</th>
-                      <th className="p-1 text-right">1-Day</th>
+                      <th className="p-1 text-left">순위</th>
+                      <th className="p-1 text-left">이름</th>
+                      <th className="p-1 text-right">자산</th>
+                      <th className="p-1 text-right">수익률</th>
+                      <th className="p-1 text-right">일간</th>
                       <th className="p-1"></th>
                     </tr>
                   </thead>
@@ -291,7 +291,7 @@ export function RankingWindow() {
                           )}
                           {entry.name}
                           {entry.isPlayer && (
-                            <span className="ml-1 text-[9px] text-win-highlight-text">(You)</span>
+                            <span className="ml-1 text-[9px] text-win-highlight-text">(나)</span>
                           )}
                         </td>
                         <td className="p-1 text-right font-mono">
@@ -331,11 +331,11 @@ export function RankingWindow() {
               {/* Taunt Feed */}
               <div className="border-2 border-win-shadow bg-white p-2 shrink-0">
                 <div className="text-[10px] font-bold mb-1 flex items-center justify-between">
-                  <span className="flex items-center gap-1">💬 Rival Talk</span>
+                  <span className="flex items-center gap-1">💬 라이벌 발언</span>
                   <button
                     onClick={() => setTauntExpanded(!tauntExpanded)}
                     className="text-[9px] px-1 hover:bg-gray-100 rounded"
-                    title={tauntExpanded ? 'Collapse' : 'Expand'}
+                    title={tauntExpanded ? '접기' : '펼치기'}
                   >
                     {tauntExpanded ? '▼' : '▶'}
                   </button>
@@ -343,7 +343,7 @@ export function RankingWindow() {
                 {tauntExpanded && (
                   <div className="space-y-1">
                     {taunts.length === 0 && (
-                      <div className="text-[9px] text-retro-gray italic">No messages yet...</div>
+                      <div className="text-[9px] text-retro-gray italic">아직 발언 없음...</div>
                     )}
                     {taunts
                       .slice(-5)
