@@ -48,6 +48,10 @@ export default defineConfig({
   plugins: [sqlWasmInlinePlugin(), wasm(), topLevelAwait(), react(), tailwindcss()],
   server: {
     headers: COOP_COEP,
+    watch: {
+      // Python venv, scripts 디렉토리 감시 제외 → ENOSPC 방지
+      ignored: ['**/scripts/venv/**', '**/scripts/__pycache__/**'],
+    },
   },
   preview: {
     headers: COOP_COEP,

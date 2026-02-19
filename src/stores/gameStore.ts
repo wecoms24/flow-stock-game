@@ -565,23 +565,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
           ? historicalDataService.getStockStats(c.historicalTicker)
           : null
 
-        // IPO 전 종목은 delisted로 시작
-        if (stats?.ipoDate && parseInt(stats.ipoDate.substring(0, 4), 10) > dcfg.startYear) {
-          return initializeCompanyFinancials({
-            ...c,
-            status: 'delisted' as const,
-            price: 0,
-            previousPrice: 0,
-            basePrice: 0,
-            sessionOpenPrice: 0,
-            priceHistory: [],
-          })
-        }
+        // KOSPI DB의 ipo_date는 실제 상장일이 아닌 "데이터 시작일"임.
+        // 모든 종목이 동일한 날짜(2000-05-29)를 가지므로 이 값으로 pre-IPO 판단 불가.
+        // → 모든 KOSPI 종목은 game start에서 active로 시작, 하드코딩 가격 사용.
+        // (1995-1999 구간은 GBM 시뮬레이션, 2000+ 구간은 correctionDrift로 실데이터 추적)
 
-        // 실제 통계로 덮어쓰기
-        const realPrice = stats?.basePrice ?? c.price
+        // 초기 가격: 하드코딩 가격 사용 (DB base_price는 2000년 기준이라 1995 시뮬레이션에 부적합)
+        const realPrice = c.price
 
         // 시작 월 실제 일별 종가로 priceHistory 미리 채우기 (차트 초기 표시)
+        // 1995년은 DB에 데이터 없을 수 있으므로 빈 경우 realPrice로 채움
         const initPriceHistory: number[] = []
         if (c.historicalTicker) {
           for (let gameDay = 1; gameDay <= 30; gameDay++) {

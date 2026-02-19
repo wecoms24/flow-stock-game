@@ -129,24 +129,33 @@ function applyPriceSafetyLimits(
   sessionOpenPrice: number,
   basePrice: number
 ): number {
+  let safePrice = newPrice
+
   // Layer 1: Daily price limits (±30% from session open, KRX standard)
   // SYNC: Must stay in sync with src/config/priceLimit.ts:MAX_DAILY_CHANGE
-  const MAX_DAILY_CHANGE = 0.30
-  const dailyMax = applyTickSize(sessionOpenPrice * (1 + MAX_DAILY_CHANGE))
-  const dailyMin = applyTickSize(sessionOpenPrice * (1 - MAX_DAILY_CHANGE))
-  let safePrice = Math.max(dailyMin, Math.min(dailyMax, newPrice))
+  // Guard: skip daily limit when sessionOpenPrice is not yet set (0 → prevents locking at 0)
+  if (sessionOpenPrice > 0) {
+    const MAX_DAILY_CHANGE = 0.30
+    const dailyMax = applyTickSize(sessionOpenPrice * (1 + MAX_DAILY_CHANGE))
+    const dailyMin = applyTickSize(sessionOpenPrice * (1 - MAX_DAILY_CHANGE))
+    safePrice = Math.max(dailyMin, Math.min(dailyMax, safePrice))
+  }
 
   // Layer 2: Absolute price bounds (±1000x from IPO)
-  const ABSOLUTE_MAX_MULTIPLIER = 1000 // 100,000% max gain
-  const ABSOLUTE_MIN_MULTIPLIER = 0.001 // -99.9% max loss
-  const absoluteMax = basePrice * ABSOLUTE_MAX_MULTIPLIER
-  const absoluteMin = basePrice * ABSOLUTE_MIN_MULTIPLIER
-  safePrice = Math.max(absoluteMin, Math.min(absoluteMax, safePrice))
+  // Guard: skip absolute bounds when basePrice is not yet set (0 → prevents locking at 0)
+  if (basePrice > 0) {
+    const ABSOLUTE_MAX_MULTIPLIER = 1000 // 100,000% max gain
+    const ABSOLUTE_MIN_MULTIPLIER = 0.001 // -99.9% max loss
+    const absoluteMax = basePrice * ABSOLUTE_MAX_MULTIPLIER
+    const absoluteMin = basePrice * ABSOLUTE_MIN_MULTIPLIER
+    safePrice = Math.max(absoluteMin, Math.min(absoluteMax, safePrice))
+  }
 
   // Layer 3: Apply tick size rounding (KRX standard)
   safePrice = applyTickSize(safePrice)
 
-  return safePrice
+  // Floor: never return below 100 won
+  return Math.max(100, safePrice)
 }
 
 /**
