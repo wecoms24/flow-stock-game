@@ -8,9 +8,9 @@
  */
 
 import initSqlJs, { type Database } from 'sql.js'
-// ?url: Vite가 asset으로 관리 → 올바른 MIME type(application/wasm) + 올바른 URL 보장
-// vite-plugin-wasm의 transform을 거치지 않고 순수 URL 문자열 반환
-import sqlWasmUrl from '../assets/sql-wasm.wasm?url'
+// vite-plugin-wasm이 빌드/dev 시점에 .wasm을 사전 컴파일 → WebAssembly.Module 반환
+// ?url suffix 없이 import해야 vite-plugin-wasm이 Module 객체로 변환함
+import sqlWasmModule from '../assets/sql-wasm.wasm'
 
 export interface DailyPrice {
   open: number
@@ -54,10 +54,21 @@ class HistoricalDataService {
     onProgress?.(0)
 
     // 1) sql.js WASM 초기화
-    // sqlWasmUrl: Vite가 관리하는 asset URL (dev: /@fs/..., prod: /assets/sql-wasm.xxx.wasm)
-    const SQL = await initSqlJs({
-      locateFile: (file: string) => (file === 'sql-wasm.wasm' ? sqlWasmUrl : file),
-    })
+    // instantiateWasm: URL fetch를 완전히 우회하고 vite-plugin-wasm이 사전 컴파일한
+    // WebAssembly.Module을 직접 인스턴스화. MIME type 오류 원천 차단.
+    // @types/sql.js에 instantiateWasm 필드가 없어 unknown 경유 캐스팅 사용.
+    const sqlConfig = {
+      instantiateWasm(
+        imports: WebAssembly.Imports,
+        successCallback: (instance: WebAssembly.Instance) => void,
+      ) {
+        void WebAssembly.instantiate(sqlWasmModule, imports).then((instance) =>
+          successCallback(instance),
+        )
+        return {}
+      },
+    }
+    const SQL = await initSqlJs(sqlConfig as unknown as Parameters<typeof initSqlJs>[0])
     onProgress?.(20)
 
     // 2) DB 파일 fetch
