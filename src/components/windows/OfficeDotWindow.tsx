@@ -1285,10 +1285,38 @@ export function OfficeDotWindow() {
           employees={player.employees}
           currentCash={player.cash}
           onApprove={() => {
-            // 1. 직원 이동 적용 + 이벤트 트리거 대화
             const movedEmpIds: string[] = []
+
+            // 1. 책상 구매가 필요한 직원 처리 (toDeskId가 '__new_desk__' 센티널인 경우)
             for (const move of aiProposal.moves) {
               const dotMove = move as DotEmployeeMove
+              if (!dotMove.toDeskId.startsWith('__new_desk__')) continue
+
+              // 해당 직원용 책상 구매 제안 찾기
+              const deskPurchase = aiProposal.purchases.find(
+                (p) => p.forEmployeeId === dotMove.employeeId,
+              )
+              if (!deskPurchase) continue
+
+              const success = buyDesk(deskPurchase.type as DeskType, deskPurchase.x, deskPurchase.y)
+              if (success) {
+                // 구매한 위치(x, y)로 새 책상을 정확히 찾아 직원 배정
+                const freshDesks = useGameStore.getState().player.officeLayout?.desks ?? []
+                const newDesk = freshDesks.find(
+                  (d) => !d.employeeId && d.position.x === deskPurchase.x && d.position.y === deskPurchase.y,
+                )
+                if (newDesk) {
+                  assignEmployeeToDesk(dotMove.employeeId, newDesk.id)
+                }
+              }
+              movedEmpIds.push(dotMove.employeeId)
+              triggerChatter(dotMove.employeeId, 'ai_moved_closer')
+            }
+
+            // 2. 기존 직원 이동 적용 (신규 책상 이동 제외) + 이벤트 트리거 대화
+            for (const move of aiProposal.moves) {
+              const dotMove = move as DotEmployeeMove
+              if (dotMove.toDeskId.startsWith('__new_desk__')) continue // 1단계에서 처리됨
               if (dotMove.fromDeskId) {
                 unassignEmployeeFromDesk(dotMove.employeeId)
               }
@@ -1306,12 +1334,14 @@ export function OfficeDotWindow() {
                   partner: nearbyEmp?.name ?? '동료',
                 })
               } else {
-                // 신규 배치
+                // 신규 배치 (기존 빈 책상으로)
                 triggerChatter(dotMove.employeeId, 'ai_moved_closer')
               }
             }
-            // 2. 가구 구매 적용 + 주변 직원 대화 트리거
+
+            // 3. 장식 가구 구매 적용 + 주변 직원 대화 트리거
             for (const purchase of aiProposal.purchases) {
+              if (purchase.type === 'basic' || purchase.type === 'premium') continue // 1단계에서 처리됨
               buyDecoration(purchase.type as DecorationType, purchase.x, purchase.y)
 
               // 가구 근처 직원에게 대화 트리거
@@ -1324,7 +1354,8 @@ export function OfficeDotWindow() {
                 }
               }
             }
-            // 3. 피드백
+
+            // 4. 피드백
             soundManager.playClick()
             emitParticles('star', 300, 200, 12)
             setAiProposal(null)

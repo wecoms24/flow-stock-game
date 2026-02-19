@@ -52,6 +52,7 @@ export interface FurniturePurchase {
   roi: number // 투자 대비 수익 (높을수록 좋음)
   paybackPeriod: number // 회수 기간 (시간)
   priority: number // 0-100 (높을수록 우선)
+  forEmployeeId?: string // 책상 구매 시 배치할 직원 ID (옵셔널)
 }
 
 /**

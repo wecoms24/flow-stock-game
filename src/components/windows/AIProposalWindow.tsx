@@ -214,6 +214,8 @@ export function AIProposalWindow({
 // Helper functions
 function getFurnitureEmoji(type: string): string {
   const emojiMap: Record<string, string> = {
+    basic: '🪑',
+    premium: '💺',
     desk: '🪑',
     premium_chair: '💺',
     plant: '🪴',
@@ -230,6 +232,8 @@ function getFurnitureEmoji(type: string): string {
 
 function formatFurnitureName(type: string): string {
   const nameMap: Record<string, string> = {
+    basic: '기본 책상',
+    premium: '프리미엄 책상',
     desk: '기본 책상',
     premium_chair: '고급 의자',
     plant: '대형 화분',

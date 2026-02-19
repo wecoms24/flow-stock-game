@@ -9,7 +9,7 @@
 
 import type { Employee } from '../types'
 import type { OfficeLayout, DeskItem, DecorationItem, DecorationType } from '../types/office'
-import { DECORATION_CATALOG } from '../data/furniture'
+import { DECORATION_CATALOG, DESK_CATALOG } from '../data/furniture'
 import type { LayoutProposal, EmployeeMove, FurniturePurchase } from './aiArchitect'
 
 /* ── 역할 시너지 매트릭스 ── */
@@ -123,6 +123,8 @@ export function generateDotLayoutProposal(
   const budget = cash * budgetRatio
   const currentScore = calcOverallScore(employees, layout)
   const moves: DotEmployeeMove[] = []
+  const purchases: FurniturePurchase[] = []
+  let spent = 0
 
   // 시뮬레이션용 복사 (원본 변경 방지)
   const simDesks = layout.desks.map((d) => ({ ...d }))
@@ -163,6 +165,74 @@ export function generateDotLayoutProposal(
     // 시뮬레이션 반영
     bestDesk.employeeId = emp.id
     emp.deskId = bestDesk.id
+  }
+
+  // 1b. 여전히 미배치된 직원 → 기본 책상 구매 제안
+  const deskCat = DESK_CATALOG['basic']
+  for (const emp of simEmps.filter((e) => !e.deskId)) {
+    if (simDesks.length >= layout.maxDesks) break
+    if (spent + deskCat.cost > budget) break
+
+    // 빈 위치 탐색 (충돌 없는 픽셀 좌표)
+    const allItems: { position: { x: number; y: number } }[] = [...simDesks, ...layout.decorations]
+    let pos: { x: number; y: number } | null = null
+    outerLoop: for (let row = 0; row < 5; row++) {
+      for (let col = 0; col < 7; col++) {
+        const px = 60 + col * 80
+        const py = 50 + row * 70
+        if (px > layout.canvasSize.width - 40 || py > layout.canvasSize.height - 40) continue
+        const hasCollision = allItems.some((item) => eucDist(px, py, item.position.x, item.position.y) < 50)
+        if (!hasCollision) {
+          pos = { x: px, y: py }
+          break outerLoop
+        }
+      }
+    }
+    if (!pos) break
+
+    const toGrid = toGridCoord(pos.x, pos.y)
+    // 이동 제안 추가 (toDeskId는 '__new_desk__' 센티널 → apply 시 실제 ID로 대체)
+    moves.push({
+      employeeId: emp.id,
+      employeeName: emp.name,
+      from: -1,
+      to: 0,
+      fromDeskId: null,
+      toDeskId: `__new_desk__${emp.id}`,
+      fromCoord: { x: -1, y: -1 },
+      toCoord: toGrid,
+      reason: `${emp.name} 의자 없음 → 기본 책상 구매 후 배치`,
+      scoreImprovement: 50,
+      currentScore: 0,
+      newScore: 50,
+    })
+
+    // 구매 제안 추가 (최우선 priority)
+    purchases.push({
+      type: 'basic',
+      x: pos.x,
+      y: pos.y,
+      cost: deskCat.cost,
+      reason: `${emp.name} 의자 구매`,
+      roi: 1,
+      paybackPeriod: deskCat.cost / 100,
+      priority: 999,
+      forEmployeeId: emp.id,
+    })
+    spent += deskCat.cost
+
+    // 시뮬레이션 반영
+    const simDeskId = `__new_desk__${emp.id}`
+    simDesks.push({
+      id: simDeskId,
+      type: 'basic',
+      position: pos,
+      employeeId: emp.id,
+      buffs: [],
+      cost: deskCat.cost,
+      sprite: '🪑',
+    })
+    emp.deskId = simDeskId
   }
 
   // 2. 배치된 직원 재배치 (테마 기반 다양한 제안)
@@ -242,9 +312,7 @@ export function generateDotLayoutProposal(
   }
 
   // 3. 장식 가구 구매 제안
-  const purchases: FurniturePurchase[] = []
   const decoTypes = Object.keys(DECORATION_CATALOG) as DecorationType[]
-  let spent = 0
 
   for (const type of decoTypes) {
     const cat = DECORATION_CATALOG[type]
@@ -299,8 +367,17 @@ export function generateDotLayoutProposal(
   purchases.sort((a, b) => b.priority - a.priority)
 
   // 제한: 최대 5개 이동, 3개 가구
-  const limitedMoves = moves.slice(0, 5)
+  // purchases 먼저 확정 후, 대응하는 __new_desk__ move도 함께 일관성 유지
   const limitedPurchases = purchases.slice(0, 3)
+  const includedNewDeskEmpIds = new Set(
+    limitedPurchases.filter((p) => p.forEmployeeId).map((p) => p.forEmployeeId!),
+  )
+  const limitedMoves = moves
+    .filter((m) => {
+      if (!(m as DotEmployeeMove).toDeskId.startsWith('__new_desk__')) return true
+      return includedNewDeskEmpIds.has(m.employeeId)
+    })
+    .slice(0, 5)
 
   const avgImprovement =
     limitedMoves.length > 0
