@@ -20,10 +20,38 @@ import sys
 import sqlite3
 import math
 import io
+import subprocess
 from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 from collections import Counter
+
+
+def _ensure_packages():
+    """필요한 패키지가 없으면 자동 설치"""
+    REQUIRED = [
+        ("numpy", "numpy"),
+        ("pandas", "pandas"),
+        ("pyarrow", "pyarrow"),   # pd.read_parquet() 백엔드
+    ]
+    missing = []
+    for import_name, pkg_name in REQUIRED:
+        try:
+            __import__(import_name)
+        except ImportError:
+            missing.append(pkg_name)
+
+    if missing:
+        print(f"[INFO] 필요한 패키지 설치 중: {', '.join(missing)}")
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--quiet", *missing],
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+        print("[INFO] 설치 완료")
+
+
+_ensure_packages()
 
 import numpy as np
 import pandas as pd
