@@ -8,7 +8,7 @@ import wasmUrl from '@subframe7536/sqlite-wasm/wasm-async?url'
 let dbInstance: SQLiteDB | null = null
 
 /** Current schema version -- bump this when adding migrations */
-const SCHEMA_VERSION = 6
+const SCHEMA_VERSION = 7
 
 /**
  * Initialize SQLite database with IndexedDB persistence
@@ -482,6 +482,35 @@ async function runMigrations(db: SQLiteDB): Promise<void> {
       console.log('[SQLite] Migration v6 applied: cash flow tracking columns')
     } catch (error) {
       console.error('[SQLite] Migration v6 failed:', error)
+      throw error
+    }
+  }
+
+  // Migration v7: Add KOSPI hybrid mode columns
+  if (currentVersion < 7) {
+    try {
+      const v7Columns = [
+        'ALTER TABLE companies ADD COLUMN historical_ticker TEXT;',
+        'ALTER TABLE saves ADD COLUMN game_mode TEXT DEFAULT \'virtual\';',
+      ]
+      for (const sql of v7Columns) {
+        try {
+          await db.run(sql)
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e)
+          if (!msg.includes('duplicate column')) {
+            throw e
+          }
+        }
+      }
+
+      await db.run('INSERT OR REPLACE INTO schema_versions (version, applied_at) VALUES (?, ?);', [
+        7,
+        Date.now(),
+      ])
+      console.log('[SQLite] Migration v7 applied: KOSPI hybrid mode columns')
+    } catch (error) {
+      console.error('[SQLite] Migration v7 failed:', error)
       throw error
     }
   }

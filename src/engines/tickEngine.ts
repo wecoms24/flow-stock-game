@@ -1,4 +1,6 @@
 import { useGameStore } from '../stores/gameStore'
+import { historicalDataService } from '../services/historicalDataService'
+import { HYBRID_MODE_CONFIG } from '../config/hybridModeConfig'
 import {
   generateRandomEvent,
   processNewsEngine,
@@ -81,12 +83,41 @@ export function startTickLoop() {
 
     // Update session open prices at market open (9:00) every day
     if (current.time.hour === 9) {
-      current.updateSessionOpenPrices()
+      // KOSPI 모드: 실제 시가 주입
+      if (current.config.gameMode === 'kospi' && historicalDataService.isReady) {
+        const historicalOpens: Record<string, number> = {}
+        for (const c of current.companies) {
+          if (!c.historicalTicker || c.status === 'delisted') continue
+          const open = historicalDataService.getOpen(
+            c.historicalTicker,
+            current.time.year,
+            current.time.month,
+            current.time.day,
+          )
+          if (open != null) historicalOpens[c.id] = open
+        }
+        current.updateSessionOpenPrices(historicalOpens)
+      } else {
+        current.updateSessionOpenPrices()
+      }
     }
 
     // Monthly processing (salary, stamina) on day 1 at market open
     if (current.time.day === 1 && current.time.hour === 9) {
       current.processMonthly()
+
+      // KOSPI 모드: IPO 체크 (매월 1일)
+      if (current.config.gameMode === 'kospi' && historicalDataService.isReady) {
+        for (const c of current.companies) {
+          if (c.status !== 'delisted' || !c.historicalTicker) continue
+          if (historicalDataService.isStockAvailable(c.historicalTicker, current.time.year)) {
+            const ipoPrice = historicalDataService.getIPOPrice(c.historicalTicker)
+            if (ipoPrice != null && ipoPrice > 0) {
+              useGameStore.getState().executeKospiIPO(c.id, ipoPrice)
+            }
+          }
+        }
+      }
     }
 
     // M&A Processing: 분기 종료 체크 (3, 6, 9, 12월 말일 18시)
@@ -136,11 +167,32 @@ export function startTickLoop() {
     // Send companies data to worker for GBM price calculation
     const volatilityMul = current.difficultyConfig.volatilityMultiplier
     const currentRegime = current.marketRegime.current
+    const isKospiMode = current.config.gameMode === 'kospi' && historicalDataService.isReady
     const companyData = current.companies
-      .filter((c) => c.status !== 'acquired')
+      .filter((c) => c.status !== 'acquired' && c.status !== 'delisted')
       .map((c) => {
       // Apply regime-based volatility if defined, otherwise use base volatility
       const regimeVol = c.regimeVolatilities?.[currentRegime] ?? c.volatility
+
+      // KOSPI 하이브리드 모드: 실제 종가 방향으로 correctionDrift 계산
+      let correctionDrift: number | undefined
+      if (isKospiMode && c.historicalTicker && c.price > 0) {
+        const targetClose = historicalDataService.getClose(
+          c.historicalTicker,
+          current.time.year,
+          current.time.month,
+          current.time.day,
+        )
+        if (targetClose != null && targetClose > 0) {
+          const strength = computeCorrectionStrength(current.events)
+          const rawCorrection = Math.log(targetClose / c.price) * strength
+          correctionDrift = Math.max(
+            -HYBRID_MODE_CONFIG.MAX_CORRECTION_DRIFT,
+            Math.min(HYBRID_MODE_CONFIG.MAX_CORRECTION_DRIFT, rawCorrection),
+          )
+        }
+      }
+
       return {
         id: c.id,
         sector: c.sector,
@@ -152,6 +204,7 @@ export function startTickLoop() {
         sessionOpenPrice: c.sessionOpenPrice,
         basePrice: c.basePrice,
         marketCap: c.marketCap,
+        correctionDrift,
       }
     })
 
@@ -477,6 +530,22 @@ export function destroyTickEngine() {
 
   worker?.terminate()
   worker = null
+}
+
+/* ── KOSPI Hybrid: Correction Strength ── */
+/**
+ * 활성 이벤트의 드리프트 절대값 합산으로 위기 여부 판정.
+ * 위기 시 → 강한 보정 (실제 가격에 가깝게)
+ * 평시 → 느슨한 보정 (GBM 변동성 유지)
+ */
+function computeCorrectionStrength(events: MarketEvent[]): number {
+  const totalDriftImpact = events
+    .filter((e) => e.remainingTicks > 0)
+    .reduce((sum, e) => sum + Math.abs(e.impact.driftModifier), 0)
+
+  return totalDriftImpact >= HYBRID_MODE_CONFIG.MAJOR_EVENT_DRIFT_THRESHOLD
+    ? HYBRID_MODE_CONFIG.CRISIS_CORRECTION_STRENGTH
+    : HYBRID_MODE_CONFIG.NORMAL_CORRECTION_STRENGTH
 }
 
 /* ── Event Propagation Delay ── */

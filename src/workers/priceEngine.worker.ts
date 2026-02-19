@@ -27,6 +27,7 @@ interface CompanyData {
   sessionOpenPrice: number // Session open price for daily limits
   basePrice: number // IPO price for absolute bounds
   marketCap: number // Market capitalization for liquidity calculations
+  correctionDrift?: number // KOSPI 하이브리드 모드: 실제 종가 방향 보정 drift
 }
 
 interface EventModifier {
@@ -236,6 +237,11 @@ self.onmessage = (e: MessageEvent<TickMessage>) => {
     let mu = adjustedDrift
     let sigma = adjustedVolatility
     const baseSigma = sigma
+
+    // Apply KOSPI hybrid mode correction drift (실제 종가 방향 보정)
+    if (company.correctionDrift !== undefined) {
+      mu += company.correctionDrift
+    }
 
     // Apply active event modifiers with propagation delay + sensitivity
     for (const evt of events) {
