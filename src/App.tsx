@@ -15,6 +15,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { LevelUpOverlay } from './components/effects/LevelUpOverlay'
 import { FloatingTextContainer } from './components/effects/FloatingText'
 import { TradeAnimationSequence } from './components/effects/TradeAnimationSequence'
+import { MarketClosedDialog } from './components/effects/MarketClosedDialog'
 import { OfficeToast } from './components/ui/OfficeToast'
 import { RegimeToast } from './components/ui/RegimeToast'
 import { hasSaveData } from './systems/saveSystem'
@@ -186,6 +187,9 @@ export default function App() {
         <TradeAnimationSequence />
 
         {isGameOver && <EndingScreen />}
+
+        {/* Realtime mode: market closed dialog */}
+        <MarketClosedDialog />
 
         {/* Rank change notification */}
         {rankChange && (
