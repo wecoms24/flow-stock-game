@@ -90,6 +90,15 @@ export default function App() {
     return () => destroyTickEngine()
   }, [])
 
+  // 게임 시작/로드 시 엔진 재초기화 (실시간 모드 등 gameMode 반영)
+  useEffect(() => {
+    if (isGameStarted) {
+      destroyTickEngine()
+      initTickEngine()
+      startTickLoop()
+    }
+  }, [isGameStarted])
+
   // Check ending conditions every new day
   useEffect(() => {
     if (isGameStarted && !isGameOver && time.hour === 9) {

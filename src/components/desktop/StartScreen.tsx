@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { RetroPanel } from '../ui/RetroPanel'
-import type { Difficulty, GameMode } from '../../types'
+import type { Difficulty, GameMode, KISCredentials } from '../../types'
 import { DIFFICULTY_TABLE, VICTORY_GOALS } from '../../data/difficulty'
 import { AUM_CONFIG } from '../../config/aiConfig'
 import type { SaveSlotInfo } from '../../systems/sqlite/types'
 import { initializeDB, listSaveSlots } from '../../systems/sqlite'
 import { getFeatureFlag } from '../../systems/featureFlags'
 import { historicalDataService } from '../../services/historicalDataService'
+import { KIS_CREDENTIALS_STORAGE_KEY } from '../../config/kisConfig'
+import { validateCredentials } from '../../services/kisAuthService'
 
 interface StartScreenProps {
   hasSave: boolean
@@ -71,6 +73,14 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
   const [kospiDbReady, setKospiDbReady] = useState(false)
   const [kospiDbError, setKospiDbError] = useState<string | null>(null)
 
+  // 실시간 모드 상태
+  const [kisAppKey, setKisAppKey] = useState('')
+  const [kisAppSecret, setKisAppSecret] = useState('')
+  const [kisIsDemo, setKisIsDemo] = useState(true)
+  const [kisValidating, setKisValidating] = useState(false)
+  const [kisValid, setKisValid] = useState<boolean | null>(null)
+  const [kisError, setKisError] = useState<string | null>(null)
+
   // Boot animation: reveal lines one by one
   useEffect(() => {
     if (bootPhase !== 'booting') return
@@ -98,6 +108,19 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
     loadSlots()
   }, [])
 
+  // Load saved KIS credentials from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(KIS_CREDENTIALS_STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved) as KISCredentials
+        setKisAppKey(parsed.appKey)
+        setKisAppSecret(parsed.appSecret)
+        setKisIsDemo(parsed.isDemo)
+      }
+    } catch { /* ignore */ }
+  }, [])
+
   // Allow skipping boot with click/key
   const skipBoot = () => {
     setBootLineIdx(BOOT_LINES.length)
@@ -116,6 +139,31 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
     { key: 'normal', label: '보통', cash: '5천만원', desc: '표준 밸런스' },
     { key: 'hard', label: '어려움', cash: '2천만원', desc: '높은 변동성, 빠른 스태미너 소모' },
   ]
+
+  const handleKisTest = async () => {
+    if (!kisAppKey.trim() || !kisAppSecret.trim()) {
+      setKisError('App Key와 App Secret을 입력해주세요')
+      return
+    }
+    setKisValidating(true)
+    setKisError(null)
+    setKisValid(null)
+    try {
+      const creds: KISCredentials = { appKey: kisAppKey.trim(), appSecret: kisAppSecret.trim(), isDemo: kisIsDemo }
+      const ok = await validateCredentials(creds)
+      setKisValid(ok)
+      if (ok) {
+        localStorage.setItem(KIS_CREDENTIALS_STORAGE_KEY, JSON.stringify(creds))
+      } else {
+        setKisError('인증 실패 — App Key/Secret을 확인해주세요')
+      }
+    } catch (err) {
+      setKisError(err instanceof Error ? err.message : '연결 테스트 실패')
+      setKisValid(false)
+    } finally {
+      setKisValidating(false)
+    }
+  }
 
   const handleGameModeChange = async (mode: GameMode) => {
     setGameMode(mode)
@@ -154,7 +202,10 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
       initializeCompetitors(competitorSetup.count, perCompetitorCash)
     }
 
-    startGame(difficulty, VICTORY_GOALS[selectedGoalIdx].targetAsset, parsedCustomCash, gameMode)
+    const kisCreds = gameMode === 'realtime'
+      ? { appKey: kisAppKey.trim(), appSecret: kisAppSecret.trim(), isDemo: kisIsDemo }
+      : undefined
+    startGame(difficulty, VICTORY_GOALS[selectedGoalIdx].targetAsset, parsedCustomCash, gameMode, kisCreds)
   }
 
   const competitorNames = [
@@ -237,7 +288,7 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
           {/* Game Mode Selection */}
           <RetroPanel variant="inset" className="p-3 space-y-2">
             <div className="text-sm font-bold">📊 데이터 모드:</div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={() => handleGameModeChange('virtual')}
                 className={`p-2 text-left text-[11px] border rounded transition-colors ${
@@ -258,8 +309,19 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
                     : 'border-win-shadow bg-win-face hover:bg-win-highlight/5'
                 } ${kospiDbLoading ? 'opacity-50 cursor-wait' : ''}`}
               >
-                <div className="font-semibold">KOSPI 실제 데이터</div>
-                <div className="text-retro-gray text-[10px]">100개 실제 종목 (1995~2025)</div>
+                <div className="font-semibold">KOSPI 데이터</div>
+                <div className="text-retro-gray text-[10px]">실제 종목 (1995~2025)</div>
+              </button>
+              <button
+                onClick={() => handleGameModeChange('realtime')}
+                className={`p-2 text-left text-[11px] border rounded transition-colors ${
+                  gameMode === 'realtime'
+                    ? 'border-win-highlight bg-win-highlight/10 font-bold'
+                    : 'border-win-shadow bg-win-face hover:bg-win-highlight/5'
+                }`}
+              >
+                <div className="font-semibold">실시간 시세</div>
+                <div className="text-retro-gray text-[10px]">한투 API 실시간</div>
               </button>
             </div>
             {/* DB Loading Progress */}
@@ -284,6 +346,68 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
             {gameMode === 'kospi' && kospiDbReady && (
               <div className="text-[10px] text-stock-up font-bold">
                 KOSPI DB 로드 완료 — 삼성전자, SK하이닉스 등 실제 종목으로 플레이
+              </div>
+            )}
+            {/* 실시간 모드: API Key 입력 */}
+            {gameMode === 'realtime' && (
+              <div className="space-y-2 mt-2">
+                <div className="space-y-1">
+                  <label className="block text-[10px] text-retro-gray">App Key</label>
+                  <input
+                    type="text"
+                    value={kisAppKey}
+                    onChange={(e) => { setKisAppKey(e.target.value); setKisValid(null) }}
+                    placeholder="한국투자증권 App Key"
+                    className="w-full px-2 py-1 text-[11px] border-2 border-win-shadow bg-white focus:border-win-highlight outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[10px] text-retro-gray">App Secret</label>
+                  <input
+                    type="password"
+                    value={kisAppSecret}
+                    onChange={(e) => { setKisAppSecret(e.target.value); setKisValid(null) }}
+                    placeholder="한국투자증권 App Secret"
+                    className="w-full px-2 py-1 text-[11px] border-2 border-win-shadow bg-white focus:border-win-highlight outline-none"
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1 text-[11px] cursor-pointer">
+                    <input
+                      type="radio"
+                      name="kis-env"
+                      checked={kisIsDemo}
+                      onChange={() => { setKisIsDemo(true); setKisValid(null) }}
+                      className="accent-win-highlight"
+                    />
+                    모의투자
+                  </label>
+                  <label className="flex items-center gap-1 text-[11px] cursor-pointer">
+                    <input
+                      type="radio"
+                      name="kis-env"
+                      checked={!kisIsDemo}
+                      onChange={() => { setKisIsDemo(false); setKisValid(null) }}
+                      className="accent-win-highlight"
+                    />
+                    실전
+                  </label>
+                  <RetroButton
+                    variant="default"
+                    onClick={handleKisTest}
+                    disabled={kisValidating}
+                  >
+                    {kisValidating ? '테스트 중...' : '연결 테스트'}
+                  </RetroButton>
+                </div>
+                {kisValid === true && (
+                  <div className="text-[10px] text-stock-up font-bold">
+                    연결 성공 — 실시간 시세 모드로 게임을 시작할 수 있습니다
+                  </div>
+                )}
+                {kisError && (
+                  <div className="text-[10px] text-red-600">{kisError}</div>
+                )}
               </div>
             )}
           </RetroPanel>
@@ -407,7 +531,10 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
                     <RetroButton
                       variant="primary"
                       onClick={() => handleStartGame(d.key)}
-                      disabled={gameMode === 'kospi' && !kospiDbReady}
+                      disabled={
+                        (gameMode === 'kospi' && !kospiDbReady) ||
+                        (gameMode === 'realtime' && kisValid !== true)
+                      }
                     >
                       {competitorSetup.enabled ? '⚔️ 대결!' : '시작'}
                     </RetroButton>

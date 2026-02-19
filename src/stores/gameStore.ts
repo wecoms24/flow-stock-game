@@ -46,6 +46,7 @@ import { OFFICE_BALANCE } from '../config/balanceConfig'
 import { getTierConfig, RELIEF_TAX_DISCOUNT } from '../config/economicPressureConfig'
 import { EMPLOYEE_ROLE_CONFIG } from '../types'
 import type { GameMode } from '../types'
+import { REALTIME_CONNECTION_INITIAL } from '../types/realtime'
 import { COMPANIES, initializeCompanyFinancials } from '../data/companies'
 import { KOSPI_COMPANIES } from '../data/kospiCompanies'
 import { historicalDataService } from '../services/historicalDataService'
@@ -228,6 +229,12 @@ interface GameStore {
   officeEvents: Array<{ timestamp: number; type: string; emoji: string; message: string; employeeIds: string[]; hour?: number }>
   employeeBehaviors: Record<string, string> // employeeId → action type (WORKING, IDLE, etc.)
 
+  // Realtime Connection (한투 API)
+  realtimeConnection: import('../types/realtime').RealtimeConnectionState
+
+  // Actions - Realtime
+  updateRealtimeStatus: (partial: Partial<import('../types/realtime').RealtimeConnectionState>) => void
+
   // Order Flow (Deep Market)
   orderFlowByCompany: Record<string, OrderFlow>
 
@@ -246,7 +253,7 @@ interface GameStore {
   setPersonalizationEnabled: (enabled: boolean) => void
 
   // Actions - Game
-  startGame: (difficulty: Difficulty, targetAsset?: number, customInitialCash?: number, gameMode?: GameMode) => void
+  startGame: (difficulty: Difficulty, targetAsset?: number, customInitialCash?: number, gameMode?: GameMode, kisCredentials?: import('../types').KISCredentials) => void
   loadSavedGame: () => Promise<boolean>
   autoSave: () => void
   setSpeed: (speed: GameTime['speed']) => void
@@ -510,6 +517,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   employeeBehaviors: {},
   proposals: [],
   aiProposal: null, // Week 4 Integration
+  realtimeConnection: { ...REALTIME_CONNECTION_INITIAL },
   orderFlowByCompany: {},
   institutions: [],
 
@@ -554,7 +562,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   hourlyAccumulators: { salaryPaid: 0, taxPaid: 0 },
 
   /* ── Game Actions ── */
-  startGame: (difficulty, targetAsset, customInitialCash, gameMode = 'virtual') => {
+  startGame: (difficulty, targetAsset, customInitialCash, gameMode = 'virtual', kisCredentials) => {
     const dcfg = DIFFICULTY_TABLE[difficulty]
 
     // KOSPI 모드: 실제 종목 사용 + historicalDataService에서 실제 통계 로드
@@ -605,6 +613,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
           },
         })
       })
+    } else if (gameMode === 'realtime') {
+      // 실시간 모드: KOSPI 종목 사용, 역사 DB 불필요
+      companies = KOSPI_COMPANIES.map((c) =>
+        initializeCompanyFinancials({
+          ...c,
+          priceHistory: [c.price],
+        })
+      )
     } else {
       companies = COMPANIES.map((c) =>
         initializeCompanyFinancials({
@@ -624,12 +640,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const cfg: GameConfig = {
       difficulty,
-      startYear: dcfg.startYear,
-      endYear: dcfg.endYear,
+      startYear: gameMode === 'realtime' ? new Date().getFullYear() : dcfg.startYear,
+      endYear: gameMode === 'realtime' ? new Date().getFullYear() + 30 : dcfg.endYear,
       initialCash,
       maxCompanies: dcfg.maxCompanies,
       targetAsset: targetAsset ?? 1_000_000_000,
       gameMode,
+      kisCredentials,
     }
 
     set({
@@ -638,7 +655,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
       isGameStarted: true,
       isGameOver: false,
       endingResult: null,
-      time: { year: dcfg.startYear, quarter: 1, month: 1, day: 1, hour: 9, speed: 1, isPaused: false },
+      time: gameMode === 'realtime'
+        ? {
+            year: new Date().getFullYear(),
+            quarter: Math.floor(new Date().getMonth() / 3) + 1 as 1 | 2 | 3 | 4,
+            month: new Date().getMonth() + 1,
+            day: new Date().getDate(),
+            hour: Math.max(9, Math.min(18, new Date().getHours())), // 영업시간 범위로 클램프
+            speed: 1 as const,
+            isPaused: false,
+          }
+        : { year: dcfg.startYear, quarter: 1 as const, month: 1, day: 1, hour: 9, speed: 1 as const, isPaused: false },
       lastProcessedMonth: 0,
       currentTick: 0,
       player: {
@@ -703,6 +730,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       corporateSkills: { skills: createInitialCorporateSkills(), totalUnlocked: 0, totalSpent: 0 },
       training: { programs: [], completedCount: 0, totalTraineesGraduated: 0 },
       hourlyAccumulators: { salaryPaid: 0, taxPaid: 0 },
+      realtimeConnection: { ...REALTIME_CONNECTION_INITIAL },
     })
 
     deleteSave()
@@ -731,7 +759,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // Reconstruct companies from save + base data
     const loadedGameMode = (data.config as any).gameMode ?? 'virtual'
-    const baseCompanies = loadedGameMode === 'kospi' ? KOSPI_COMPANIES : COMPANIES
+    const baseCompanies = (loadedGameMode === 'kospi' || loadedGameMode === 'realtime') ? KOSPI_COMPANIES : COMPANIES
     const companies = baseCompanies.map((base) => {
       const saved = data.companies.find((s) => s.id === base.id)
       if (!saved) return { ...base, priceHistory: [base.price], institutionFlowHistory: [] }
@@ -774,10 +802,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
       })),
     }
 
+    // 실시간 모드: localStorage에서 자격증명 복원 (DB에 저장하지 않으므로)
+    let restoredKisCredentials: import('../types').KISCredentials | undefined
+    const loadedMode = ((data.config as any).gameMode ?? 'virtual') as GameMode
+    if (loadedMode === 'realtime') {
+      try {
+        const saved = localStorage.getItem('kis_credentials')
+        if (saved) restoredKisCredentials = JSON.parse(saved)
+      } catch { /* ignore */ }
+    }
+
     const migratedConfig: GameConfig = {
       ...data.config,
       targetAsset: data.config.targetAsset ?? 1_000_000_000,
-      gameMode: (data.config as any).gameMode ?? 'virtual',
+      gameMode: loadedMode,
+      kisCredentials: restoredKisCredentials,
     }
 
     // 컴페티터 필드 마이그레이션
@@ -2135,6 +2174,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       )
     }
   },
+
+  /* ── Realtime ── */
+  updateRealtimeStatus: (partial) =>
+    set((s) => ({
+      realtimeConnection: { ...s.realtimeConnection, ...partial },
+    })),
 
   /* ── Market ── */
   updatePrices: (prices) =>

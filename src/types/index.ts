@@ -461,7 +461,7 @@ export interface DifficultyConfig {
   staminaDrainMultiplier: number // how fast employees get tired
 }
 
-export type GameMode = 'virtual' | 'kospi'
+export type GameMode = 'virtual' | 'kospi' | 'realtime'
 
 export interface GameConfig {
   difficulty: Difficulty
@@ -470,7 +470,14 @@ export interface GameConfig {
   initialCash: number
   maxCompanies: number
   targetAsset: number
-  gameMode: GameMode // 'virtual' = 가상 종목, 'kospi' = 실제 KOSPI 데이터
+  gameMode: GameMode // 'virtual' = 가상 종목, 'kospi' = 실제 KOSPI 데이터, 'realtime' = 한투 API 실시간
+  kisCredentials?: KISCredentials
+}
+
+export interface KISCredentials {
+  appKey: string
+  appSecret: string
+  isDemo: boolean // true=모의투자, false=실전
 }
 
 export interface VictoryGoal {

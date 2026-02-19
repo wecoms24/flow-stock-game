@@ -23,6 +23,13 @@ import type { Sector, MarketEvent } from '../types'
 import { getBusinessHourIndex, getAbsoluteTimestamp } from '../config/timeConfig'
 import { MARKET_IMPACT_CONFIG } from '../config/marketImpactConfig'
 import { autoSelectCards } from './cardDrawEngine'
+import { REALTIME_TICK_INTERVAL } from '../config/kisConfig'
+import { kisWebSocket } from '../services/kisWebSocketService'
+import { startPriceAggregator, stopPriceAggregator } from '../services/kisPriceAggregator'
+import {
+  startSubscriptionManager,
+  stopSubscriptionManager,
+} from '../services/kisSubscriptionManager'
 
 /* ── Tick Engine: 1-hour time control system ── */
 
@@ -36,6 +43,14 @@ const BASE_HOUR_MS = 1000 // 1 second = 1 hour at 1x speed
 const AUTO_SAVE_INTERVAL = 300 // Auto-save every 300 hours (~5 min at 1x)
 
 export function initTickEngine() {
+  const state = useGameStore.getState()
+
+  // 실시간 모드: Worker 대신 KIS WebSocket 사용
+  if (state.config.gameMode === 'realtime') {
+    initRealtimeServices()
+    return
+  }
+
   if (worker) return
 
   worker = new Worker(new URL('../workers/priceEngine.worker.ts', import.meta.url), {
@@ -52,12 +67,56 @@ export function initTickEngine() {
   }
 }
 
+/** 실시간 모드 서비스 초기화 */
+function initRealtimeServices() {
+  const state = useGameStore.getState()
+  const creds = state.config.kisCredentials
+  if (!creds) {
+    console.error('[TickEngine] 실시간 모드이지만 KIS 자격증명이 없습니다')
+    return
+  }
+
+  // WebSocket 연결 상태를 store에 반영
+  kisWebSocket.onStatus((status, message) => {
+    const statusMap = {
+      connected: 'connected' as const,
+      disconnected: 'disconnected' as const,
+      reconnecting: 'reconnecting' as const,
+      error: 'error' as const,
+    }
+    useGameStore.getState().updateRealtimeStatus({
+      status: statusMap[status],
+      errorMessage: message,
+    })
+  })
+
+  // WebSocket 연결
+  kisWebSocket.connect(creds)
+
+  // 가격 집계기 시작
+  startPriceAggregator()
+
+  // 구독 관리자 시작
+  startSubscriptionManager()
+}
+
+/** 실시간 모드 서비스 정리 */
+function destroyRealtimeServices() {
+  stopSubscriptionManager()
+  stopPriceAggregator()
+  kisWebSocket.disconnect()
+}
+
 export function startTickLoop() {
   if (intervalId) return
 
+  const isRealtime = useGameStore.getState().config.gameMode === 'realtime'
+
   const tick = () => {
     const state = useGameStore.getState()
-    if (state.time.isPaused || !state.isGameStarted || !worker) return
+    if (state.time.isPaused || !state.isGameStarted) return
+    // 실시간 모드에서는 worker 없이 동작
+    if (!isRealtime && !worker) return
 
     // Advance game time
     state.advanceHour()
@@ -164,7 +223,15 @@ export function startTickLoop() {
       }
     }
 
-    // Send companies data to worker for GBM price calculation
+    // 실시간 모드: Worker GBM 건너뜀 (가격은 WebSocket에서 직접 수신)
+    if (isRealtime) {
+      // 실시간 모드에서도 자동매매 처리
+      useGameStore.getState().processAutoSell()
+      useGameStore.getState().processLimitOrders()
+    }
+
+    // Send companies data to worker for GBM price calculation (비실시간 모드만)
+    if (!isRealtime) {
     const volatilityMul = current.difficultyConfig.volatilityMultiplier
     const currentRegime = current.marketRegime.current
     const isKospiMode = current.config.gameMode === 'kospi' && historicalDataService.isReady
@@ -322,7 +389,7 @@ export function startTickLoop() {
         tradeCount: flow.tradeCount,
       }))
 
-    worker.postMessage({
+    worker!.postMessage({
       type: 'tick',
       companies: companyData,
       dt,
@@ -339,6 +406,7 @@ export function startTickLoop() {
           }
         : undefined,
     })
+    } // end of !isRealtime block
 
     // Tick sentiment engine (natural decay)
     tickSentiment()
@@ -495,18 +563,26 @@ export function startTickLoop() {
   }
 
   const updateInterval = () => {
-    const speed = useGameStore.getState().time.speed
     if (intervalId) clearInterval(intervalId)
-    intervalId = setInterval(tick, BASE_HOUR_MS / speed)
+    if (isRealtime) {
+      // 실시간 모드: 60초 간격 (1실분 = 1게임시간)
+      intervalId = setInterval(tick, REALTIME_TICK_INTERVAL)
+    } else {
+      const speed = useGameStore.getState().time.speed
+      intervalId = setInterval(tick, BASE_HOUR_MS / speed)
+    }
   }
 
   updateInterval()
 
-  unsubscribeSpeed = useGameStore.subscribe((state, prevState) => {
-    if (state.time.speed !== prevState.time.speed) {
-      updateInterval()
-    }
-  })
+  // 실시간 모드에서는 속도 변경 구독 불필요
+  if (!isRealtime) {
+    unsubscribeSpeed = useGameStore.subscribe((state, prevState) => {
+      if (state.time.speed !== prevState.time.speed) {
+        updateInterval()
+      }
+    })
+  }
 }
 
 export function stopTickLoop() {
@@ -527,6 +603,9 @@ export function destroyTickEngine() {
     unsubscribeSpeed()
     unsubscribeSpeed = null
   }
+
+  // 실시간 서비스 정리
+  destroyRealtimeServices()
 
   worker?.terminate()
   worker = null

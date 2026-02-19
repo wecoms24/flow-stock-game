@@ -4,6 +4,8 @@ import { RetroButton } from '../ui/RetroButton'
 import { soundManager } from '../../systems/soundManager'
 import { getFeatureFlag, setFeatureFlag } from '../../systems/featureFlags'
 import { getMigrationStatusPublic, resetMigrationStatus } from '../../systems/sqlite/migration'
+import { kisWebSocket } from '../../services/kisWebSocketService'
+import { getStorageStats, cleanupOldData } from '../../services/kisPriceRepository'
 
 export function SettingsWindow() {
   const {
@@ -290,6 +292,9 @@ export function SettingsWindow() {
         </div>
       </div>
 
+      {/* 실시간 연결 (실시간 모드에서만 표시) */}
+      {config.gameMode === 'realtime' && <RealtimeSettingsSection />}
+
       {/* New game */}
       <div className="space-y-1">
         <div className="font-bold">새 게임</div>
@@ -329,6 +334,107 @@ export function SettingsWindow() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/** 실시간 모드 설정 섹션 */
+function RealtimeSettingsSection() {
+  const conn = useGameStore((s) => s.realtimeConnection)
+  const creds = useGameStore((s) => s.config.kisCredentials)
+  const [stats, setStats] = useState<{ totalRows: number; oldestTs: number | null; newestTs: number | null } | null>(null)
+
+  useEffect(() => {
+    getStorageStats().then(setStats)
+  }, [])
+
+  const statusLabels: Record<string, string> = {
+    connected: '연결됨',
+    disconnected: '연결 끊김',
+    connecting: '연결 중...',
+    reconnecting: '재연결 중...',
+    error: '오류',
+  }
+
+  const statusColor: Record<string, string> = {
+    connected: 'text-stock-up',
+    disconnected: 'text-retro-gray',
+    reconnecting: 'text-yellow-600',
+    error: 'text-red-600',
+  }
+
+  const handleReconnect = () => {
+    if (creds) {
+      kisWebSocket.disconnect()
+      kisWebSocket.connect(creds)
+    }
+  }
+
+  const handleCleanup = async () => {
+    const deleted = await cleanupOldData(90)
+    const newStats = await getStorageStats()
+    setStats(newStats)
+    alert(`${deleted}건 삭제됨`)
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="font-bold">📡 실시간 연결</div>
+      <div className="win-inset bg-white p-2 space-y-1">
+        <div className="flex justify-between">
+          <span className="text-retro-gray">상태:</span>
+          <span className={statusColor[conn.status] ?? 'text-retro-gray'}>
+            {statusLabels[conn.status] ?? conn.status}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-retro-gray">구독 종목:</span>
+          <span>{conn.subscribedCount}개</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-retro-gray">환경:</span>
+          <span>{creds?.isDemo ? '모의투자' : '실전'}</span>
+        </div>
+        {conn.lastPriceUpdate > 0 && (
+          <div className="flex justify-between">
+            <span className="text-retro-gray">마지막 수신:</span>
+            <span className="text-[10px]">{new Date(conn.lastPriceUpdate).toLocaleTimeString()}</span>
+          </div>
+        )}
+        {conn.errorMessage && (
+          <div className="text-[10px] text-red-600 mt-1">{conn.errorMessage}</div>
+        )}
+        <div className="flex gap-1 mt-1">
+          <RetroButton size="sm" onClick={handleReconnect}>
+            재연결
+          </RetroButton>
+          <RetroButton size="sm" onClick={() => kisWebSocket.disconnect()}>
+            연결 해제
+          </RetroButton>
+        </div>
+
+        {/* DB 통계 */}
+        {stats && (
+          <div className="text-[10px] border-t border-retro-gray/30 pt-1 mt-1 space-y-0.5">
+            <div className="font-bold">저장된 시세 데이터</div>
+            <div className="flex justify-between">
+              <span className="text-retro-gray">총 건수:</span>
+              <span>{stats.totalRows.toLocaleString()}</span>
+            </div>
+            {stats.oldestTs && (
+              <div className="flex justify-between">
+                <span className="text-retro-gray">기간:</span>
+                <span>
+                  {new Date(stats.oldestTs).toLocaleDateString()} ~ {new Date(stats.newestTs!).toLocaleDateString()}
+                </span>
+              </div>
+            )}
+            <RetroButton size="sm" onClick={handleCleanup} className="w-full mt-0.5">
+              90일 이전 데이터 정리
+            </RetroButton>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

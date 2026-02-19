@@ -8,7 +8,7 @@ import wasmUrl from '@subframe7536/sqlite-wasm/wasm-async?url'
 let dbInstance: SQLiteDB | null = null
 
 /** Current schema version -- bump this when adding migrations */
-const SCHEMA_VERSION = 7
+const SCHEMA_VERSION = 8
 
 /**
  * Initialize SQLite database with IndexedDB persistence
@@ -511,6 +511,44 @@ async function runMigrations(db: SQLiteDB): Promise<void> {
       console.log('[SQLite] Migration v7 applied: KOSPI hybrid mode columns')
     } catch (error) {
       console.error('[SQLite] Migration v7 failed:', error)
+      throw error
+    }
+  }
+
+  // Migration v8: Realtime prices storage table
+  if (currentVersion < 8) {
+    try {
+      await db.run(`
+        CREATE TABLE IF NOT EXISTS realtime_prices (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ticker TEXT NOT NULL,
+          price REAL NOT NULL,
+          open_price REAL,
+          high_price REAL,
+          low_price REAL,
+          bid_price REAL,
+          ask_price REAL,
+          volume INTEGER,
+          acc_volume INTEGER,
+          acc_amount REAL,
+          change_rate REAL,
+          received_at INTEGER NOT NULL
+        );
+      `)
+      await db.run(
+        'CREATE INDEX IF NOT EXISTS idx_rt_ticker_time ON realtime_prices(ticker, received_at DESC);',
+      )
+      await db.run(
+        'CREATE INDEX IF NOT EXISTS idx_rt_time ON realtime_prices(received_at DESC);',
+      )
+
+      await db.run('INSERT OR REPLACE INTO schema_versions (version, applied_at) VALUES (?, ?);', [
+        8,
+        Date.now(),
+      ])
+      console.log('[SQLite] Migration v8 applied: realtime_prices table')
+    } catch (error) {
+      console.error('[SQLite] Migration v8 failed:', error)
       throw error
     }
   }

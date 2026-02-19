@@ -80,6 +80,8 @@ export function Taskbar() {
   const hasEmployees = useGameStore((s) => s.player.employees.length > 0)
   const marketRegime = useGameStore((s) => s.marketRegime)
   const circuitBreaker = useGameStore((s) => s.circuitBreaker)
+  const gameMode = useGameStore((s) => s.config.gameMode)
+  const realtimeConnection = useGameStore((s) => s.realtimeConnection)
 
   const handleOpenWindow = (type: WindowType) => {
     // Institutional window needs a companyId prop
@@ -324,6 +326,20 @@ export function Taskbar() {
       <div className="w-px h-5 bg-win-shadow mx-0.5" />
 
       {/* Clock */}
+      {/* 실시간 모드 연결 상태 */}
+      {gameMode === 'realtime' && (
+        <div className="win-inset bg-white px-2 py-0.5 text-[10px] shrink-0 flex items-center gap-1" title={realtimeConnection.errorMessage || `구독 ${realtimeConnection.subscribedCount}종목`}>
+          <span
+            className={`inline-block w-1.5 h-1.5 rounded-full ${
+              realtimeConnection.status === 'connected' ? 'bg-green-500' :
+              realtimeConnection.status === 'reconnecting' ? 'bg-yellow-500 animate-pulse' :
+              realtimeConnection.status === 'error' ? 'bg-red-500' :
+              'bg-gray-400'
+            }`}
+          />
+          <span className="tabular-nums">{realtimeConnection.subscribedCount}</span>
+        </div>
+      )}
       <div className="win-inset bg-white px-2 py-0.5 text-[10px] shrink-0 tabular-nums flex items-center gap-1">
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" title="장 중" />
         {time.year}.{String(time.month).padStart(2, '0')}.{String(time.day).padStart(2, '0')}{' '}

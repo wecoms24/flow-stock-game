@@ -737,7 +737,7 @@ export async function sqliteToSaveData(
         initialCash: save.initial_cash,
         maxCompanies: 20, // Fixed for now
         targetAsset: 1_000_000_000_000, // Fixed for now
-        gameMode: ((save as any).game_mode ?? 'virtual') as 'virtual' | 'kospi',
+        gameMode: ((save as any).game_mode ?? 'virtual') as 'virtual' | 'kospi' | 'realtime',
       },
       time: {
         year: save.year,

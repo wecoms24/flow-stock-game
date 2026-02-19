@@ -52,6 +52,14 @@ export default defineConfig({
       // Python venv, scripts 디렉토리 감시 제외 → ENOSPC 방지
       ignored: ['**/scripts/venv/**', '**/scripts/__pycache__/**'],
     },
+    proxy: {
+      '/kis-api': {
+        target: 'https://openapi.koreainvestment.com:9443',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/kis-api/, ''),
+        secure: false,
+      },
+    },
   },
   preview: {
     headers: COOP_COEP,
