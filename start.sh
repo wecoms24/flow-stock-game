@@ -31,6 +31,14 @@ if [ ! -d "node_modules" ]; then
   npm install
 fi
 
+# ── sql-wasm.wasm 확인 및 복사 ──
+WASM_DST="$PROJECT_DIR/public/sql-wasm.wasm"
+WASM_SRC="$PROJECT_DIR/node_modules/sql.js/dist/sql-wasm.wasm"
+if [ ! -f "$WASM_DST" ] && [ -f "$WASM_SRC" ]; then
+  echo "[INFO] sql-wasm.wasm 복사 중..."
+  cp "$WASM_SRC" "$WASM_DST"
+fi
+
 # ── KOSPI DB 빌드 (없는 경우에만) ──
 if [ ! -f "$KOSPI_DB" ]; then
   echo "[INFO] KOSPI DB가 없습니다. 빌드를 시작합니다..."
