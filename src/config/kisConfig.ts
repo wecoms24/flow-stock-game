@@ -58,3 +58,18 @@ export const REALTIME_TICK_INTERVAL = 60_000
 
 /** 자격증명 localStorage 키 */
 export const KIS_CREDENTIALS_STORAGE_KEY = 'kis_credentials'
+
+/** KRX 실제 장 운영시간 */
+export const KRX_MARKET_HOURS = {
+  OPEN: 9, // 09:00
+  CLOSE: 15.5, // 15:30 (15시 30분)
+} as const
+
+/** 현재 KRX 장이 열려있는지 확인 */
+export function isKRXMarketOpen(): boolean {
+  const now = new Date()
+  const day = now.getDay() // 0=일, 6=토
+  if (day === 0 || day === 6) return false
+  const hour = now.getHours() + now.getMinutes() / 60
+  return hour >= KRX_MARKET_HOURS.OPEN && hour < KRX_MARKET_HOURS.CLOSE
+}
