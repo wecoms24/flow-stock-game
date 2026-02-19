@@ -5,3 +5,9 @@ declare module '*.wasm' {
   const module: WebAssembly.Module
   export default module
 }
+
+// sql-wasm-inline plugin: sql-wasm.wasm을 base64 문자열로 번들에 인라인
+declare module 'virtual:sql-wasm-base64' {
+  const base64: string
+  export default base64
+}

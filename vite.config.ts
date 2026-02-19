@@ -1,9 +1,9 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import wasm from 'vite-plugin-wasm'
 import topLevelAwait from 'vite-plugin-top-level-await'
-import { readFileSync, existsSync } from 'fs'
+import { readFileSync } from 'fs'
 import { resolve } from 'path'
 
 const COOP_COEP = {
@@ -11,42 +11,41 @@ const COOP_COEP = {
   'Cross-Origin-Embedder-Policy': 'require-corp',
 }
 
-export default defineConfig({
-  plugins: [
-    // sql-wasm.wasm 전용 미들웨어 — wasm() 플러그인보다 먼저 실행하여
-    // application/wasm MIME type을 강제 설정. Vite SPA fallback 차단.
-    {
-      name: 'serve-sql-wasm',
-      enforce: 'pre',
-      configureServer(server) {
-        const candidates = [
-          resolve(process.cwd(), 'public/sql-wasm.wasm'),
-          resolve(process.cwd(), 'node_modules/sql.js/dist/sql-wasm.wasm'),
-        ]
-        server.middlewares.use((req, res, next) => {
-          const pathname = new URL(req.url ?? '/', 'http://x').pathname
-          if (pathname !== '/sql-wasm.wasm') return next()
-          for (const p of candidates) {
-            if (existsSync(p)) {
-              const buf = readFileSync(p)
-              res.writeHead(200, {
-                'Content-Type': 'application/wasm',
-                'Content-Length': String(buf.length),
-                'Cross-Origin-Resource-Policy': 'same-origin',
-              })
-              res.end(buf)
-              return
-            }
-          }
-          next()
-        })
-      },
+/**
+ * sql-wasm.wasm을 virtual module 'virtual:sql-wasm-base64' 로 번들에 인라인.
+ * URL fetch를 완전히 우회하므로 nginx/proxy MIME type 문제에 영향받지 않음.
+ */
+function sqlWasmInlinePlugin(): Plugin {
+  const VIRTUAL_ID = 'virtual:sql-wasm-base64'
+  const RESOLVED_ID = '\0' + VIRTUAL_ID
+
+  return {
+    name: 'sql-wasm-inline',
+    enforce: 'pre',
+    resolveId(id) {
+      if (id === VIRTUAL_ID) return RESOLVED_ID
     },
-    wasm(),
-    topLevelAwait(),
-    react(),
-    tailwindcss(),
-  ],
+    load(id) {
+      if (id !== RESOLVED_ID) return
+      const candidates = [
+        resolve(process.cwd(), 'public/sql-wasm.wasm'),
+        resolve(process.cwd(), 'node_modules/sql.js/dist/sql-wasm.wasm'),
+      ]
+      for (const p of candidates) {
+        try {
+          const base64 = readFileSync(p).toString('base64')
+          return `export default "${base64}"`
+        } catch {
+          // 파일 없으면 다음 후보로
+        }
+      }
+      throw new Error('[sql-wasm-inline] sql-wasm.wasm을 찾을 수 없습니다.')
+    },
+  }
+}
+
+export default defineConfig({
+  plugins: [sqlWasmInlinePlugin(), wasm(), topLevelAwait(), react(), tailwindcss()],
   server: {
     headers: COOP_COEP,
   },

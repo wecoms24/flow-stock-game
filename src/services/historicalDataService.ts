@@ -8,7 +8,9 @@
  */
 
 import initSqlJs, { type Database } from 'sql.js'
-// sql-wasm.wasm은 public/에 위치 — vite-plugin-wasm 변환 없이 /sql-wasm.wasm 으로 정적 서빙
+// sql-wasm-inline plugin이 빌드 시 WASM을 base64로 번들에 인라인
+// URL fetch 없이 동작 → nginx/proxy MIME type 문제 완전 우회
+import sqlWasmBase64 from 'virtual:sql-wasm-base64'
 
 export interface DailyPrice {
   open: number
@@ -52,11 +54,12 @@ class HistoricalDataService {
     onProgress?.(0)
 
     // 1) sql.js WASM 초기화
-    // public/sql-wasm.wasm → Vite가 변환 없이 /sql-wasm.wasm 으로 정적 서빙
-    // (vite-plugin-wasm은 src/ import만 처리, public/ 파일은 그대로 통과)
+    // virtual:sql-wasm-base64 → 번들에 인라인된 base64 문자열 → Uint8Array → wasmBinary
+    // URL fetch 없으므로 nginx/proxy MIME type 문제에 영향받지 않음
+    const wasmBytes = Uint8Array.from(atob(sqlWasmBase64), (c) => c.charCodeAt(0))
     const SQL = await initSqlJs({
-      locateFile: (file: string) => (file === 'sql-wasm.wasm' ? '/sql-wasm.wasm' : file),
-    })
+      wasmBinary: wasmBytes,
+    } as unknown as Parameters<typeof initSqlJs>[0])
     onProgress?.(20)
 
     // 2) DB 파일 fetch
