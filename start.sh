@@ -31,11 +31,12 @@ if [ ! -d "node_modules" ]; then
   npm install
 fi
 
-# ── sql-wasm.wasm 확인 및 복사 ──
-WASM_DST="$PROJECT_DIR/public/sql-wasm.wasm"
+# ── sql-wasm.wasm 확인 및 복사 (src/assets/ — ?url import 용) ──
+WASM_DST="$PROJECT_DIR/src/assets/sql-wasm.wasm"
 WASM_SRC="$PROJECT_DIR/node_modules/sql.js/dist/sql-wasm.wasm"
 if [ ! -f "$WASM_DST" ] && [ -f "$WASM_SRC" ]; then
   echo "[INFO] sql-wasm.wasm 복사 중..."
+  mkdir -p "$PROJECT_DIR/src/assets"
   cp "$WASM_SRC" "$WASM_DST"
 fi
 

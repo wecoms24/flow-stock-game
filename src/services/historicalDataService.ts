@@ -8,6 +8,9 @@
  */
 
 import initSqlJs, { type Database } from 'sql.js'
+// ?url: Vite가 asset으로 관리 → 올바른 MIME type(application/wasm) + 올바른 URL 보장
+// vite-plugin-wasm의 transform을 거치지 않고 순수 URL 문자열 반환
+import sqlWasmUrl from '../assets/sql-wasm.wasm?url'
 
 export interface DailyPrice {
   open: number
@@ -51,8 +54,9 @@ class HistoricalDataService {
     onProgress?.(0)
 
     // 1) sql.js WASM 초기화
+    // sqlWasmUrl: Vite가 관리하는 asset URL (dev: /@fs/..., prod: /assets/sql-wasm.xxx.wasm)
     const SQL = await initSqlJs({
-      locateFile: (file: string) => `/${file}`,
+      locateFile: (file: string) => (file === 'sql-wasm.wasm' ? sqlWasmUrl : file),
     })
     onProgress?.(20)
 
