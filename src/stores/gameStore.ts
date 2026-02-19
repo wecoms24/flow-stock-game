@@ -580,13 +580,29 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
         // 실제 통계로 덮어쓰기
         const realPrice = stats?.basePrice ?? c.price
+
+        // 시작 월 실제 일별 종가로 priceHistory 미리 채우기 (차트 초기 표시)
+        const initPriceHistory: number[] = []
+        if (c.historicalTicker) {
+          for (let gameDay = 1; gameDay <= 30; gameDay++) {
+            const close = historicalDataService.getClose(
+              c.historicalTicker,
+              dcfg.startYear,
+              1,
+              gameDay,
+            )
+            if (close != null && close > 0) initPriceHistory.push(close)
+          }
+        }
+        if (initPriceHistory.length === 0) initPriceHistory.push(realPrice)
+
         return initializeCompanyFinancials({
           ...c,
           price: realPrice,
           previousPrice: realPrice,
           basePrice: realPrice,
           sessionOpenPrice: realPrice,
-          priceHistory: [realPrice],
+          priceHistory: initPriceHistory,
           drift: stats?.annualDrift ?? c.drift,
           volatility: stats?.annualVolatility ?? c.volatility,
           regimeVolatilities: {
