@@ -74,6 +74,33 @@ const ICONS: Record<string, string> = {
     <rect x="7" y="6" width="3" height="4" fill="#000080"/>
     <rect x="11" y="6" width="3" height="4" fill="#000080"/>
     <rect x="6" y="11" width="4" height="4" fill="#8B6914"/>`,
+
+  proposal: `<ellipse cx="8" cy="6" rx="4" ry="4" fill="#FFFF00" stroke="#000" stroke-width="1"/>
+    <rect x="6" y="9" width="4" height="2" fill="#C0C0C0" stroke="#000" stroke-width="0.5"/>
+    <rect x="5" y="11" width="6" height="1" fill="#808080"/>
+    <polygon points="8,1 9,4 7,4" fill="#FF8000"/>
+    <rect x="7" y="13" width="2" height="2" fill="#00AA00"/>
+    <polygon points="6,13 10,13 9,15 7,15" fill="#00CC00"/>`,
+
+  mna: `<rect x="1" y="5" width="6" height="9" fill="#C0C0C0" stroke="#000" stroke-width="1"/>
+    <rect x="1" y="2" width="6" height="4" fill="#000080"/>
+    <rect x="2" y="7" width="2" height="2" fill="#000080"/>
+    <rect x="9" y="5" width="6" height="9" fill="#C0C0C0" stroke="#000" stroke-width="1"/>
+    <rect x="9" y="2" width="6" height="4" fill="#800000"/>
+    <rect x="12" y="7" width="2" height="2" fill="#800000"/>
+    <polygon points="6,9 10,9 8,7" fill="#FFFF00" stroke="#000" stroke-width="0.5"/>
+    <polygon points="6,10 10,10 8,12" fill="#FFFF00" stroke="#000" stroke-width="0.5"/>`,
+
+  skill_book: `<rect x="2" y="1" width="12" height="14" fill="#E8D5A0" stroke="#000" stroke-width="1"/>
+    <rect x="2" y="1" width="3" height="14" fill="#8B6914"/>
+    <polygon points="8,3 9,6 12,6 10,8 11,11 8,9 5,11 6,8 4,6 7,6" fill="#FFFF00" stroke="#DAA520" stroke-width="0.5"/>`,
+
+  graduation: `<rect x="1" y="6" width="14" height="2" fill="#000080"/>
+    <polygon points="8,2 15,6 8,10 1,6" fill="#000080"/>
+    <rect x="6" y="8" width="4" height="6" fill="#000080"/>
+    <rect x="5" y="13" width="6" height="2" fill="#C0C0C0" stroke="#000" stroke-width="0.5"/>
+    <rect x="12" y="6" width="1" height="5" fill="#808080"/>
+    <rect x="11" y="10" width="3" height="2" fill="#FFFF00"/>`,
 }
 
 export type IconName = keyof typeof ICONS

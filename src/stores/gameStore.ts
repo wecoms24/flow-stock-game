@@ -2609,14 +2609,35 @@ export const useGameStore = create<GameStore>((set, get) => ({
         training_center: '교육 센터',
       }
 
+      const windowSizes: Record<string, { width: number; height: number }> = {
+        chart: { width: 500, height: 380 },
+        trading: { width: 420, height: 500 },
+        office: { width: 750, height: 650 },
+        office_dot: { width: 750, height: 650 },
+        employee_detail: { width: 420, height: 520 },
+        proposals: { width: 480, height: 420 },
+        skill_library: { width: 580, height: 500 },
+        training_center: { width: 580, height: 500 },
+        monthly_cards: { width: 620, height: 480 },
+        acquisition: { width: 680, height: 560 },
+        ranking: { width: 420, height: 480 },
+        news: { width: 440, height: 400 },
+        institutional: { width: 500, height: 560 },
+        event_chain_tracker: { width: 500, height: 440 },
+        achievement_log: { width: 500, height: 440 },
+        settings: { width: 420, height: 360 },
+        dashboard: { width: 900, height: 680 },
+      }
+      const windowSize = windowSizes[type] ?? { width: 420, height: 340 }
+
       const win: WindowState = {
         id,
         type,
         title: titles[type],
         x: 50 + offset,
         y: 50 + offset,
-        width: type === 'chart' ? 500 : type === 'trading' ? 380 : type === 'office' ? 420 : type === 'employee_detail' ? 340 : 380,
-        height: type === 'chart' ? 350 : type === 'trading' ? 480 : type === 'office' ? 400 : type === 'employee_detail' ? 420 : 300,
+        width: windowSize.width,
+        height: windowSize.height,
         isMinimized: false,
         isMaximized: false,
         zIndex: s.nextZIndex,
@@ -2646,11 +2667,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
           if (w.id !== id) return w
           if (w.isMaximized) {
             const defaultSizes: Record<string, { width: number; height: number }> = {
-              chart: { width: 500, height: 350 },
-              trading: { width: 380, height: 480 },
-              office: { width: 420, height: 400 },
+              chart: { width: 500, height: 380 },
+              trading: { width: 420, height: 500 },
+              office: { width: 750, height: 650 },
+              office_dot: { width: 750, height: 650 },
+              employee_detail: { width: 420, height: 520 },
+              proposals: { width: 480, height: 420 },
+              skill_library: { width: 580, height: 500 },
+              training_center: { width: 580, height: 500 },
+              monthly_cards: { width: 620, height: 480 },
+              acquisition: { width: 680, height: 560 },
+              ranking: { width: 420, height: 480 },
+              news: { width: 440, height: 400 },
+              institutional: { width: 500, height: 560 },
+              event_chain_tracker: { width: 500, height: 440 },
+              achievement_log: { width: 500, height: 440 },
+              settings: { width: 420, height: 360 },
+              dashboard: { width: 900, height: 680 },
             }
-            const defaults = defaultSizes[w.type] ?? { width: 380, height: 300 }
+            const defaults = defaultSizes[w.type] ?? { width: 420, height: 340 }
             const prev = w.preMaximize ?? { x: 50, y: 50, ...defaults }
             return { ...w, isMaximized: false, x: prev.x, y: prev.y, width: prev.width, height: prev.height, preMaximize: undefined }
           }

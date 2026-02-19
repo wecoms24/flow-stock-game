@@ -4,7 +4,7 @@ import { useGameStore } from '../../stores/gameStore'
 import { getSkillsByCategory } from '../../data/skillTree'
 import { getSkillNodeState, calculateEmployeeStats } from '../../systems/skillSystem'
 import { calculateResetCost } from '../../config/skillBalance'
-import { formatSkillEffect, formatPrerequisites } from '../../utils/skillFormatter'
+import { formatSkillEffect, formatPrerequisites, formatActiveEffects } from '../../utils/skillFormatter'
 import type { SkillNode, SkillNodeState } from '../../types/skills'
 import { RetroButton } from '../ui/RetroButton'
 import { SKILL_PATHS } from '../../data/skillPaths'
@@ -28,6 +28,7 @@ export function SkillTreeTab({ employee }: SkillTreeTabProps) {
   const progression = employee.progression
   const skills = calculateEmployeeStats(employee)
   const categorySkills = getSkillsByCategory(selectedCategory)
+  const activeEffects = formatActiveEffects(employee)
 
   const handleUnlockSkill = (skillId: string) => {
     const result = unlockEmployeeSkill(employee.id, skillId)
@@ -138,6 +139,21 @@ export function SkillTreeTab({ employee }: SkillTreeTabProps) {
           </div>
         )}
       </div>
+
+      {/* Active Effects Summary */}
+      {activeEffects.length > 0 && (
+        <div className="win-inset bg-green-50 p-2 mb-2">
+          <div className="text-[10px] font-bold text-green-800 mb-1">⚡ 현재 스킬 효과 요약</div>
+          <div className="space-y-0.5">
+            {activeEffects.map(({ label, effects }) => (
+              <div key={label} className="flex items-start gap-1">
+                <span className="text-[9px] text-gray-500 w-16 shrink-0">{label}:</span>
+                <span className="text-[9px] text-green-700 font-semibold">{effects.join(', ')}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Category Tabs */}
       <div className="flex gap-1 mb-2">

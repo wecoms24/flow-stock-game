@@ -367,6 +367,24 @@ export const HISTORICAL_EVENTS: HistoricalEvent[] = [
   { year: 2025, month: 8, title: '글로벌 AI 규제 합의', description: '주요국이 AI 규제 프레임워크에 합의합니다.', type: 'policy', impact: { driftModifier: -0.02, volatilityModifier: 0.12, severity: 'medium' }, duration: 80, weight: 3, affectedSectors: ['tech'] },
   { year: 2025, month: 10, title: '우주산업 상업화 가속', description: '민간 우주산업이 본격화되며 관련 산업주가 급등합니다.', type: 'sector', impact: { driftModifier: 0.05, volatilityModifier: 0.15, severity: 'medium' }, duration: 100, weight: 3, affectedSectors: ['industrial', 'tech'] },
   { year: 2025, month: 12, title: '30년 게임 종료', description: '1995년부터 시작된 30년간의 투자 여정이 마무리됩니다.', type: 'global', impact: { driftModifier: 0.02, volatilityModifier: -0.05, severity: 'low' }, duration: 30, weight: 5 },
+
+  // ═══ 2026 [픽션 미래] ═══
+  { year: 2026, month: 2, title: 'AGI 달성 발표', description: '한 AI 연구소가 범용인공지능(AGI) 달성을 공식 발표하며 기술주 전체가 급등합니다.', type: 'sector', impact: { driftModifier: 0.12, volatilityModifier: 0.4, severity: 'critical' }, duration: 200, weight: 1, affectedSectors: ['tech'], chainEvents: [{ templateIndex: 17, probability: 0.9, delayTicks: [30, 80] }, { templateIndex: 6, probability: 0.7, delayTicks: [60, 120] }] },
+  { year: 2026, month: 4, title: 'AI 일자리 대체 충격', description: 'AI 자동화로 화이트칼라 일자리 15%가 사라지며 소비주와 금융주가 동반 하락합니다.', type: 'global', impact: { driftModifier: -0.06, volatilityModifier: 0.3, severity: 'high' }, duration: 150, weight: 2, affectedSectors: ['consumer', 'finance'] },
+  { year: 2026, month: 7, title: '탄소세 전면 도입', description: '주요국이 탄소세를 전면 시행하며 에너지 전환이 가속화됩니다.', type: 'policy', impact: { driftModifier: 0.03, volatilityModifier: 0.15, severity: 'medium' }, duration: 180, weight: 2, affectedSectors: ['energy', 'industrial'] },
+  { year: 2026, month: 10, title: '가상화폐 법정화폐 채택', description: '두 번째 국가가 비트코인을 법정화폐로 채택, 암호화폐 시장이 다시 급등합니다.', type: 'boom', impact: { driftModifier: 0.04, volatilityModifier: 0.25, severity: 'high' }, duration: 80, weight: 2, affectedSectors: ['finance', 'tech'] },
+
+  // ═══ 2027 [픽션 미래] ═══
+  { year: 2027, month: 1, title: '뇌-컴퓨터 인터페이스 상용화', description: 'BCI 기기가 소비자 시장에 출시되며 헬스케어·기술주가 동반 급등합니다.', type: 'sector', impact: { driftModifier: 0.08, volatilityModifier: 0.2, severity: 'high' }, duration: 180, weight: 2, affectedSectors: ['tech', 'healthcare'] },
+  { year: 2027, month: 3, title: '글로벌 AI 거버넌스 조약', description: '주요 강국이 AI 개발·배포에 관한 국제 조약을 체결합니다.', type: 'policy', impact: { driftModifier: -0.03, volatilityModifier: 0.12, severity: 'medium' }, duration: 100, weight: 3, affectedSectors: ['tech'] },
+  { year: 2027, month: 6, title: '우주 광업 첫 수익 창출', description: '민간 우주 기업이 소행성 채굴로 처음으로 흑자를 기록하며 우주산업주가 폭등합니다.', type: 'sector', impact: { driftModifier: 0.07, volatilityModifier: 0.18, severity: 'high' }, duration: 120, weight: 2, affectedSectors: ['industrial', 'tech'] },
+  { year: 2027, month: 9, title: '팬데믹 2.0 경보', description: '신종 바이러스 발생으로 보건당국이 경보를 발령합니다.', type: 'global', impact: { driftModifier: -0.05, volatilityModifier: 0.25, severity: 'high' }, duration: 100, weight: 2, affectedSectors: ['healthcare', 'consumer'], chainEvents: [{ templateIndex: 2, probability: 0.7, delayTicks: [20, 50] }] },
+
+  // ═══ 2028 [픽션 미래] ═══
+  { year: 2028, month: 2, title: '핵융합 발전소 상업 운전', description: '세계 최초 핵융합 발전소가 상업 운전을 시작하며 에너지주 판도가 뒤바뀝니다.', type: 'sector', impact: { driftModifier: 0.1, volatilityModifier: 0.3, severity: 'critical' }, duration: 200, weight: 1, affectedSectors: ['energy'], chainEvents: [{ templateIndex: 6, probability: 0.8, delayTicks: [40, 100] }] },
+  { year: 2028, month: 5, title: '완전 자율주행 도시 출현', description: '첫 완전 자율주행 도시가 운영을 시작하며 교통·도시 인프라주가 급등합니다.', type: 'boom', impact: { driftModifier: 0.06, volatilityModifier: 0.18, severity: 'high' }, duration: 150, weight: 2, affectedSectors: ['industrial', 'tech'] },
+  { year: 2028, month: 8, title: '생체 인증 금융 표준 채택', description: '글로벌 금융기관이 생체 인증을 표준으로 채택하며 핀테크·보안주가 강세입니다.', type: 'sector', impact: { driftModifier: 0.05, volatilityModifier: 0.1, severity: 'medium' }, duration: 120, weight: 3, affectedSectors: ['finance', 'tech'] },
+  { year: 2028, month: 11, title: '미래 경제 대전환', description: 'AI·에너지·바이오의 융합으로 산업 생산성이 급격히 향상됩니다.', type: 'boom', impact: { driftModifier: 0.07, volatilityModifier: -0.05, severity: 'high' }, duration: 200, weight: 2 },
 ]
 
 /* ── Helper ── */
