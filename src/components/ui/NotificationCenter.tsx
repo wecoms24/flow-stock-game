@@ -49,12 +49,12 @@ export function NotificationCenter() {
       {/* 알림 아이콘 버튼 */}
       <button
         onClick={handleToggle}
-        className="relative px-2 py-1 hover:bg-gray-200 active:bg-gray-300 flex items-center gap-1"
+        className="relative px-2 py-1 win-outset bg-win-face active:win-pressed flex items-center gap-1"
         title="알림 센터"
       >
         <span className="text-base">🔔</span>
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
+          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center font-bold">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
@@ -70,11 +70,11 @@ export function NotificationCenter() {
           />
 
           {/* 알림 패널 — 태스크바가 하단 fixed이므로 위로 열림 */}
-          <div className="absolute bottom-full right-0 mb-0.5 w-80 max-h-96 win-border bg-win-bg shadow-lg z-50 overflow-hidden">
+          <div className="absolute bottom-full right-0 mb-0.5 w-80 max-h-96 win-outset bg-win-face shadow-lg z-50 overflow-hidden">
             {/* 헤더 */}
-            <div className="bg-win-title text-white px-2 py-1 text-xs font-bold flex items-center justify-between">
+            <div className="bg-win-title-active text-white px-2 py-1 text-xs font-bold flex items-center justify-between">
               <span>알림 센터</span>
-              <span className="text-[10px] opacity-80">최근 {notifications.length}개</span>
+              <span className="text-xs opacity-80">최근 {notifications.length}개</span>
             </div>
 
             {/* 알림 리스트 */}
@@ -88,7 +88,7 @@ export function NotificationCenter() {
                   {notifications.map((evt, idx) => (
                     <div
                       key={`${evt.type}-${evt.timestamp}-${idx}`}
-                      className="px-2 py-1.5 hover:bg-gray-50 text-[10px]"
+                      className="px-2 py-1.5 hover:bg-win-highlight/20 text-xs"
                     >
                       <div className="flex items-start gap-1.5">
                         <span className="text-base flex-shrink-0">{evt.emoji}</span>

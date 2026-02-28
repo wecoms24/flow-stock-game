@@ -69,6 +69,30 @@ const EMOTION_SUFFIXES: Record<EmotionalState, string[]> = {
   proud: ['이 회사의 일원이었다는 게 자랑스러워요 😎', '함께 이룬 성과가 자랑스럽습니다'],
 }
 
+const PNL_PHRASES: Array<{ threshold: number; messages: string[] }> = [
+  { threshold: 1_000_000_000, messages: [
+    '10억 이상 수익을 올렸을 때 정말 뿌듯했어요 💎',
+    '제가 10억을 벌었다니... 아직도 믿기지 않아요',
+  ]},
+  { threshold: 100_000_000, messages: [
+    '억 단위 수익을 올렸을 때 자신감이 붙었어요',
+    '1억 돌파! 그 순간을 잊을 수 없어요',
+  ]},
+  { threshold: 10_000_000, messages: [
+    '첫 천만원 수익이 가장 기억에 남아요',
+  ]},
+]
+
+const MILESTONE_PHRASES: Record<string, string[]> = {
+  high: [ // 5+ milestones
+    '수많은 마일스톤을 달성하며 성장했어요.',
+    '여기서 이렇게 많이 성장할 줄 몰랐어요.',
+  ],
+  medium: [ // 2-4 milestones
+    '하나씩 마일스톤을 달성할 때마다 보람있었어요.',
+  ],
+}
+
 /**
  * 직원 증언 메시지 생성
  */
@@ -77,6 +101,8 @@ export function generateTestimonial(
   monthsEmployed: number,
   emotion: EmotionalState,
   _personality: string,
+  milestoneCount?: number,
+  totalPnl?: number,
 ): string {
   const years = Math.floor(monthsEmployed / 12)
 
@@ -90,9 +116,35 @@ export function generateTestimonial(
   let tenureMsg = tenureMessages[Math.floor(Math.random() * tenureMessages.length)]
   tenureMsg = tenureMsg.replace('{years}', String(years))
 
+  // PnL-based personal touch
+  let pnlPhrase = ''
+  if (totalPnl != null && totalPnl > 0) {
+    for (const tier of PNL_PHRASES) {
+      if (totalPnl >= tier.threshold) {
+        pnlPhrase = tier.messages[Math.floor(Math.random() * tier.messages.length)]
+        break
+      }
+    }
+  }
+
+  // Milestone-based personal touch
+  let milestonePhrase = ''
+  if (milestoneCount != null && milestoneCount >= 5) {
+    const phrases = MILESTONE_PHRASES.high
+    milestonePhrase = phrases[Math.floor(Math.random() * phrases.length)]
+  } else if (milestoneCount != null && milestoneCount >= 2) {
+    const phrases = MILESTONE_PHRASES.medium
+    milestonePhrase = phrases[Math.floor(Math.random() * phrases.length)]
+  }
+
   // Emotion suffix
   const suffixes = EMOTION_SUFFIXES[emotion] ?? EMOTION_SUFFIXES.neutral
   const suffix = suffixes[Math.floor(Math.random() * suffixes.length)]
 
+  // Combine: pick the more impactful personal touch
+  const personalTouch = pnlPhrase || milestonePhrase
+  if (personalTouch) {
+    return `${roleMsg} ${personalTouch} ${tenureMsg} ${suffix}`
+  }
   return `${roleMsg} ${tenureMsg} ${suffix}`
 }

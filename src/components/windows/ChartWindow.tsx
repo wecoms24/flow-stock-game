@@ -31,6 +31,9 @@ interface EventMarkerOptions {
   fearGreedIndex?: number // 센티먼트 지수 (0-100)
 }
 
+// 마커 hover 상태 저장 (플러그인-레벨 공유)
+let hoveredMarkerInfo: { x: number; y: number; title: string; summary: string } | null = null
+
 const eventMarkerPlugin: Plugin<'line', EventMarkerOptions> = {
   id: 'eventMarkers',
   afterDatasetsDraw(chart, _args, options) {
@@ -117,16 +120,67 @@ const eventMarkerPlugin: Plugin<'line', EventMarkerOptions> = {
       ctx.stroke()
       ctx.setLineDash([])
 
-      ctx.fillStyle = color
-      ctx.beginPath()
-      ctx.moveTo(x, topY)
-      ctx.lineTo(x - 5, topY - 8)
-      ctx.lineTo(x + 5, topY - 8)
-      ctx.closePath()
-      ctx.fill()
+      // Event type icon (emoji) instead of plain triangle
+      const isPositive = marker.event.impact.driftModifier >= 0
+      const icon =
+        severity === 'critical' ? '💥'
+        : severity === 'high' ? '⚠️'
+        : isPositive ? '💡'
+        : '📰'
+
+      ctx.font = '10px serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(icon, x, topY - 2)
 
       ctx.restore()
     })
+  },
+  afterDraw(chart) {
+    // 마커 hover 시 툴팁 렌더링
+    if (!hoveredMarkerInfo) return
+    const { x, y, title, summary } = hoveredMarkerInfo
+    const ctx = chart.ctx
+    ctx.save()
+    ctx.font = '10px DungGeunMo, monospace'
+    const lines = [title, summary]
+    const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 12
+    const boxH = lines.length * 14 + 8
+    const boxX = Math.min(x + 8, chart.width - maxWidth - 4)
+    const boxY = Math.max(y - boxH - 4, 4)
+    ctx.fillStyle = 'rgba(0,0,0,0.85)'
+    ctx.fillRect(boxX, boxY, maxWidth, boxH)
+    ctx.fillStyle = '#FFD700'
+    ctx.fillText(lines[0], boxX + 6, boxY + 14)
+    ctx.fillStyle = '#FFFFFF'
+    ctx.fillText(lines[1], boxX + 6, boxY + 28)
+    ctx.restore()
+  },
+  afterEvent(chart, args, options) {
+    const markers = (options as EventMarkerOptions).markers || []
+    if (!markers.length || args.event.type !== 'mousemove') {
+      if (hoveredMarkerInfo) { hoveredMarkerInfo = null; chart.draw() }
+      return
+    }
+    const mouseX = args.event.x ?? 0
+    const mouseY = args.event.y ?? 0
+    const xAxis = chart.scales.x
+    let found = false
+    for (const marker of markers) {
+      const mx = xAxis.getPixelForValue(marker.tickIndex)
+      if (Math.abs(mouseX - mx) < 10) {
+        const sev = marker.event.impact.severity
+        const drift = marker.event.impact.driftModifier
+        const dir = drift >= 0 ? '↑' : '↓'
+        const summary = `${marker.event.title} → ${dir} ${marker.changePercent}%`
+        if (!hoveredMarkerInfo || hoveredMarkerInfo.title !== marker.event.title) {
+          hoveredMarkerInfo = { x: mouseX, y: mouseY, title: `[${sev}]`, summary }
+          chart.draw()
+        }
+        found = true
+        break
+      }
+    }
+    if (!found && hoveredMarkerInfo) { hoveredMarkerInfo = null; chart.draw() }
   },
 }
 
@@ -183,12 +237,14 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   const [periodTicks, setPeriodTicks] = useState(300) // default 30 days
   const [showEventMarkers, setShowEventMarkers] = useState(true)
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
+  const isFlashing = useGameStore((s) => s.isFlashing)
 
   // Filter states
   const [searchTerm, setSearchTerm] = useState('')
   const [sectorFilter, setSectorFilter] = useState<string>('all')
   const [sortBy, setSortBy] = useState<SortOption>('name')
   const [changeFilter, setChangeFilter] = useState<ChangeFilter>('all')
+  const [showFilters, setShowFilters] = useState(false)
 
   // Filter and sort companies
   const filteredCompanies = useMemo(() => {
@@ -453,7 +509,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
     <div className="flex flex-col h-full text-xs">
       {/* 통합 필터 패널 */}
       <div className="win-inset bg-white p-1 mb-1 space-y-1">
-        {/* 검색창 + 정렬 */}
+        {/* 검색창 + 정렬 + 필터 토글 */}
         <div className="flex items-center gap-1">
           <input
             type="text"
@@ -472,6 +528,9 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
             <option value="change">등락률순</option>
             <option value="sector">섹터순</option>
           </select>
+          <RetroButton size="sm" onClick={() => setShowFilters(!showFilters)} className="text-[10px]">
+            {showFilters ? '▾ 필터' : '▸ 필터'}
+          </RetroButton>
           {hasActiveFilters && (
             <RetroButton size="sm" onClick={resetFilters} className="text-[10px]">
               초기화
@@ -479,74 +538,76 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
           )}
         </div>
 
-        {/* 전체 섹터 필터 (2줄) */}
-        <div className="flex gap-0.5 flex-wrap">
-          {sectors.map((sector) => (
-            <RetroButton
-              key={sector.value}
-              size="sm"
-              variant={sectorFilter === sector.value ? 'primary' : 'default'}
-              onClick={() => setSectorFilter(sector.value)}
-              className="text-[9px] px-1 py-0.5"
-            >
-              {sector.emoji} {sector.label}
-            </RetroButton>
-          ))}
-          {/* 추가 섹터 */}
-          {[
-            { value: 'industrial', label: '산업재' },
-            { value: 'telecom', label: '통신' },
-            { value: 'materials', label: '원자재' },
-            { value: 'utilities', label: '유틸리티' },
-            { value: 'realestate', label: '부동산' },
-          ].map((sector) => (
-            <RetroButton
-              key={sector.value}
-              size="sm"
-              variant={sectorFilter === sector.value ? 'primary' : 'default'}
-              onClick={() => setSectorFilter(sector.value)}
-              className="text-[9px] px-1 py-0.5"
-            >
-              {sector.label}
-            </RetroButton>
-          ))}
-        </div>
+        {/* 접기/펼치기 가능한 섹터 + 등락률 필터 */}
+        {showFilters && (
+          <>
+            <div className="flex gap-0.5 flex-wrap">
+              {sectors.map((sector) => (
+                <RetroButton
+                  key={sector.value}
+                  size="sm"
+                  variant={sectorFilter === sector.value ? 'primary' : 'default'}
+                  onClick={() => setSectorFilter(sector.value)}
+                  className="text-[10px] px-1 py-0.5"
+                >
+                  {sector.emoji} {sector.label}
+                </RetroButton>
+              ))}
+              {[
+                { value: 'industrial', label: '산업재' },
+                { value: 'telecom', label: '통신' },
+                { value: 'materials', label: '원자재' },
+                { value: 'utilities', label: '유틸리티' },
+                { value: 'realestate', label: '부동산' },
+              ].map((sector) => (
+                <RetroButton
+                  key={sector.value}
+                  size="sm"
+                  variant={sectorFilter === sector.value ? 'primary' : 'default'}
+                  onClick={() => setSectorFilter(sector.value)}
+                  className="text-[10px] px-1 py-0.5"
+                >
+                  {sector.label}
+                </RetroButton>
+              ))}
+            </div>
 
-        {/* 등락률 필터 */}
-        <div className="flex gap-0.5">
-          <RetroButton
-            size="sm"
-            variant={changeFilter === 'all' ? 'primary' : 'default'}
-            onClick={() => setChangeFilter('all')}
-            className="text-[9px] px-1 py-0.5"
-          >
-            전체
-          </RetroButton>
-          <RetroButton
-            size="sm"
-            variant={changeFilter === 'up5' ? 'primary' : 'default'}
-            onClick={() => setChangeFilter('up5')}
-            className="text-[9px] px-1 py-0.5 text-stock-up"
-          >
-            ▲ +5% 이상
-          </RetroButton>
-          <RetroButton
-            size="sm"
-            variant={changeFilter === 'down5' ? 'primary' : 'default'}
-            onClick={() => setChangeFilter('down5')}
-            className="text-[9px] px-1 py-0.5 text-stock-down"
-          >
-            ▼ -5% 이하
-          </RetroButton>
-          <RetroButton
-            size="sm"
-            variant={changeFilter === 'stable' ? 'primary' : 'default'}
-            onClick={() => setChangeFilter('stable')}
-            className="text-[9px] px-1 py-0.5"
-          >
-            ±2% 이내
-          </RetroButton>
-        </div>
+            <div className="flex gap-0.5">
+              <RetroButton
+                size="sm"
+                variant={changeFilter === 'all' ? 'primary' : 'default'}
+                onClick={() => setChangeFilter('all')}
+                className="text-[10px] px-1 py-0.5"
+              >
+                전체
+              </RetroButton>
+              <RetroButton
+                size="sm"
+                variant={changeFilter === 'up5' ? 'primary' : 'default'}
+                onClick={() => setChangeFilter('up5')}
+                className="text-[10px] px-1 py-0.5 text-stock-up"
+              >
+                ▲ +5% 이상
+              </RetroButton>
+              <RetroButton
+                size="sm"
+                variant={changeFilter === 'down5' ? 'primary' : 'default'}
+                onClick={() => setChangeFilter('down5')}
+                className="text-[10px] px-1 py-0.5 text-stock-down"
+              >
+                ▼ -5% 이하
+              </RetroButton>
+              <RetroButton
+                size="sm"
+                variant={changeFilter === 'stable' ? 'primary' : 'default'}
+                onClick={() => setChangeFilter('stable')}
+                className="text-[10px] px-1 py-0.5"
+              >
+                ±2% 이내
+              </RetroButton>
+            </div>
+          </>
+        )}
 
         {/* 종목 선택 및 결과 개수 */}
         <div className="flex items-center gap-1">
@@ -561,7 +622,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
               </option>
             ))}
           </select>
-          <span className="text-[9px] text-retro-gray shrink-0">
+          <span className="text-[10px] text-retro-gray shrink-0">
             {filteredCompanies.length}개
           </span>
         </div>
@@ -610,7 +671,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
       </div>
 
       {/* Chart */}
-      <div className="flex-1 min-h-0">
+      <div className={`flex-1 min-h-0 transition-colors duration-500 ${isFlashing ? 'bg-yellow-100/40' : ''}`}>
         <Line data={chartData} options={chartOptions} />
       </div>
 

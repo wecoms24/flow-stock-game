@@ -8,6 +8,7 @@ import { useMemo } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { EmotionBadge } from '../ui/EmotionBadge'
 import { EMOTION_CONFIG } from '../../types/employeeBio'
+import { EMPLOYEE_MILESTONES } from '../../data/employeeMilestones'
 
 interface EmployeeBioPanelProps {
   employeeId: string
@@ -111,6 +112,30 @@ export function EmployeeBioPanel({ employeeId }: EmployeeBioPanelProps) {
           <p className="text-white font-bold">{bio.counselingCount}회</p>
         </div>
       </div>
+
+      {/* Milestones */}
+      {(bio.unlockedMilestones ?? []).length > 0 && (
+        <div>
+          <p className="text-[10px] text-gray-400 mb-1">
+            달성 마일스톤 ({(bio.unlockedMilestones ?? []).length}개)
+          </p>
+          <div className="flex gap-1 flex-wrap">
+            {(bio.unlockedMilestones ?? []).map((milestoneId) => {
+              const def = EMPLOYEE_MILESTONES.find((m) => m.id === milestoneId)
+              if (!def) return null
+              return (
+                <span
+                  key={milestoneId}
+                  title={`${def.title}\n${def.description}`}
+                  className="text-base cursor-default"
+                >
+                  {def.icon}
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Life Events */}
       {recentEvents.length > 0 && (

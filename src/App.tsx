@@ -16,9 +16,12 @@ import { LevelUpOverlay } from './components/effects/LevelUpOverlay'
 import { FloatingTextContainer } from './components/effects/FloatingText'
 import { TradeAnimationSequence } from './components/effects/TradeAnimationSequence'
 import { MarketClosedDialog } from './components/effects/MarketClosedDialog'
+import { RetroButton } from './components/ui/RetroButton'
 import { OfficeToast } from './components/ui/OfficeToast'
 import { RegimeToast } from './components/ui/RegimeToast'
 import { EmployeeMilestoneToast } from './components/effects/EmployeeMilestoneToast'
+import { RivalTradeToast } from './components/ui/RivalTradeToast'
+import { ChapterModal } from './components/tutorial/ChapterModal'
 import { hasSaveData } from './systems/saveSystem'
 import { migrateIndexedDBToSQLite } from './systems/sqlite/migration'
 import { getFeatureFlag, setFeatureFlag } from './systems/featureFlags'
@@ -144,36 +147,35 @@ export default function App() {
       <div className="w-screen h-screen bg-win-bg overflow-hidden">
         {/* Migration banner */}
         {showMigrationBanner && (
-          <div className="absolute top-0 left-0 right-0 z-[9999] bg-yellow-100 border-b-2 border-yellow-400 p-3 flex items-center justify-between">
+          <div className="absolute top-0 left-0 right-0 z-[9999] bg-retro-yellow text-retro-black win-outset p-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="text-2xl">💾</div>
               <div>
-                <div className="font-bold text-gray-800">새로운 SQLite 저장 시스템 업그레이드</div>
-                <div className="text-sm text-gray-600">
+                <div className="font-bold">새로운 SQLite 저장 시스템 업그레이드</div>
+                <div className="text-xs">
                   더 빠른 로딩과 다중 세이브 슬롯 기능을 사용할 수 있습니다.
                 </div>
               </div>
             </div>
             <div className="flex gap-2">
-              <button
+              <RetroButton
+                variant="primary"
                 onClick={handleMigrateNow}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium"
               >
                 업그레이드
-              </button>
-              <button
+              </RetroButton>
+              <RetroButton
                 onClick={handleMigrateLater}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
               >
                 나중에
-              </button>
+              </RetroButton>
             </div>
           </div>
         )}
 
         <StockTicker />
 
-        <div className="absolute top-5 left-0 right-0 bottom-8">
+        <div className="absolute top-5 left-0 right-0 bottom-9">
           <WindowManager />
         </div>
 
@@ -186,7 +188,9 @@ export default function App() {
         <OfficeToast />
         <RegimeToast />
         <EmployeeMilestoneToast />
+        <RivalTradeToast />
         <TradeAnimationSequence />
+        <ChapterModal />
 
         {isGameOver && <EndingScreen />}
 

@@ -67,15 +67,15 @@ export function RegimeToast() {
     <div className="fixed top-10 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
       {toasts.map((toast) => {
         const colors = {
-          CALM: 'bg-green-100 border-green-500 text-green-900',
-          VOLATILE: 'bg-yellow-100 border-yellow-500 text-yellow-900',
-          CRISIS: 'bg-red-100 border-red-600 text-red-900',
+          CALM: 'bg-win-face text-retro-darkgreen win-outset',
+          VOLATILE: 'bg-win-face text-retro-brown win-outset',
+          CRISIS: 'bg-win-face text-retro-red win-outset font-bold',
         }
 
         return (
           <div
             key={toast.id}
-            className={`pointer-events-auto win-border ${colors[toast.regime]} px-4 py-2 shadow-xl text-sm font-bold animate-bounce-once`}
+            className={`pointer-events-auto ${colors[toast.regime]} px-4 py-2 shadow-xl text-xs font-bold`}
             style={{
               animation: 'bounceOnce 0.6s ease-out',
             }}

@@ -39,7 +39,7 @@ import { getAbsoluteTimestamp, TIME_CONFIG } from '../config/timeConfig'
 import { drawCards } from '../engines/cardDrawEngine'
 import { createBio, inferEmotion, updateGoals } from '../engines/employeeBioEngine'
 import { checkEmployeeMilestones } from '../engines/employeeMilestoneEngine'
-import { getRandomTaunt as getRandomTauntFn, getContextualTradeTaunt } from '../data/taunts'
+import { getRandomTaunt as getRandomTauntFn, getContextualTradeTaunt, getBigTradeTaunt } from '../data/taunts'
 import { calculateBonuses } from '../engines/skillPathEngine'
 import { selectChain, initChainState, advanceChainWeek, getCurrentWeekModifiers, canStartChain } from '../engines/eventChainEngine'
 import { EVENT_CHAIN_TEMPLATES } from '../data/eventChains'
@@ -102,6 +102,10 @@ import {
   applyGraduation,
 } from '../engines/trainingEngine'
 import { resetSentiment } from '../engines/sentimentEngine'
+import { defaultChapterProgress, defaultCompanyProfile } from '../types/chapter'
+import type { CompanyProfile } from '../types/chapter'
+import { getChapterNumber } from '../data/chapters'
+import { evaluateChapterObjectives } from '../engines/chapterEngine'
 import { analyzeStock, generateProposal, checkPortfolioExits } from '../engines/tradePipeline/analystLogic'
 import { evaluateRisk } from '../engines/tradePipeline/managerLogic'
 import { executeProposal } from '../engines/tradePipeline/traderLogic'
@@ -243,6 +247,10 @@ interface GameStore {
   // Institutional Investors
   institutions: Institution[]
 
+  // Chapter & Company Profile
+  chapterProgress: import('../types/chapter').ChapterProgress
+  companyProfile: import('../types/chapter').CompanyProfile
+
   // Personalization System
   playerEventLog: PlayerEvent[]
   playerProfile: PlayerProfile
@@ -255,7 +263,7 @@ interface GameStore {
   setPersonalizationEnabled: (enabled: boolean) => void
 
   // Actions - Game
-  startGame: (difficulty: Difficulty, targetAsset?: number, customInitialCash?: number, gameMode?: GameMode, kisCredentials?: import('../types').KISCredentials) => void
+  startGame: (difficulty: Difficulty, targetAsset?: number, customInitialCash?: number, gameMode?: GameMode, kisCredentials?: import('../types').KISCredentials, companyProfile?: CompanyProfile) => void
   loadSavedGame: () => Promise<boolean>
   autoSave: () => void
   setSpeed: (speed: GameTime['speed']) => void
@@ -542,6 +550,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   monthlyCashFlowSummaries: [],
   cashFlowAnomalies: [],
 
+  // Chapter & Company Profile
+  chapterProgress: defaultChapterProgress(),
+  companyProfile: defaultCompanyProfile(),
+
   // Personalization System
   playerEventLog: [],
   playerProfile: defaultProfile(),
@@ -578,7 +590,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   hourlyAccumulators: { salaryPaid: 0, taxPaid: 0 },
 
   /* ── Game Actions ── */
-  startGame: (difficulty, targetAsset, customInitialCash, gameMode = 'virtual', kisCredentials) => {
+  startGame: (difficulty, targetAsset, customInitialCash, gameMode = 'virtual', kisCredentials, companyProfile) => {
     const dcfg = DIFFICULTY_TABLE[difficulty]
 
     // KOSPI 모드: 실제 종목 사용 + historicalDataService에서 실제 통계 로드
@@ -652,7 +664,38 @@ export const useGameStore = create<GameStore>((set, get) => ({
     resetNamePool()
     employeeIdCounter = 0
 
-    const initialCash = customInitialCash ?? dcfg.initialCash
+    let initialCash = customInitialCash ?? dcfg.initialCash
+
+    // New Game+ bonus application from meta progression (only for default cash)
+    let ngpHasAnalyst = false
+    if (!customInitialCash) {
+      try {
+        const metaRaw = localStorage.getItem('retro_stock_meta_progression')
+        if (metaRaw) {
+          const meta = JSON.parse(metaRaw) as { newGamePlusBonuses?: string[] }
+          if (meta.newGamePlusBonuses) {
+            let bonusMultiplier = 1.0
+            for (const bonusId of meta.newGamePlusBonuses) {
+              if (bonusId === 'extra_cash') bonusMultiplier += 0.1
+              if (bonusId === 'sector_intel') bonusMultiplier += 0.05
+              if (bonusId === 'free_analyst') ngpHasAnalyst = true
+            }
+            initialCash = Math.round(initialCash * bonusMultiplier)
+          }
+        }
+      } catch { /* ignore parse errors */ }
+    }
+
+    // Company profile style bonuses
+    const profile = companyProfile ?? defaultCompanyProfile()
+    let styleHasAnalyst = false
+    if (profile.style === 'aggressive') {
+      initialCash = Math.round(initialCash * 0.8) // -20% initial cash
+    } else if (profile.style === 'stable') {
+      initialCash = Math.round(initialCash * 1.1) // +10% initial cash
+    } else if (profile.style === 'analytical') {
+      styleHasAnalyst = true // free analyst
+    }
 
     const cfg: GameConfig = {
       difficulty,
@@ -747,6 +790,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       corporateSkills: { skills: createInitialCorporateSkills(), totalUnlocked: 0, totalSpent: 0 },
       training: { programs: [], completedCount: 0, totalTraineesGraduated: 0 },
       hourlyAccumulators: { salaryPaid: 0, taxPaid: 0 },
+      chapterProgress: defaultChapterProgress(),
+      companyProfile: profile,
       realtimeConnection: { ...REALTIME_CONNECTION_INITIAL },
     })
 
@@ -758,6 +803,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // This ensures institutionFlowHistory has initial data for all companies
     for (let sectorIndex = 0; sectorIndex < 10; sectorIndex++) {
       store.updateInstitutionalFlowForSector(sectorIndex)
+    }
+
+    // Free analyst bonus (New Game+ or analytical style)
+    if (ngpHasAnalyst || styleHasAnalyst) {
+      store.hireEmployee('analyst')
     }
 
     store.openWindow('portfolio')
@@ -913,6 +963,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       corporateSkills: data.corporateSkills ?? { skills: createInitialCorporateSkills(), totalUnlocked: 0, totalSpent: 0 },
       training: data.training ?? { programs: [], completedCount: 0, totalTraineesGraduated: 0 },
       hourlyAccumulators: { salaryPaid: 0, taxPaid: 0 }, // Always reset on load to prevent double-counting across save/load
+      chapterProgress: (data as any).chapterProgress ?? { ...defaultChapterProgress(), currentChapter: getChapterNumber(data.time.year) },
+      companyProfile: (data as any).companyProfile ?? defaultCompanyProfile(),
       windows: [],
       nextZIndex: 1,
       windowIdCounter: 0,
@@ -982,6 +1034,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       corporateSkills: s.corporateSkills,
       training: s.training,
       hourlyAccumulators: s.hourlyAccumulators,
+      chapterProgress: s.chapterProgress,
+      companyProfile: s.companyProfile,
     }
     saveGame(data)
   },
@@ -1030,9 +1084,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       s.player.employees.length,
     )
 
+    // ✨ 월말 총자산 스냅샷 기록
+    const enrichedSummaries = newSummaries.map((summary) => ({
+      ...summary,
+      totalAssetValue: s.player.totalAssetValue,
+    }))
+
     set({
       cashFlowLog: prunedEntries,
-      monthlyCashFlowSummaries: [...s.monthlyCashFlowSummaries, ...newSummaries].slice(-360),
+      monthlyCashFlowSummaries: [...s.monthlyCashFlowSummaries, ...enrichedSummaries].slice(-360),
       cashFlowAnomalies: anomalies.length > 0
         ? [...s.cashFlowAnomalies, ...anomalies].slice(-50)
         : s.cashFlowAnomalies,
@@ -1797,12 +1857,29 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       }
 
+      // Chapter objective evaluation (lightweight hourly check)
+      const updatedChapter = evaluateChapterObjectives(
+        {
+          year,
+          cash: updatedPlayer.cash,
+          totalAssetValue: updatedPlayer.totalAssetValue,
+          employeeCount: updatedPlayer.employees.length,
+          officeLevel: updatedPlayer.officeLevel,
+          competitorAssets: s.competitors.map((c) => c.totalAssetValue),
+          corporateSkillsUnlocked: s.corporateSkills.totalUnlocked,
+          initialCash: s.config.initialCash,
+          targetAsset: s.config.targetAsset,
+        },
+        s.chapterProgress,
+      )
+
       return {
         time: { ...s.time, year, month, day, hour },
         currentTick: s.currentTick + 1,
         player: updatedPlayer,
         // Reset order flow on day change
         ...(dayChanged ? { orderFlowByCompany: {} } : {}),
+        chapterProgress: updatedChapter,
       }
     })
 
@@ -2091,6 +2168,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
         set((st) => ({
           milestoneNotifications: [...st.milestoneNotifications, ...newNotifications].slice(-20),
         }))
+      }
+    }
+
+    // ✨ Core Values: 월 1회 Rivalry tracking (headToHead 갱신)
+    {
+      const rankings = get().calculateRankings()
+      const playerEntry = rankings.find((r) => r.isPlayer)
+      if (playerEntry) {
+        for (const entry of rankings) {
+          if (entry.isPlayer) continue
+          get().updateRivalryTracking(entry.name, entry.rank < playerEntry.rank)
+        }
       }
     }
 
@@ -2649,6 +2738,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
       get().recordCashFlow('HIRE_BONUS', -signingBonus, `${newEmp.name} 채용 보너스`, { employeeId: newEmp.id })
       // 바이오 자동 생성
       get().createEmployeeBio(newEmp.id)
+      // 오피스 토스트 이벤트
+      const roleLabel = ({ analyst: '애널리스트', trader: '트레이더', manager: '매니저', intern: '인턴', ceo: 'CEO', hr_manager: 'HR매니저' } as Record<string, string>)[newEmp.role] ?? newEmp.role
+      set((s) => ({
+        officeEvents: [...s.officeEvents, {
+          timestamp: Date.now(),
+          type: 'employee_hired',
+          emoji: '🎉',
+          message: `${newEmp.name} (${roleLabel}) 입사 — 앞으로의 활약 기대!`,
+          employeeIds: [newEmp.id],
+        }],
+      }))
     }
   },
 
@@ -2724,6 +2824,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
           employees: s.player.employees.filter((e) => e.id !== id),
           monthlyExpenses: Math.max(0, s.player.monthlyExpenses - emp.salary),
         },
+        officeEvents: [...s.officeEvents, {
+          timestamp: Date.now(),
+          type: 'employee_fired',
+          emoji: '👋',
+          message: `${emp.name} 퇴사 처리 완료 — 관련 제안서 만료됨`,
+          employeeIds: [id],
+        }],
       }
     })
   },
@@ -3813,7 +3920,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   getCorporateEffects: () => {
-    return aggregateCorporateEffects(get().corporateSkills.skills)
+    const effects = aggregateCorporateEffects(get().corporateSkills.skills)
+    // 공격형 프로필: 수수료 -10% 추가 (기존 할인에 가산, cap 0.5 유지)
+    if (get().companyProfile.style === 'aggressive') {
+      effects.commissionDiscount = Math.min(0.5, effects.commissionDiscount + 0.1)
+    }
+    return effects
   },
 
   /* ── Training System ── */
@@ -4572,6 +4684,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
               competitorName: competitor.name,
               message: `${competitor.name}: "${bragMsg}"`,
               type: 'trade_brag',
+              timestamp: batchTick,
+            })
+          }
+        }
+
+        // ✨ Core Values: 대량 거래 알림 (자산의 15% 이상, 매수/매도 모두)
+        if (action.action === 'buy' || action.action === 'sell') {
+          const tradeValue = action.quantity * action.price
+          const totalAssets = competitor.totalAssetValue || competitor.cash + tradeValue
+          if (totalAssets > 0 && tradeValue / totalAssets >= 0.15) {
+            const company = state.companies.find((c) => c.id === action.companyId)
+            const ticker = action.ticker ?? company?.ticker ?? '???'
+            const amountText = tradeValue >= 100_000_000
+              ? `${(tradeValue / 100_000_000).toFixed(0)}억`
+              : `${(tradeValue / 10_000).toFixed(0)}만`
+            const bigMsg = getBigTradeTaunt(competitor.style, { ticker, amount: amountText })
+            newTaunts.push({
+              competitorId: competitor.id,
+              competitorName: competitor.name,
+              message: `${competitor.name}: "${action.action === 'sell' ? '[매도] ' : ''}${bigMsg}"`,
+              type: 'big_trade',
               timestamp: batchTick,
             })
           }
@@ -5555,6 +5688,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     console.log(`[buyDesk] ✅ 책상 구매 성공: ${type} at (${x},${y}), id=${deskId}`)
     get().recordCashFlow('OFFICE_FURNITURE', -catalog.cost, `책상 구매: ${type}`)
+    // Action feedback toast
+    set((s) => ({
+      officeEvents: [...s.officeEvents, {
+        timestamp: s.currentTick,
+        type: 'furniture_placed',
+        emoji: '🪑',
+        message: `${catalog.sprite ?? type} 배치 완료 — ${catalog.buffs ? '버프 적용 중' : '장식'}`,
+        employeeIds: [],
+      }].slice(-200),
+    }))
     soundManager.playClick()
     return true
   },
@@ -5613,6 +5756,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
 
     get().recordCashFlow('OFFICE_FURNITURE', -catalog.cost, `장식 구매: ${type}`)
+    set((s) => ({
+      officeEvents: [...s.officeEvents, {
+        timestamp: s.currentTick,
+        type: 'furniture_placed',
+        emoji: '🎨',
+        message: `${catalog.sprite ?? type} 장식 배치 — 반경 내 직원 버프 적용`,
+        employeeIds: [],
+      }].slice(-200),
+    }))
     soundManager.playClick()
     return true
   },
@@ -5741,6 +5893,33 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
 
     console.log(`[assignEmployeeToDesk] ✅ 배치 성공: ${employee.name} → ${deskId}`)
+    // Check adjacency for feedback toast
+    const updatedLayout = get().player.officeLayout
+    if (updatedLayout) {
+      const targetDesk = updatedLayout.desks.find((d) => d.id === deskId)
+      if (targetDesk) {
+        const adjacent = updatedLayout.desks.filter((d) =>
+          d.id !== deskId && d.employeeId &&
+          Math.abs(d.position.x - targetDesk.position.x) + Math.abs(d.position.y - targetDesk.position.y) <= 80
+        )
+        const adjNames = adjacent.map((d) => {
+          const e = get().player.employees.find((emp) => emp.id === d.employeeId)
+          return e?.name
+        }).filter(Boolean)
+        const adjMsg = adjNames.length > 0
+          ? ` — ${adjNames.join(', ')}와(과) 인접 시너지!`
+          : ''
+        set((s) => ({
+          officeEvents: [...s.officeEvents, {
+            timestamp: s.currentTick,
+            type: 'employee_assigned',
+            emoji: '👤',
+            message: `${employee.name} 자리 배치 완료${adjMsg}`,
+            employeeIds: [employeeId],
+          }].slice(-200),
+        }))
+      }
+    }
     soundManager.playClick()
     return true
   },

@@ -7,6 +7,32 @@ import {
   type HistoricalEvent,
 } from '../data/historicalEvents'
 
+const SECTOR_LABELS: Record<string, string> = {
+  tech: '기술', finance: '금융', energy: '에너지', healthcare: '헬스',
+  consumer: '소비재', industrial: '산업재', telecom: '통신',
+  materials: '원자재', utilities: '유틸리티', realestate: '부동산',
+}
+
+function buildImpactSummary(
+  isBreaking: boolean,
+  event: MarketEvent,
+  affectedSectors: string[] | undefined,
+  affectedCompanyIds: string[],
+): string {
+  if (isBreaking && affectedSectors && affectedSectors.length > 0) {
+    const drift = event.impact.driftModifier
+    const absPercent = Math.abs(drift * 100)
+    const minPct = Math.max(1, Math.round(absPercent * 0.5))
+    const maxPct = Math.round(absPercent * 1.5)
+    const sectorNames = affectedSectors.map((s) => SECTOR_LABELS[s] ?? s).join('/')
+    const dir = drift >= 0 ? '+' : '-'
+    return `${sectorNames} 섹터 예상 변동: ${dir}${minPct}~${dir}${maxPct}%`
+  }
+  return affectedCompanyIds.length > 0
+    ? `${affectedCompanyIds.length}개 기업 영향 예상`
+    : '전체 시장 영향'
+}
+
 /* ── News Engine: 절차적 뉴스 생성 + 연쇄 시스템 + 역사적 이벤트 ── */
 
 // 발동된 역사적 이벤트 추적 (중복 방지)
@@ -380,10 +406,7 @@ function createEventFromHistorical(
     isBreaking,
     sentiment,
     relatedCompanies: affectedCompanyIds,
-    impactSummary:
-      affectedCompanyIds.length > 0
-        ? `${affectedCompanyIds.length}개 기업 영향 예상`
-        : '전체 시장 영향',
+    impactSummary: buildImpactSummary(isBreaking, event, hEvent.affectedSectors, affectedCompanyIds),
   })
 
   if (isBreaking) {
@@ -513,10 +536,7 @@ function createEventFromTemplate(
     isBreaking,
     sentiment,
     relatedCompanies: affectedCompanyIds,
-    impactSummary:
-      affectedCompanyIds.length > 0
-        ? `${affectedCompanyIds.length}개 기업 영향 예상`
-        : '전체 시장 영향',
+    impactSummary: buildImpactSummary(isBreaking, event, template.affectedSectors, affectedCompanyIds),
   })
 
   if (isBreaking) {

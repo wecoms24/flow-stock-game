@@ -4,6 +4,7 @@ import { RetroButton } from '../ui/RetroButton'
 import { PixelIcon, type IconName } from '../ui/PixelIcon'
 import { NotificationCenter } from '../ui/NotificationCenter'
 import { CompetitorWidget } from './CompetitorWidget'
+import { ObjectiveWidget } from './ObjectiveWidget'
 import { formatHour } from '../../config/timeConfig'
 import type { WindowType, WindowLayoutPreset } from '../../types'
 
@@ -57,25 +58,25 @@ const LAYOUT_PRESETS: { preset: WindowLayoutPreset; label: string; icon: string 
 ]
 
 export function Taskbar() {
-  const {
-    time,
-    openWindow,
-    windows,
-    minimizeWindow,
-    focusWindow,
-    setSpeed,
-    togglePause,
-    unreadNewsCount,
-    markNewsRead,
-    applyWindowLayout,
-  } = useGameStore()
+  // 개별 셀렉터: 전체 store 구독 방지
+  const time = useGameStore((s) => s.time)
+  const openWindow = useGameStore((s) => s.openWindow)
+  const windows = useGameStore((s) => s.windows)
+  const minimizeWindow = useGameStore((s) => s.minimizeWindow)
+  const focusWindow = useGameStore((s) => s.focusWindow)
+  const setSpeed = useGameStore((s) => s.setSpeed)
+  const togglePause = useGameStore((s) => s.togglePause)
+  const unreadNewsCount = useGameStore((s) => s.unreadNewsCount)
+  const markNewsRead = useGameStore((s) => s.markNewsRead)
+  const applyWindowLayout = useGameStore((s) => s.applyWindowLayout)
 
   const [showLayoutMenu, setShowLayoutMenu] = useState(false)
   const [showStartMenu, setShowStartMenu] = useState(false)
+  const [showMoreIcons, setShowMoreIcons] = useState(false)
   const startMenuRef = useRef<HTMLDivElement>(null)
   const layoutMenuRef = useRef<HTMLDivElement>(null)
+  const moreIconsRef = useRef<HTMLDivElement>(null)
 
-  // 성능 최적화: 필요한 것만 구독
   const firstCompanyId = useGameStore((s) => s.companies[0]?.id ?? 'tech-01')
   const firstEmployeeId = useGameStore((s) => s.player.employees[0]?.id)
   const hasEmployees = useGameStore((s) => s.player.employees.length > 0)
@@ -83,6 +84,7 @@ export function Taskbar() {
   const circuitBreaker = useGameStore((s) => s.circuitBreaker)
   const gameMode = useGameStore((s) => s.config.gameMode)
   const realtimeConnection = useGameStore((s) => s.realtimeConnection)
+  const companyProfile = useGameStore((s) => s.companyProfile)
 
   const handleOpenWindow = (type: WindowType) => {
     // Institutional window needs a companyId prop
@@ -135,8 +137,22 @@ export function Taskbar() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showLayoutMenu])
 
+  // 더보기 메뉴 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!showMoreIcons) return
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (moreIconsRef.current && !moreIconsRef.current.contains(e.target as Node)) {
+        setShowMoreIcons(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showMoreIcons])
+
   return (
-    <div className="fixed bottom-0 left-0 right-0 h-8 bg-win-face win-outset flex items-center px-1 gap-0.5 z-[10000]">
+    <div className="fixed bottom-0 left-0 right-0 h-9 bg-win-face win-outset flex items-center px-1 gap-0.5 z-[10000]">
       {/* Start button with menu */}
       <div className="relative shrink-0" ref={startMenuRef}>
         <RetroButton
@@ -169,7 +185,7 @@ export function Taskbar() {
               {START_MENU_CATEGORIES.map((category, idx) => (
                 <div key={category.name}>
                   {idx > 0 && <div className="h-px bg-win-shadow my-1" />}
-                  <div className="text-[10px] font-bold text-gray-600 px-2 py-1">{category.name}</div>
+                  <div className="text-[10px] font-bold text-retro-black px-2 py-1">{category.name}</div>
                   {category.items.map((item) => (
                     <RetroButton
                       key={item.type}
@@ -193,10 +209,16 @@ export function Taskbar() {
         )}
       </div>
 
+      {/* Company Logo + Name */}
+      <div className="shrink-0 flex items-center gap-0.5 px-1 text-[10px]" title={companyProfile.name}>
+        <span>{companyProfile.logo}</span>
+        <span className="font-bold max-w-16 truncate hidden sm:inline">{companyProfile.name}</span>
+      </div>
+
       <div className="w-px h-5 bg-win-shadow mx-0.5" />
 
-      {/* Quick launch with SVG icons + notification badges */}
-      {TASKBAR_ITEMS.map((item) => (
+      {/* Quick launch — 상위 6개만 표시, 나머지 접기 */}
+      {TASKBAR_ITEMS.slice(0, 6).map((item) => (
         <RetroButton
           key={item.type}
           size="sm"
@@ -205,14 +227,45 @@ export function Taskbar() {
           className="relative"
         >
           <PixelIcon name={item.icon} size={14} />
-          {/* News badge */}
           {item.type === 'news' && unreadNewsCount > 0 && (
-            <span className="absolute -top-1 -right-1 bg-stock-up text-retro-white text-[8px] leading-none px-0.5 rounded-sm min-w-[10px] text-center">
+            <span className="absolute -top-1 -right-1 bg-stock-up text-retro-white text-[10px] leading-none px-1 rounded-sm min-w-[12px] text-center">
               {unreadNewsCount > 9 ? '9+' : unreadNewsCount}
             </span>
           )}
         </RetroButton>
       ))}
+      {TASKBAR_ITEMS.length > 6 && (
+        <div className="relative shrink-0" ref={moreIconsRef}>
+          <RetroButton
+            size="sm"
+            onClick={() => setShowMoreIcons(!showMoreIcons)}
+            title="더보기"
+            className="text-[10px]"
+          >
+            ▸
+          </RetroButton>
+          {showMoreIcons && (
+            <div className="absolute bottom-full left-0 mb-1 win-outset bg-win-face p-1 space-y-0.5 z-50">
+              {TASKBAR_ITEMS.slice(6).map((item) => (
+                <RetroButton
+                  key={item.type}
+                  size="sm"
+                  onClick={() => {
+                    handleOpenWindow(item.type)
+                    setShowMoreIcons(false)
+                  }}
+                  className="text-[10px] w-full justify-start"
+                >
+                  <span className="flex items-center gap-1">
+                    <PixelIcon name={item.icon} size={14} />
+                    {item.label}
+                  </span>
+                </RetroButton>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="w-px h-5 bg-win-shadow mx-0.5" />
 
@@ -222,7 +275,7 @@ export function Taskbar() {
           <RetroButton
             key={win.id}
             size="sm"
-            className={`text-[10px] max-w-24 truncate ${win.isMinimized ? 'opacity-60' : ''}`}
+            className={`text-[10px] max-w-28 truncate ${win.isMinimized ? 'opacity-60' : ''}`}
             onClick={() => {
               if (win.isMinimized) {
                 minimizeWindow(win.id)  // 최소화 해제 (토글)
@@ -318,6 +371,11 @@ export function Taskbar() {
           {marketRegime.current === 'CRISIS' && '위기'}
         </span>
       </div>
+
+      <div className="w-px h-5 bg-win-shadow mx-0.5" />
+
+      {/* Objective Widget */}
+      <ObjectiveWidget />
 
       <div className="w-px h-5 bg-win-shadow mx-0.5" />
 

@@ -12,7 +12,7 @@
   --color-retro-purple: #6A006A;
   --color-retro-brown: #8B6914;
   --color-retro-silver: #C0C0C0;
-  --color-retro-gray: #808080;
+  --color-retro-gray: #666666;
   --color-retro-blue: #0000FF;
   --color-retro-green: #00FF00;
   --color-retro-cyan: #00FFFF;
@@ -43,11 +43,14 @@
   src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/DungGeunMo.woff') format('woff');
   font-weight: normal;
   font-style: normal;
-  font-display: swap;
+  font-display: optional;
 }
 
 * {
   font-family: 'DungGeunMo', 'Courier New', monospace;
+}
+
+img, canvas {
   image-rendering: pixelated;
 }
 
@@ -63,6 +66,12 @@ body {
 .win-inset {
   border: 2px solid;
   border-color: var(--color-win-shadow) var(--color-win-highlight) var(--color-win-highlight) var(--color-win-shadow);
+}
+
+/* Win95 border alias (used by some components) */
+.win-border {
+  border: 2px solid;
+  border-color: var(--color-win-highlight) var(--color-win-dark-shadow) var(--color-win-dark-shadow) var(--color-win-highlight);
 }
 
 /* Win95 outset border */
@@ -119,8 +128,12 @@ body {
   background: radial-gradient(
     ellipse at center,
     transparent 60%,
-    rgba(0, 0, 0, 0.3) 100%
+    rgba(0, 0, 0, 0.15) 100%
   );
+}
+
+.crt-no-vignette .crt-overlay::after {
+  display: none;
 }
 
 /* Flash effect for breaking news */

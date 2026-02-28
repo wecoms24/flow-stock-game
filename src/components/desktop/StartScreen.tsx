@@ -3,6 +3,7 @@ import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { RetroPanel } from '../ui/RetroPanel'
 import type { Difficulty, GameMode, KISCredentials } from '../../types'
+import type { InvestmentStyle, CompanyProfile } from '../../types/chapter'
 import { DIFFICULTY_TABLE, VICTORY_GOALS } from '../../data/difficulty'
 import { AUM_CONFIG } from '../../config/aiConfig'
 import type { SaveSlotInfo } from '../../systems/sqlite/types'
@@ -72,6 +73,11 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
   const [kospiDbProgress, setKospiDbProgress] = useState(0)
   const [kospiDbReady, setKospiDbReady] = useState(false)
   const [kospiDbError, setKospiDbError] = useState<string | null>(null)
+
+  // Company Profile
+  const [companyName, setCompanyName] = useState('레트로 투자운용')
+  const [investStyle, setInvestStyle] = useState<InvestmentStyle>('stable')
+  const [companyLogo, setCompanyLogo] = useState('🏢')
 
   // 실시간 모드 상태
   const [kisAppKey, setKisAppKey] = useState('')
@@ -205,7 +211,8 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
     const kisCreds = gameMode === 'realtime'
       ? { appKey: kisAppKey.trim(), appSecret: kisAppSecret.trim(), isDemo: kisIsDemo }
       : undefined
-    startGame(difficulty, VICTORY_GOALS[selectedGoalIdx].targetAsset, parsedCustomCash, gameMode, kisCreds)
+    const profile: CompanyProfile = { name: companyName.trim() || '레트로 투자운용', style: investStyle, logo: companyLogo }
+    startGame(difficulty, VICTORY_GOALS[selectedGoalIdx].targetAsset, parsedCustomCash, gameMode, kisCreds, profile)
   }
 
   const competitorNames = [
@@ -495,6 +502,64 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
                   설정된 초기 자본: {parseInt(customInitialCash).toLocaleString()}원
                 </div>
               )}
+            </div>
+          </RetroPanel>
+
+          {/* Company Profile */}
+          <RetroPanel variant="inset" className="p-3 space-y-2">
+            <div className="text-sm font-bold">🏢 회사 프로필:</div>
+            <div className="space-y-1">
+              <label className="block text-[10px] text-retro-gray">회사 이름</label>
+              <input
+                type="text"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="레트로 투자운용"
+                maxLength={20}
+                className="w-full px-2 py-1 text-sm border-2 border-win-shadow bg-white focus:border-win-highlight outline-none"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="block text-[10px] text-retro-gray">투자 스타일</label>
+              <div className="grid grid-cols-3 gap-1">
+                {([
+                  { key: 'aggressive' as const, icon: '🦈', label: '공격형', desc: '초기 자금 -20%, 거래 수수료 -10%' },
+                  { key: 'stable' as const, icon: '🐢', label: '안정형', desc: '초기 자금 +10%' },
+                  { key: 'analytical' as const, icon: '📊', label: '분석형', desc: '애널리스트 1명 무료 제공' },
+                ]).map((s) => (
+                  <button
+                    key={s.key}
+                    onClick={() => setInvestStyle(s.key)}
+                    className={`p-2 text-center text-[11px] border rounded transition-colors ${
+                      investStyle === s.key
+                        ? 'border-win-highlight bg-win-highlight/10 font-bold'
+                        : 'border-win-shadow bg-win-face hover:bg-win-highlight/5'
+                    }`}
+                  >
+                    <div className="text-lg">{s.icon}</div>
+                    <div className="font-semibold">{s.label}</div>
+                    <div className="text-retro-gray text-[10px]">{s.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-[10px] text-retro-gray">회사 로고</label>
+              <div className="flex gap-2">
+                {['🏢', '📈', '💹', '🏦', '🚀', '💎'].map((emoji) => (
+                  <button
+                    key={emoji}
+                    onClick={() => setCompanyLogo(emoji)}
+                    className={`w-8 h-8 text-lg flex items-center justify-center rounded border transition-colors ${
+                      companyLogo === emoji
+                        ? 'border-win-highlight bg-win-highlight/10'
+                        : 'border-win-shadow bg-win-face hover:bg-win-highlight/5'
+                    }`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
             </div>
           </RetroPanel>
 

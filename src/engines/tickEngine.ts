@@ -644,6 +644,7 @@ function getEventPropagation(elapsed: number): number {
 /* ── Rank Change Detection ── */
 function checkRankChanges(rankings: Array<{ name: string; rank: number; isPlayer: boolean }>) {
   const store = useGameStore.getState()
+  const companyName = store.companyProfile?.name
 
   rankings.forEach((entry) => {
     const prevRank = previousRankings[entry.name]
@@ -704,7 +705,7 @@ function checkRankChanges(rankings: Array<{ name: string; rank: number; isPlayer
           entry.rank < playerEntry.rank &&
           prevRank > prevPlayerRank
         ) {
-          const msg = getRandomTaunt('overtake', store.time.hour, style)
+          const msg = getRandomTaunt('overtake', store.time.hour, style, companyName)
           store.addTaunt({
             competitorId: entry.name,
             competitorName: entry.name,
@@ -714,13 +715,7 @@ function checkRankChanges(rankings: Array<{ name: string; rank: number; isPlayer
           })
         }
 
-        // ✨ Core Values: Rivalry tracking
-        if (competitor) {
-          const playerEntry2 = rankings.find((r) => r.isPlayer)
-          if (playerEntry2) {
-            store.updateRivalryTracking(entry.name, entry.rank < playerEntry2.rank)
-          }
-        }
+        // ✨ Core Values: Rivalry tracking → 월 1회 processMonthly에서 처리
       }
     }
   })

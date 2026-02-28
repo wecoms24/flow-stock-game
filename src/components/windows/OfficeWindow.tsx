@@ -603,7 +603,7 @@ export function OfficeWindow() {
                   <div
                     key={emp.id}
                     className={`
-                      border-2 rounded p-1 transition-all
+                      border-2 rounded p-1 transition-all cursor-pointer hover:shadow-md
                       ${isSelected
                         ? 'border-green-500 bg-green-50'
                         : isPlaced
@@ -611,6 +611,7 @@ export function OfficeWindow() {
                           : 'border-gray-300 bg-white'
                       }
                     `}
+                    onClick={() => openWindow('employee_detail', { employeeId: emp.id })}
                   >
                     <div className="flex items-center justify-between gap-1">
                       <div className="flex-1 min-w-0">
@@ -675,7 +676,7 @@ export function OfficeWindow() {
                           <span className="text-[7px] text-blue-600" title={`조사: ${Math.round(skills.research)}`}>R:{Math.round(skills.research)}</span>
                         </div>
                       </div>
-                      <div className="flex flex-col gap-0.5">
+                      <div className="flex flex-col gap-0.5" onClick={(e) => e.stopPropagation()}>
                         <RetroButton
                           size="sm"
                           onClick={(e) => {
@@ -724,6 +725,14 @@ export function OfficeWindow() {
                           className="text-[8px]"
                         >
                           {isPlaced ? '해제' : '배치'}
+                        </RetroButton>
+                        <RetroButton
+                          size="sm"
+                          onClick={() => openWindow('employee_detail', { employeeId: emp.id })}
+                          className="text-[8px]"
+                          title="직원 상세 정보"
+                        >
+                          📋
                         </RetroButton>
                         <RetroButton
                           size="sm"

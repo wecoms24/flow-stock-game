@@ -12,6 +12,7 @@ const SENTIMENT_BADGE: Record<NewsSentiment, { label: string; className: string 
 
 export function NewsWindow() {
   const news = useGameStore((s) => s.news)
+  const openWindow = useGameStore((s) => s.openWindow)
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
 
   const visibleNews = news.slice(0, visibleCount)
@@ -31,21 +32,21 @@ export function NewsWindow() {
             return (
               <div
                 key={item.id}
-                className={`p-1.5 ${isMnaNews ? 'border-l-4 border-orange-500 bg-orange-50/10' : ''} ${item.isBreaking ? 'bg-retro-yellow/20 win-outset' : 'border-b border-win-shadow'}`}
+                className={`p-2 ${isMnaNews ? 'border-l-4 border-orange-500 bg-orange-50/10' : ''} ${item.isBreaking ? 'bg-retro-yellow/20 win-outset' : 'border-b border-win-shadow'}`}
               >
                 <div className="flex items-center gap-1">
                   {isMnaNews && (
-                    <span className="bg-orange-500 text-retro-white px-1 text-[10px] font-bold">
+                    <span className="bg-orange-500 text-retro-white px-1.5 py-0.5 text-[10px] font-bold">
                       M&A
                     </span>
                   )}
                   {item.isBreaking && (
-                    <span className="bg-stock-up text-retro-white px-1 text-[10px] font-bold">
+                    <span className="bg-stock-up text-retro-white px-1.5 py-0.5 text-[10px] font-bold">
                       속보
                     </span>
                   )}
                   {badge && (
-                    <span className={`${badge.className} px-1 text-[10px] font-bold`}>
+                    <span className={`${badge.className} px-1.5 py-0.5 text-[10px] font-bold`}>
                       {badge.label}
                     </span>
                   )}
@@ -56,12 +57,23 @@ export function NewsWindow() {
                 </div>
                 <div className="font-bold mt-0.5">{item.headline}</div>
                 <div className="text-retro-gray mt-0.5">{item.body}</div>
-                {isMnaNews && item.relatedCompanies && (
-                  <div className="mt-1 text-[10px] text-retro-gray">
-                    관련 기업: {item.relatedCompanies.map((id) => {
+                {item.relatedCompanies && item.relatedCompanies.length > 0 && (
+                  <div className="mt-1 flex items-center gap-1 flex-wrap">
+                    <span className="text-[10px] text-retro-gray">영향 종목:</span>
+                    {item.relatedCompanies.slice(0, 3).map((id) => {
                       const company = companies.find((c) => c.id === id)
-                      return company ? `${company.name} (${company.ticker})` : ''
-                    }).filter(Boolean).join(', ')}
+                      if (!company) return null
+                      return (
+                        <button
+                          key={id}
+                          onClick={() => openWindow('chart', { companyId: id })}
+                          className="text-[10px] px-1 py-0.5 bg-win-face border border-win-shadow hover:bg-win-highlight/10 cursor-pointer"
+                          title={`${company.name} 차트 열기`}
+                        >
+                          {company.ticker}
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
                 {item.impactSummary && (

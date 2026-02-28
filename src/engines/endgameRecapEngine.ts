@@ -13,7 +13,9 @@ import type {
   KeyTimelineEvent,
   StarEmployee,
   CompetitorResult,
+  TurningPoint,
 } from '../types/endgame'
+import { generateDecisionAnalysis } from './decisionAnalysisEngine'
 import { getFinalQuote } from '../data/taunts'
 import type { TradingStyle } from '../types'
 import { generateTestimonial } from '../data/employeeTestimonials'
@@ -43,6 +45,7 @@ export function generateEndgameRecap(state: {
     config,
     time,
     competitors,
+    companies,
     employeeBios,
     realizedTrades,
     monthlyCashFlowSummaries,
@@ -110,6 +113,26 @@ export function generateEndgameRecap(state: {
     }
   }).sort((a, b) => a.rank - b.rank)
 
+  // Decision Analysis
+  const decisionAnalysis = generateDecisionAnalysis(
+    realizedTrades,
+    companies,
+    monthlyCashFlowSummaries,
+  )
+
+  // One-line story
+  const oneLineStory = generateOneLineStory(realizedTrades, totalROI, playYears, config.startYear)
+
+  // Turning points
+  const turningPoints = extractTurningPoints(monthlyCashFlowSummaries, player, realizedTrades, competitors, companies)
+
+  // Asset curve (totalAssetValue if available, otherwise closingCash)
+  const assetCurve = monthlyCashFlowSummaries.map((s) => ({
+    year: s.year,
+    month: s.month,
+    cash: s.totalAssetValue ?? s.closingCash,
+  }))
+
   // Headlines
   const headlines = generateHeadlines(
     totalROI,
@@ -138,6 +161,10 @@ export function generateEndgameRecap(state: {
     playerRank,
     competitorResults,
     headlines,
+    decisionAnalysis,
+    oneLineStory,
+    turningPoints,
+    assetCurve,
   }
 }
 
@@ -262,7 +289,8 @@ function selectStarEmployees(
     if (!bio) continue
 
     const pnl = bio.totalPnlContribution ?? 0
-    const testimonial = generateTestimonial(emp.role, bio.monthsEmployed, bio.currentEmotion, bio.personality)
+    const milestoneCount = (bio.unlockedMilestones ?? []).length
+    const testimonial = generateTestimonial(emp.role, bio.monthsEmployed, bio.currentEmotion, bio.personality, milestoneCount, pnl)
 
     results.push({
       id: emp.id,
@@ -282,6 +310,153 @@ function selectStarEmployees(
     .sort((a, b) => b.totalPnlContribution - a.totalPnlContribution)
     .slice(0, 6)
 }
+
+/**
+ * 한 줄 스토리 생성
+ */
+function generateOneLineStory(
+  trades: RealizedTrade[],
+  totalROI: number,
+  playYears: number,
+  startYear: number,
+): string {
+  if (trades.length === 0) {
+    return `${startYear}년부터 ${playYears}년간, 시장을 지켜보기만 한 관찰자의 기록.`
+  }
+
+  const bestTrade = trades.reduce(
+    (best, t) => (t.pnl > best.pnl ? t : best),
+    trades[0],
+  )
+
+  const eventMap: Record<number, string> = {
+    1997: 'IMF 외환위기',
+    1998: 'IMF 구조조정',
+    2000: '닷컴 버블',
+    2001: 'IT 버블 붕괴',
+    2008: '글로벌 금융위기',
+    2009: '금융위기 회복',
+    2020: '코로나 팬데믹',
+    2021: '동학개미 시대',
+  }
+
+  const eventLabel = eventMap[bestTrade.timestamp.year] ?? `${bestTrade.timestamp.year}년`
+
+  if (totalROI > 500) {
+    return `${eventLabel}의 파도를 타고 ${bestTrade.ticker}에서 전설을 쓴 ${playYears}년의 여정.`
+  }
+  if (totalROI > 100) {
+    return `${eventLabel}, ${bestTrade.ticker}의 대박과 함께 성장한 투자자의 이야기.`
+  }
+  if (totalROI > 0) {
+    return `${playYears}년간 시장의 파도 속에서 살아남은 생존기 — ${eventLabel}이 전환점이었다.`
+  }
+  return `${eventLabel}의 교훈을 안고 ${playYears}년을 버텨낸 투자자의 기록.`
+}
+
+/**
+ * 전환점 추출
+ */
+function extractTurningPoints(
+  summaries: MonthlySummary[],
+  player: PlayerState,
+  trades: RealizedTrade[],
+  competitors: Competitor[],
+  companies: Company[],
+): TurningPoint[] {
+  const points: TurningPoint[] = []
+
+  // 첫 현금 10억 달성
+  for (const s of summaries) {
+    if (s.closingCash >= 1_000_000_000) {
+      points.push({
+        year: s.year,
+        month: s.month,
+        type: 'first_billion',
+        label: '첫 10억 달성',
+        value: s.closingCash,
+      })
+      break
+    }
+  }
+
+  // 플라이휠 모멘트 (6개월 연속 자산 성장)
+  let consecutiveGrowth = 0
+  for (let i = 1; i < summaries.length; i++) {
+    if (summaries[i].closingCash > summaries[i - 1].closingCash) {
+      consecutiveGrowth++
+      if (consecutiveGrowth === 6) {
+        points.push({
+          year: summaries[i].year,
+          month: summaries[i].month,
+          type: 'flywheel',
+          label: '플라이휠 점화 (6개월 연속 성장)',
+        })
+        break
+      }
+    } else {
+      consecutiveGrowth = 0
+    }
+  }
+
+  // 첫 마스터 직원
+  const masterEmployee = player.employees.find((e) => (e.level ?? 1) >= 30)
+  if (masterEmployee) {
+    points.push({
+      year: 0,
+      month: 0,
+      type: 'first_master',
+      label: `마스터 직원 탄생: ${masterEmployee.name}`,
+    })
+  }
+
+  // ✨ 1위 달성 (rank_1) — 모든 경쟁자를 한 번이라도 이긴 적이 있을 때
+  if (competitors.length > 0) {
+    const beatenAllRivals = competitors.every((c) => (c.headToHeadLosses ?? 0) > 0)
+    if (beatenAllRivals) {
+      const lastSummary = summaries[summaries.length - 1]
+      if (lastSummary) {
+        points.push({
+          year: lastSummary.year,
+          month: lastSummary.month,
+          type: 'rank_1',
+          label: '모든 라이벌을 넘어선 순간이 있었다',
+        })
+      }
+    }
+  }
+
+  // ✨ 고슴도치 전략 (hedgehog) — 거래의 60% 이상이 같은 섹터
+  if (trades.length >= 10) {
+    const companyMap = new Map(companies.map((c) => [c.id, c]))
+    const sectorCounts: Record<string, number> = {}
+    for (const t of trades) {
+      const sector = companyMap.get(t.companyId)?.sector ?? 'unknown'
+      sectorCounts[sector] = (sectorCounts[sector] ?? 0) + 1
+    }
+    const maxSector = Object.entries(sectorCounts).reduce(
+      (best, [sector, count]) => (count > best.count ? { sector, count } : best),
+      { sector: '', count: 0 },
+    )
+    if (maxSector.count / trades.length >= 0.6) {
+      const SECTOR_KO: Record<string, string> = {
+        tech: 'IT', finance: '금융', energy: '에너지', healthcare: '헬스케어',
+        consumer: '소비재', industrial: '산업재', telecom: '통신',
+        materials: '소재', utilities: '유틸리티', realestate: '부동산',
+      }
+      const sectorLabel = SECTOR_KO[maxSector.sector] ?? maxSector.sector
+      points.push({
+        year: 0,
+        month: 0,
+        type: 'hedgehog',
+        label: `고슴도치 전략: ${sectorLabel} 섹터 집중 투자 (${Math.round(maxSector.count / trades.length * 100)}%)`,
+      })
+    }
+  }
+
+  return points.sort((a, b) => a.year * 100 + a.month - (b.year * 100 + b.month))
+}
+
 
 /**
  * 신문 헤드라인 생성

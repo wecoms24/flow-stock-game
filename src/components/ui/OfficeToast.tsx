@@ -42,6 +42,10 @@ export function OfficeToast() {
       'collaboration',
       'trade_executed',
       'trade_failed',
+      'furniture_placed',
+      'employee_assigned',
+      'employee_hired',
+      'employee_fired',
     ]
 
     const important = newEvents.filter(
@@ -85,18 +89,18 @@ export function OfficeToast() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed bottom-10 right-2 z-50 flex flex-col gap-1 pointer-events-none">
+    <div className="fixed bottom-11 right-2 z-50 flex flex-col gap-1 pointer-events-none">
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className="pointer-events-auto animate-slide-in-right win-border bg-win-bg px-2 py-1.5 shadow-lg text-xs max-w-64"
+          className="pointer-events-auto win-outset bg-win-face px-2 py-1.5 shadow-lg text-xs max-w-64"
           style={{
             animation: 'slideInRight 0.3s ease-out',
           }}
         >
           <div className="flex items-start gap-1.5">
             <span className="text-base flex-shrink-0">{toast.emoji}</span>
-            <span className="text-[10px] leading-tight">{toast.message}</span>
+            <span className="text-xs leading-tight">{toast.message}</span>
           </div>
         </div>
       ))}

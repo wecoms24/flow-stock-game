@@ -57,4 +57,5 @@ export interface MonthlySummary {
   taxes: number  // ✨ 부유세 추가
   openingCash: number
   closingCash: number
+  totalAssetValue?: number // ✨ 월말 총자산 (현금 + 포트폴리오 시가)
 }

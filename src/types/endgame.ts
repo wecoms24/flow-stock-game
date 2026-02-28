@@ -40,6 +40,44 @@ export interface CompetitorResult {
   styleIcon: string
 }
 
+export interface SectorAnalysis {
+  sector: string
+  tradeCount: number
+  totalPnl: number
+  winRate: number
+  avgHoldTicks: number
+  concentration: number
+}
+
+export interface TimingAnalysis {
+  buyLowRate: number
+  sellHighRate: number
+  panicSellCount: number
+  panicHoldCount: number
+  crisisROI: number
+}
+
+export interface RiskBehavior {
+  label: string
+  evidence: string[]
+  riskScore: number
+}
+
+export interface DecisionAnalysis {
+  sectorBreakdown: SectorAnalysis[]
+  timing: TimingAnalysis
+  riskBehavior: RiskBehavior
+  personalInsight: string
+}
+
+export interface TurningPoint {
+  year: number
+  month: number
+  type: 'first_billion' | 'first_master' | 'rank_1' | 'flywheel' | 'hedgehog'
+  label: string
+  value?: number
+}
+
 export interface EndgameRecap {
   // Summary
   finalAssets: number
@@ -67,4 +105,10 @@ export interface EndgameRecap {
 
   // Narrative
   headlines: string[]
+
+  // Decision Analysis
+  decisionAnalysis: DecisionAnalysis
+  oneLineStory: string
+  turningPoints: TurningPoint[]
+  assetCurve: Array<{ year: number; month: number; cash: number }>
 }

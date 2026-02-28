@@ -27,18 +27,19 @@ export function RetroButton({
     danger: 'bg-win-face text-retro-red font-bold',
   }
 
+  const isDisabled = props.disabled
+
   return (
     <button
       className={`
         ${sizeClasses[size]}
         ${variantClasses[variant]}
-        ${isPressed ? 'win-pressed' : 'win-outset'}
-        active:win-pressed
-        cursor-pointer
+        ${isDisabled ? 'win-inset opacity-50 cursor-not-allowed' : isPressed ? 'win-pressed' : 'win-outset'}
+        ${!isDisabled ? 'active:win-pressed cursor-pointer' : ''}
         ${className}
       `}
-      onMouseDown={() => setIsPressed(true)}
-      onMouseUp={() => setIsPressed(false)}
+      onMouseDown={() => !isDisabled && setIsPressed(true)}
+      onMouseUp={() => !isDisabled && setIsPressed(false)}
       onMouseLeave={() => setIsPressed(false)}
       {...props}
     >

@@ -572,6 +572,10 @@ export interface SaveData {
 
   // Hourly processing accumulators (v8)
   hourlyAccumulators?: HourlyAccumulators
+
+  // Chapter & Company Profile (v9)
+  chapterProgress?: import('./chapter').ChapterProgress
+  companyProfile?: import('./chapter').CompanyProfile
 }
 
 export interface HourlyAccumulators {
@@ -622,7 +626,7 @@ export interface TauntMessage {
   competitorId: string
   competitorName: string
   message: string
-  type: 'rank_up' | 'rank_down' | 'overtake_player' | 'panic' | 'champion' | 'trade_brag'
+  type: 'rank_up' | 'rank_down' | 'overtake_player' | 'panic' | 'champion' | 'trade_brag' | 'big_trade'
   timestamp: number
 }
 

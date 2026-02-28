@@ -25,10 +25,10 @@ export const RANK_DOWN_TAUNTS = [
 ]
 
 export const OVERTAKE_PLAYER_TAUNTS = [
-  '어? 내가 플레이어 넘었네? 😏',
+  '어? 내가 {company} 넘었네? 😏',
   '이제부터가 진짜야! ⚡',
   '계속 이 자리 지킬게 💪',
-  '뒤에서 잘 봐줘~ 👋',
+  '{company}는 뒤에서 잘 봐줘~ 👋',
   '추월 완료! 빠잉~ 🏎️',
 ]
 
@@ -41,7 +41,7 @@ export const CHAMPION_TAUNTS = [
 ]
 
 /** ✨ Core Values: 스타일별 도발 (라이벌 개성 강화) */
-export type TauntType = 'panic' | 'rank_up' | 'rank_down' | 'overtake' | 'champion' | 'trade_brag'
+export type TauntType = 'panic' | 'rank_up' | 'rank_down' | 'overtake' | 'champion' | 'trade_brag' | 'big_trade'
 
 export const STYLE_TAUNTS: Record<TradingStyle, Partial<Record<TauntType, string[]>>> = {
   aggressive: {
@@ -78,6 +78,11 @@ export const STYLE_TAUNTS: Record<TradingStyle, Partial<Record<TauntType, string
       '{ticker}? 당연히 샀지 ⚡',
       '{sector} 섹터 올인! 이게 투자야 💰',
     ],
+    big_trade: [
+      '🦈 {ticker} {amount} 베팅! 이게 진짜 큰 손이야',
+      '⚡ {ticker}에 올인 수준으로 갔다! 나를 따라올 수 있겠어?',
+      '💰 {ticker} 대규모 포지션 구축 완료. 두고 봐',
+    ],
   },
   conservative: {
     rank_up: [
@@ -110,6 +115,10 @@ export const STYLE_TAUNTS: Record<TradingStyle, Partial<Record<TauntType, string
     trade_brag: [
       '{ticker} 배당주 조용히 담았어 🐢',
       '{sector} 안전 자산 확보 완료 🛡️',
+    ],
+    big_trade: [
+      '🐢 {ticker} {amount} 규모로 조용히 담았어. 장기 투자야',
+      '🛡️ {ticker} {amount} 대량 매집 완료. 느리지만 확실하지',
     ],
   },
   'trend-follower': {
@@ -144,6 +153,10 @@ export const STYLE_TAUNTS: Record<TradingStyle, Partial<Record<TauntType, string
       '{ticker} 상승 트렌드 포착! 🏄',
       '{sector} 모멘텀 최고야! 올라타! 🌊',
     ],
+    big_trade: [
+      '🏄 {ticker} {amount} 규모 서핑 시작! 이 파도는 크다',
+      '🌊 {ticker} {amount} 대량 매수! 트렌드가 말해주고 있어',
+    ],
   },
   contrarian: {
     rank_up: [
@@ -176,6 +189,10 @@ export const STYLE_TAUNTS: Record<TradingStyle, Partial<Record<TauntType, string
     trade_brag: [
       '{ticker} RSI 과매도... 역발상 매수 🐻',
       '{sector}? 다들 팔 때가 기회야 🔄',
+    ],
+    big_trade: [
+      '🐻 {ticker} {amount} 역발상 매수! 다들 팔 때가 기회지',
+      '🔄 {ticker} {amount} 대량 매집. 모두가 공포에 떨 때 사는 거야',
     ],
   },
 }
@@ -255,6 +272,7 @@ export function getRandomTaunt(
   type: 'panic' | 'rank_up' | 'rank_down' | 'overtake' | 'champion',
   hour?: number,
   style?: TradingStyle,
+  playerCompanyName?: string,
 ): string {
   // 스타일별 대사가 있으면 70% 확률로 사용
   if (style && Math.random() < 0.7) {
@@ -262,7 +280,8 @@ export function getRandomTaunt(
     if (styleTaunts && styleTaunts.length > 0) {
       const base = styleTaunts[Math.floor(Math.random() * styleTaunts.length)]
       const prefix = getTimePrefix(hour)
-      return prefix ? `${prefix}${base}` : base
+      const raw = prefix ? `${prefix}${base}` : base
+      return raw.replace(/\{company\}/g, playerCompanyName ?? '플레이어')
     }
   }
 
@@ -277,7 +296,8 @@ export function getRandomTaunt(
   const pool = taunts[type]
   const base = pool[Math.floor(Math.random() * pool.length)]
   const prefix = getTimePrefix(hour)
-  return prefix ? `${prefix}${base}` : base
+  const raw = prefix ? `${prefix}${base}` : base
+  return raw.replace(/\{company\}/g, playerCompanyName ?? '플레이어')
 }
 
 /**
@@ -294,6 +314,22 @@ export function getContextualTradeTaunt(
   let msg = templates[Math.floor(Math.random() * templates.length)]
   msg = msg.replace('{ticker}', context.ticker ?? '???')
   msg = msg.replace('{sector}', context.sector ?? '시장')
+  return msg
+}
+
+/**
+ * ✨ Core Values: 대량 거래 알림 메시지
+ */
+export function getBigTradeTaunt(
+  style: TradingStyle,
+  context: { ticker: string; amount: string },
+): string {
+  const templates = STYLE_TAUNTS[style]?.big_trade
+  if (!templates || templates.length === 0) return `${context.ticker} 대량 거래!`
+
+  let msg = templates[Math.floor(Math.random() * templates.length)]
+  msg = msg.replace('{ticker}', context.ticker)
+  msg = msg.replace('{amount}', context.amount)
   return msg
 }
 
