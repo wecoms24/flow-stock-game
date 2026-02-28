@@ -18,6 +18,7 @@ import { TradeAnimationSequence } from './components/effects/TradeAnimationSeque
 import { MarketClosedDialog } from './components/effects/MarketClosedDialog'
 import { OfficeToast } from './components/ui/OfficeToast'
 import { RegimeToast } from './components/ui/RegimeToast'
+import { EmployeeMilestoneToast } from './components/effects/EmployeeMilestoneToast'
 import { hasSaveData } from './systems/saveSystem'
 import { migrateIndexedDBToSQLite } from './systems/sqlite/migration'
 import { getFeatureFlag, setFeatureFlag } from './systems/featureFlags'
@@ -184,6 +185,7 @@ export default function App() {
         <LevelUpOverlay />
         <OfficeToast />
         <RegimeToast />
+        <EmployeeMilestoneToast />
         <TradeAnimationSequence />
 
         {isGameOver && <EndingScreen />}

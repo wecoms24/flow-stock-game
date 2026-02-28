@@ -62,6 +62,12 @@ export function createBio(employee: Employee, currentTick: number): EmployeeBio 
     monthsEmployed: 0,
     counselingCount: 0,
     lastCounseledTick: 0,
+    totalPnlContribution: 0,
+    bestTradeProfit: 0,
+    bestTradeTicker: '',
+    worstTradeProfit: 0,
+    worstTradeTicker: '',
+    unlockedMilestones: [],
   }
 }
 

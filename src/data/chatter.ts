@@ -277,6 +277,60 @@ export const CHATTER_TEMPLATES: ChatterTemplate[] = [
     cooldownTicks: 3600,
   },
 
+  // ✨ Core Values: 마일스톤 관련
+  {
+    id: 'milestone_skill',
+    category: 'random',
+    condition: () => false, // 이벤트 기반: triggerChatter()로만 트리거
+    messages: [
+      '스킬이 올라갔어! 더 잘할 수 있어!',
+      '실력이 늘고 있어요!',
+      '요즘 자신감이 붙네요!',
+      '드디어 목표 달성!',
+    ],
+    priority: 7,
+    cooldownTicks: 7200,
+  },
+  {
+    id: 'milestone_tenure',
+    category: 'random',
+    condition: () => false, // 이벤트 기반: triggerChatter()로만 트리거
+    messages: [
+      '벌써 이렇게 됐네요... 감회가 새롭습니다',
+      '이 회사와 함께 성장했어요!',
+      '여기서 일한 시간이 벌써...',
+      '회사에 정이 많이 들었어요',
+    ],
+    priority: 7,
+    cooldownTicks: 7200,
+  },
+  {
+    id: 'milestone_trade',
+    category: 'random',
+    condition: () => false, // 이벤트 기반: triggerChatter()로만 트리거
+    messages: [
+      '거래 실력이 늘었어요!',
+      '이번 거래 대박! 기분 좋다!',
+      '트레이딩이 재미있어지고 있어요!',
+      '손익 관리가 점점 나아지네요',
+    ],
+    priority: 7,
+    cooldownTicks: 7200,
+  },
+  {
+    id: 'milestone_contribution',
+    category: 'random',
+    condition: () => false, // 이벤트 기반: triggerChatter()로만 트리거
+    messages: [
+      '회사 수익에 기여하고 있다니 뿌듯해요!',
+      '내가 이만큼 벌었다니... 대단하지 않나요?',
+      '실장님, 보너스는요? 😏',
+      '회사의 성장에 일조하고 있어요!',
+    ],
+    priority: 7,
+    cooldownTicks: 7200,
+  },
+
   // M&A 시장 관련 (일반 시장 대화)
   {
     id: 'mna_market',

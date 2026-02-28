@@ -258,8 +258,9 @@ export async function saveDataToSQLite(
         await db.run(`
           INSERT INTO competitors (
             save_id, competitor_id, name, avatar, style, cash, total_asset_value,
-            roi, initial_assets, last_day_change, panic_sell_cooldown, is_mirror_rival, portfolio
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            roi, initial_assets, last_day_change, panic_sell_cooldown, is_mirror_rival, portfolio,
+            head_to_head_wins, head_to_head_losses
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         `, [
           saveId,
           competitor.id,
@@ -274,6 +275,8 @@ export async function saveDataToSQLite(
           competitor.panicSellCooldown,
           competitor.isMirrorRival ? 1 : 0,
           JSON.stringify(competitor.portfolio),
+          competitor.headToHeadWins ?? 0,
+          competitor.headToHeadLosses ?? 0,
         ])
       }
     }
@@ -544,6 +547,8 @@ export async function sqliteToSaveData(
       lastDayChange: row.last_day_change,
       panicSellCooldown: row.panic_sell_cooldown,
       isMirrorRival: row.is_mirror_rival === 1,
+      headToHeadWins: (row as any).head_to_head_wins ?? 0,
+      headToHeadLosses: (row as any).head_to_head_losses ?? 0,
     }))
 
     // 5. Load market events
