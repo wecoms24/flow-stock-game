@@ -231,7 +231,9 @@ function EmployeesTab({ recap }: { recap: EndgameRecap }) {
             <div>
               <span className="font-bold text-sm">{emp.name}</span>
               <span className="text-xs text-retro-gray ml-1">
-                ({emp.role === 'analyst' ? '애널리스트' : emp.role === 'trader' ? '트레이더' : '매니저'})
+                ({
+                  ({ analyst: '애널리스트', trader: '트레이더', manager: '매니저', intern: '인턴', ceo: 'CEO', hr_manager: 'HR매니저' } as Record<string, string>)[emp.role] ?? emp.role
+                })
               </span>
             </div>
             <div className="text-xs text-retro-gray">

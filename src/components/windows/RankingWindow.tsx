@@ -358,7 +358,11 @@ export function RankingWindow() {
                                 ? 'bg-yellow-50 border-l-2 border-yellow-500'
                                 : taunt.type === 'overtake_player'
                                   ? 'bg-purple-50 border-l-2 border-purple-500'
-                                  : 'bg-blue-50 border-l-2 border-blue-500'
+                                  : taunt.type === 'rank_down'
+                                    ? 'bg-orange-50 border-l-2 border-orange-500'
+                                    : taunt.type === 'trade_brag'
+                                      ? 'bg-teal-50 border-l-2 border-teal-500'
+                                      : 'bg-blue-50 border-l-2 border-blue-500'
                           }`}
                         >
                           <span className="font-semibold">{taunt.competitorName}:</span>

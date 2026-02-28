@@ -79,7 +79,7 @@ import { xpForLevel, titleForLevel, badgeForLevel, SKILL_UNLOCKS, XP_AMOUNTS } f
 import { soundManager } from '../systems/soundManager'
 import { updateOfficeSystem } from '../engines/officeSystem'
 import { processHRAutomation, type HRAutomationResult } from '../engines/hrAutomation'
-import { cleanupChatterCooldown, getPipelineMessage, resetChatterCooldowns } from '../data/chatter'
+import { cleanupChatterCooldown, getPipelineMessage, resetChatterCooldowns, triggerChatter } from '../data/chatter'
 import { cleanupInteractionCooldowns } from '../engines/employeeInteraction'
 import { createTradeAnimationSequence, createMilestoneAnimationSequence } from '../engines/animationEngine'
 import { MILESTONE_DEFINITIONS, createInitialMilestones, type MilestoneContext } from '../data/milestones'
@@ -844,6 +844,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       totalAssetValue: c.totalAssetValue ?? c.cash,
       roi: c.roi ?? 0,
       initialAssets: c.initialAssets ?? c.cash,
+      headToHeadWins: c.headToHeadWins ?? 0,
+      headToHeadLosses: c.headToHeadLosses ?? 0,
     }))
 
     // 시간 상태: isPaused를 반드시 false로 강제 (게임 재개 보장)
@@ -1644,6 +1646,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 updatedBios[eid] = {
                   ...bio,
                   totalPnlContribution: prev + pnlShare,
+                  totalTradesParticipated: (bio.totalTradesParticipated ?? 0) + 1,
+                  totalSuccessfulTrades: (bio.totalSuccessfulTrades ?? 0) + (tradePnl >= 0 ? 1 : 0),
                   bestTradeProfit:
                     pnlShare > (bio.bestTradeProfit ?? 0) ? pnlShare : (bio.bestTradeProfit ?? 0),
                   bestTradeTicker:
@@ -2057,7 +2061,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           }
         })
 
-        // Queue notifications
+        // Queue notifications + trigger milestone chatter
         for (const m of result.newMilestones) {
           newNotifications.push({
             employeeId: emp.id,
@@ -2068,6 +2072,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
             icon: m.icon,
             timestamp: tick,
           })
+
+          // Trigger milestone speech bubble in office
+          const chatterMap: Record<string, string> = {
+            growth: 'milestone_skill',
+            tenure: 'milestone_tenure',
+            performance: 'milestone_trade',
+            contribution: 'milestone_contribution',
+          }
+          const chatterId = chatterMap[m.category]
+          if (chatterId) {
+            triggerChatter(emp.id, chatterId)
+          }
         }
       })
 

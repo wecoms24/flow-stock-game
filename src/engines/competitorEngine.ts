@@ -465,6 +465,8 @@ export function generateCompetitors(count: number, startingCash: number): Compet
     lastDayChange: 0,
     panicSellCooldown: 0,
     isMirrorRival: false,
+    headToHeadWins: 0,
+    headToHeadLosses: 0,
   }))
 
   // Designate one competitor as Mirror Rival (personalization feature)

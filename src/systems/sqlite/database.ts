@@ -8,7 +8,7 @@ import wasmUrl from '@subframe7536/sqlite-wasm/wasm-async?url'
 let dbInstance: SQLiteDB | null = null
 
 /** Current schema version -- bump this when adding migrations */
-const SCHEMA_VERSION = 8
+const SCHEMA_VERSION = 9
 
 /**
  * Initialize SQLite database with IndexedDB persistence
@@ -245,6 +245,8 @@ async function createSchema(db: SQLiteDB): Promise<void> {
       last_day_change REAL DEFAULT 0,
       panic_sell_cooldown INTEGER DEFAULT 0,
       is_mirror_rival INTEGER DEFAULT 0,
+      head_to_head_wins INTEGER DEFAULT 0,
+      head_to_head_losses INTEGER DEFAULT 0,
 
       -- JSON columns
       portfolio TEXT DEFAULT '{}',
@@ -549,6 +551,33 @@ async function runMigrations(db: SQLiteDB): Promise<void> {
       console.log('[SQLite] Migration v8 applied: realtime_prices table')
     } catch (error) {
       console.error('[SQLite] Migration v8 failed:', error)
+      throw error
+    }
+  }
+
+  // Migration v9: Add competitor head-to-head tracking columns
+  if (currentVersion < 9) {
+    try {
+      const v9Columns = [
+        'ALTER TABLE competitors ADD COLUMN head_to_head_wins INTEGER DEFAULT 0;',
+        'ALTER TABLE competitors ADD COLUMN head_to_head_losses INTEGER DEFAULT 0;',
+      ]
+      for (const sql of v9Columns) {
+        try {
+          await db.run(sql)
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : ''
+          if (!msg.includes('duplicate column')) throw e
+        }
+      }
+
+      await db.run('INSERT OR REPLACE INTO schema_versions (version, applied_at) VALUES (?, ?);', [
+        9,
+        Date.now(),
+      ])
+      console.log('[SQLite] Migration v9 applied: competitor head-to-head columns')
+    } catch (error) {
+      console.error('[SQLite] Migration v9 failed:', error)
       throw error
     }
   }
