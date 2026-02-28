@@ -3,6 +3,7 @@ import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { PixelIcon, type IconName } from '../ui/PixelIcon'
 import { NotificationCenter } from '../ui/NotificationCenter'
+import { CompetitorWidget } from './CompetitorWidget'
 import { formatHour } from '../../config/timeConfig'
 import type { WindowType, WindowLayoutPreset } from '../../types'
 
@@ -317,6 +318,11 @@ export function Taskbar() {
           {marketRegime.current === 'CRISIS' && '위기'}
         </span>
       </div>
+
+      <div className="w-px h-5 bg-win-shadow mx-0.5" />
+
+      {/* Competitor Widget */}
+      <CompetitorWidget />
 
       <div className="w-px h-5 bg-win-shadow mx-0.5" />
 

@@ -20,6 +20,7 @@ import {
 import { evaluateMnaOpportunity, generateNewCompany } from './mnaEngine'
 import { SECTOR_CORRELATION, SPILLOVER_FACTOR } from '../data/sectorCorrelation'
 import type { Sector, MarketEvent } from '../types'
+import { getRandomTaunt } from '../data/taunts'
 import { getBusinessHourIndex, getAbsoluteTimestamp } from '../config/timeConfig'
 import { MARKET_IMPACT_CONFIG } from '../config/marketImpactConfig'
 import { autoSelectCards } from './cardDrawEngine'
@@ -658,22 +659,37 @@ function checkRankChanges(rankings: Array<{ name: string; rank: number; isPlayer
         )
       } else {
         // AI competitor rank changed
+        const competitor = store.competitors.find((c) => c.name === entry.name)
+        const style = competitor?.style
+
         if (entry.rank === 1 && prevRank !== 1) {
           // Became champion
+          const msg = getRandomTaunt('champion', store.time.hour, style)
           store.addTaunt({
             competitorId: entry.name,
             competitorName: entry.name,
-            message: `${entry.name}: "나야말로 전설! 🏆👑"`,
+            message: `${entry.name}: "${msg}"`,
             type: 'champion',
             timestamp: Date.now(),
           })
         } else if (entry.rank < prevRank) {
           // Rank up
+          const msg = getRandomTaunt('rank_up', store.time.hour, style)
           store.addTaunt({
             competitorId: entry.name,
             competitorName: entry.name,
-            message: `${entry.name}: "올라간다! 올라가! 🚀"`,
+            message: `${entry.name}: "${msg}"`,
             type: 'rank_up',
+            timestamp: Date.now(),
+          })
+        } else if (entry.rank > prevRank) {
+          // ✨ Core Values: Rank down (was missing!)
+          const msg = getRandomTaunt('rank_down', store.time.hour, style)
+          store.addTaunt({
+            competitorId: entry.name,
+            competitorName: entry.name,
+            message: `${entry.name}: "${msg}"`,
+            type: 'rank_down',
             timestamp: Date.now(),
           })
         }
@@ -688,13 +704,22 @@ function checkRankChanges(rankings: Array<{ name: string; rank: number; isPlayer
           entry.rank < playerEntry.rank &&
           prevRank > prevPlayerRank
         ) {
+          const msg = getRandomTaunt('overtake', store.time.hour, style)
           store.addTaunt({
             competitorId: entry.name,
             competitorName: entry.name,
-            message: `${entry.name}: "어? 내가 플레이어 넘었네? 😏"`,
+            message: `${entry.name}: "${msg}"`,
             type: 'overtake_player',
             timestamp: Date.now(),
           })
+        }
+
+        // ✨ Core Values: Rivalry tracking
+        if (competitor) {
+          const playerEntry2 = rankings.find((r) => r.isPlayer)
+          if (playerEntry2) {
+            store.updateRivalryTracking(entry.name, entry.rank < playerEntry2.rank)
+          }
         }
       }
     }

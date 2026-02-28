@@ -596,6 +596,9 @@ export interface Competitor {
   lastDayChange: number // Yesterday's ROI - Today's ROI
   panicSellCooldown: number // Ticks until next panic sell possible
   isMirrorRival?: boolean // True if this competitor mirrors player behavior
+  // ✨ Core Values: Rivalry tracking
+  headToHeadWins?: number // Times this AI was ranked above player
+  headToHeadLosses?: number // Times player was ranked above this AI
 }
 
 export interface CompetitorAction {
@@ -619,7 +622,7 @@ export interface TauntMessage {
   competitorId: string
   competitorName: string
   message: string
-  type: 'rank_up' | 'rank_down' | 'overtake_player' | 'panic' | 'champion'
+  type: 'rank_up' | 'rank_down' | 'overtake_player' | 'panic' | 'champion' | 'trade_brag'
   timestamp: number
 }
 

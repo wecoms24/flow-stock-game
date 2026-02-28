@@ -83,4 +83,12 @@ export interface EmployeeBio {
   monthsEmployed: number
   counselingCount: number
   lastCounseledTick: number
+
+  // ✨ Core Values: Employee Growth Milestone Tracking
+  totalPnlContribution?: number // Accumulated P&L from employee's executed/proposed trades
+  bestTradeProfit?: number // Largest single trade profit
+  bestTradeTicker?: string // Ticker of best trade
+  worstTradeProfit?: number // Largest single trade loss
+  worstTradeTicker?: string // Ticker of worst trade
+  unlockedMilestones?: string[] // IDs of unlocked employee milestones
 }

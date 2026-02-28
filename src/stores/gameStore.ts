@@ -38,6 +38,8 @@ import { TRADE_AI_CONFIG } from '../config/tradeAIConfig'
 import { getAbsoluteTimestamp, TIME_CONFIG } from '../config/timeConfig'
 import { drawCards } from '../engines/cardDrawEngine'
 import { createBio, inferEmotion, updateGoals } from '../engines/employeeBioEngine'
+import { checkEmployeeMilestones } from '../engines/employeeMilestoneEngine'
+import { getRandomTaunt as getRandomTauntFn, getContextualTradeTaunt } from '../data/taunts'
 import { calculateBonuses } from '../engines/skillPathEngine'
 import { selectChain, initChainState, advanceChainWeek, getCurrentWeekModifiers, canStartChain } from '../engines/eventChainEngine'
 import { EVENT_CHAIN_TEMPLATES } from '../data/eventChains'
@@ -299,6 +301,7 @@ interface GameStore {
   updateCompetitorAssets: () => void
   calculateRankings: () => Array<{ rank: number; name: string; roi: number; isPlayer: boolean }>
   addTaunt: (taunt: TauntMessage) => void
+  updateRivalryTracking: (competitorName: string, competitorIsAhead: boolean) => void
 
   // Actions - Institutional Investors
   initializeInstitutions: () => void
@@ -419,6 +422,18 @@ interface GameStore {
   addLifeEvent: (employeeId: string, event: import('../types/employeeBio').LifeEvent) => void
   updateEmotion: (employeeId: string) => void
   deleteEmployeeBio: (employeeId: string) => void
+
+  // ✨ Core Values: Employee Milestone Notifications
+  milestoneNotifications: Array<{
+    employeeId: string
+    employeeName: string
+    milestoneId: string
+    title: string
+    description: string
+    icon: string
+    timestamp: number
+  }>
+  dismissMilestoneNotification: (index: number) => void
 
   // ✨ UX Enhancement System - Skill Paths
   employeeSkillPaths: Record<string, import('../types/skillPath').EmployeeSkillPathState>
@@ -545,6 +560,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   eventChains: { chains: [], completedChainIds: [], lastChainEndTick: 0 },
   employeeBios: {},
+  milestoneNotifications: [],
   employeeSkillPaths: {},
   economicPressure: {
     currentTier: 'beginner',
@@ -715,6 +731,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       },
       eventChains: { chains: [], completedChainIds: [], lastChainEndTick: 0 },
       employeeBios: {},
+      milestoneNotifications: [],
       employeeSkillPaths: {},
       economicPressure: {
         currentTier: 'beginner',
@@ -1597,17 +1614,49 @@ export const useGameStore = create<GameStore>((set, get) => ({
         if (preSellPos) {
           const buyPrice = preSellPos.avgBuyPrice
           get().recordCashFlow('TRADE_SELL', result.executedPrice * proposal.quantity, `${proposal.ticker} ${proposal.quantity}주 매도`, tradeMeta)
+          const tradePnl = (result.executedPrice - buyPrice) * proposal.quantity
           get().recordRealizedTrade({
             companyId: proposal.companyId,
             ticker: proposal.ticker,
             shares: proposal.quantity,
             buyPrice,
             sellPrice: result.executedPrice,
-            pnl: (result.executedPrice - buyPrice) * proposal.quantity,
+            pnl: tradePnl,
             fee: result.fee,
             tick: s.currentTick,
             timestamp: { year: s.time.year, month: s.time.month, day: s.time.day },
           })
+
+          // ✨ Core Values: PnL attribution to involved employees
+          const involvedIds = [
+            proposal.createdByEmployeeId,
+            proposal.reviewedByEmployeeId,
+            trader?.id,
+          ].filter((id): id is string => !!id)
+          if (involvedIds.length > 0) {
+            const pnlShare = tradePnl / involvedIds.length
+            set((st) => {
+              const updatedBios = { ...st.employeeBios }
+              for (const eid of involvedIds) {
+                const bio = updatedBios[eid]
+                if (!bio) continue
+                const prev = bio.totalPnlContribution ?? 0
+                updatedBios[eid] = {
+                  ...bio,
+                  totalPnlContribution: prev + pnlShare,
+                  bestTradeProfit:
+                    pnlShare > (bio.bestTradeProfit ?? 0) ? pnlShare : (bio.bestTradeProfit ?? 0),
+                  bestTradeTicker:
+                    pnlShare > (bio.bestTradeProfit ?? 0) ? proposal.ticker : (bio.bestTradeTicker ?? ''),
+                  worstTradeProfit:
+                    pnlShare < (bio.worstTradeProfit ?? 0) ? pnlShare : (bio.worstTradeProfit ?? 0),
+                  worstTradeTicker:
+                    pnlShare < (bio.worstTradeProfit ?? 0) ? proposal.ticker : (bio.worstTradeTicker ?? ''),
+                }
+              }
+              return { employeeBios: updatedBios }
+            })
+          }
         }
       }
       if (result.fee > 0) {
@@ -1959,6 +2008,75 @@ export const useGameStore = create<GameStore>((set, get) => ({
         latestState.updateEmotion(emp.id)
       }
     })
+
+    // ✨ Core Values: Employee Growth Milestone Check (monthly)
+    {
+      const currentState = get()
+      const tick = currentState.currentTick
+      const newNotifications: typeof currentState.milestoneNotifications = []
+
+      currentState.player.employees.forEach((emp) => {
+        const bio = currentState.employeeBios[emp.id]
+        if (!bio) return
+
+        const result = checkEmployeeMilestones(emp, bio, tick)
+        if (result.newMilestones.length === 0) return
+
+        // Update bio with unlocked milestones + life events + rewards
+        set((st) => {
+          const existingBio = st.employeeBios[emp.id]
+          if (!existingBio) return st
+          return {
+            employeeBios: {
+              ...st.employeeBios,
+              [emp.id]: {
+                ...existingBio,
+                unlockedMilestones: [
+                  ...(existingBio.unlockedMilestones ?? []),
+                  ...result.newMilestones.map((m) => m.id),
+                ],
+                lifeEvents: [
+                  ...existingBio.lifeEvents,
+                  ...result.lifeEvents,
+                ].slice(-30),
+              },
+            },
+            player: {
+              ...st.player,
+              employees: st.player.employees.map((e) =>
+                e.id === emp.id
+                  ? {
+                      ...e,
+                      satisfaction: Math.min(100, (e.satisfaction ?? 50) + result.totalSatisfactionBonus),
+                      stress: Math.max(0, (e.stress ?? 0) - result.totalStressReduction),
+                      xp: (e.xp ?? 0) + result.totalXpBonus,
+                    }
+                  : e,
+              ),
+            },
+          }
+        })
+
+        // Queue notifications
+        for (const m of result.newMilestones) {
+          newNotifications.push({
+            employeeId: emp.id,
+            employeeName: emp.name,
+            milestoneId: m.id,
+            title: m.title,
+            description: m.description,
+            icon: m.icon,
+            timestamp: tick,
+          })
+        }
+      })
+
+      if (newNotifications.length > 0) {
+        set((st) => ({
+          milestoneNotifications: [...st.milestoneNotifications, ...newNotifications].slice(-20),
+        }))
+      }
+    }
 
     // 이벤트 체인: 15% 확률로 새 체인 시작
     {
@@ -3503,6 +3621,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
   },
 
+  /* ── Core Values: Employee Milestone Notifications ── */
+  dismissMilestoneNotification: (index) => {
+    set((s) => ({
+      milestoneNotifications: s.milestoneNotifications.filter((_, i) => i !== index),
+    }))
+  },
+
   /* ── UX Enhancement: Skill Paths ── */
   selectSkillPath: (employeeId, path) => {
     set((s) => ({
@@ -4406,12 +4531,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
           // Add taunt for panic sell and set cooldown
           if (action.action === 'panic_sell') {
             competitor.panicSellCooldown = PANIC_SELL_CONFIG.COOLDOWN_HOURS
+            const panicMsg = getRandomTauntFn('panic', state.time.hour, competitor.style)
 
             newTaunts.push({
               competitorId: competitor.id,
               competitorName: competitor.name,
-              message: `${competitor.name}: "손절이다! 더 떨어지기 전에!!" 😱`,
+              message: `${competitor.name}: "${panicMsg}"`,
               type: 'panic',
+              timestamp: batchTick,
+            })
+          }
+        }
+
+        // ✨ Core Values: Contextual trade brag (~8% probability)
+        if (action.action === 'buy' && Math.random() < 0.08) {
+          const company = state.companies.find((c) => c.id === action.companyId)
+          const bragMsg = getContextualTradeTaunt(competitor.style, {
+            ticker: action.ticker ?? company?.ticker,
+            sector: company?.sector,
+          })
+          if (bragMsg) {
+            newTaunts.push({
+              competitorId: competitor.id,
+              competitorName: competitor.name,
+              message: `${competitor.name}: "${bragMsg}"`,
+              type: 'trade_brag',
               timestamp: batchTick,
             })
           }
@@ -4495,6 +4639,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
   addTaunt: (taunt) => {
     set((state) => ({
       taunts: [...state.taunts, taunt].slice(-20), // Keep last 20
+    }))
+  },
+
+  /* ── Core Values: Rivalry Tracking ── */
+  updateRivalryTracking: (competitorName: string, competitorIsAhead: boolean) => {
+    set((st) => ({
+      competitors: st.competitors.map((c) =>
+        c.name === competitorName
+          ? {
+              ...c,
+              headToHeadWins: (c.headToHeadWins ?? 0) + (competitorIsAhead ? 1 : 0),
+              headToHeadLosses: (c.headToHeadLosses ?? 0) + (competitorIsAhead ? 0 : 1),
+            }
+          : c,
+      ),
     }))
   },
 
