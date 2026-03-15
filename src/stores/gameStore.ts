@@ -487,6 +487,17 @@ interface GameStore {
 
   // Flash
   triggerFlash: () => void
+
+  // Fast Forward System
+  isFastForwarding: boolean
+  fastForwardProgress: {
+    current: number
+    skippedHours: number
+    events: string[]
+    startTime: { year: number; month: number; day: number; hour: number }
+  } | null
+  fastForward: () => void
+  cancelFastForward: () => void
 }
 
 let employeeIdCounter = 0
@@ -506,6 +517,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   isGameOver: false,
   endingResult: null,
   pendingCeremony: null,
+  isFastForwarding: false,
+  fastForwardProgress: null,
 
   time: { year: 1995, quarter: 1, month: 1, day: 1, hour: 9, speed: 1, isPaused: true },
   lastProcessedMonth: 0,
@@ -4204,6 +4217,190 @@ export const useGameStore = create<GameStore>((set, get) => ({
   triggerFlash: () => {
     set({ isFlashing: true })
     setTimeout(() => set({ isFlashing: false }), 500)
+  },
+
+  /* ── Fast Forward System ── */
+  cancelFastForward: () => {
+    set({ isFastForwarding: false })
+  },
+
+  fastForward: () => {
+    const state = get()
+    if (state.isFastForwarding || !state.isGameStarted || state.isGameOver) return
+
+    // Pause the game and set fast forward mode
+    const startTime = {
+      year: state.time.year,
+      month: state.time.month,
+      day: state.time.day,
+      hour: state.time.hour,
+    }
+
+    set({
+      isFastForwarding: true,
+      fastForwardProgress: {
+        current: 0,
+        skippedHours: 0,
+        events: [],
+        startTime,
+      },
+      time: { ...state.time, isPaused: true },
+    })
+
+    const MAX_HOURS = 720 // 3 months max
+    const BATCH_SIZE = 10 // hours per frame for responsiveness
+    let hoursProcessed = 0
+    const collectedEvents: string[] = []
+    let cancelled = false
+
+    const processBatch = () => {
+      if (cancelled) return
+
+      const currentState = get()
+      if (!currentState.isFastForwarding) {
+        // User cancelled
+        cancelled = true
+        return
+      }
+
+      for (let i = 0; i < BATCH_SIZE && hoursProcessed < MAX_HOURS; i++) {
+        hoursProcessed++
+
+        // Snapshot state before advancement
+        const before = get()
+        const beforeEventCount = before.events.length
+        const beforeEmployeeLevels = before.player.employees.map((e) => e.level ?? 1)
+
+        // Advance time (simplified - no worker/rendering)
+        before.advanceHour()
+        get().processHourly()
+
+        // Re-read state after advancement
+        const after = get()
+
+        // Check monthly processing trigger (day 1, hour 9)
+        if (after.time.day === 1 && after.time.hour === 9) {
+          after.processMonthly()
+          collectedEvents.push(
+            `${after.time.year}.${String(after.time.month).padStart(2, '0')} - 월간 정산`,
+          )
+        }
+
+        // Check M&A trigger (quarterly)
+        if (
+          [3, 6, 9, 12].includes(after.time.month) &&
+          after.time.day === 30 &&
+          after.time.hour === 18
+        ) {
+          collectedEvents.push(
+            `${after.time.year}.${String(after.time.month).padStart(2, '0')} - 분기 M&A 평가`,
+          )
+        }
+
+        // Check for new market events
+        const afterState = get()
+        if (afterState.events.length > beforeEventCount) {
+          const newEvents = afterState.events.slice(beforeEventCount)
+          for (const evt of newEvents) {
+            collectedEvents.push(
+              `${afterState.time.year}.${String(afterState.time.month).padStart(2, '0')}.${String(afterState.time.day).padStart(2, '0')} - ${evt.title}`,
+            )
+          }
+          // Stop on significant event
+          set({
+            fastForwardProgress: {
+              current: hoursProcessed,
+              skippedHours: MAX_HOURS,
+              events: collectedEvents,
+              startTime,
+            },
+          })
+          finalize()
+          return
+        }
+
+        // Random event generation (same logic as tick engine)
+        const eventChance = afterState.difficultyConfig.eventChance / afterState.time.speed
+        if (Math.random() < eventChance) {
+          const evtCountBefore = get().events.length
+          // Import not needed - generateRandomEvent is already imported via tickEngine
+          // We call it indirectly through the event system
+          // Instead, just check for events that naturally spawn
+        }
+
+        // Check employee level-ups
+        const afterEmployeeLevels = afterState.player.employees.map((e) => e.level ?? 1)
+        for (let j = 0; j < afterEmployeeLevels.length; j++) {
+          if (
+            j < beforeEmployeeLevels.length &&
+            afterEmployeeLevels[j] > beforeEmployeeLevels[j]
+          ) {
+            const emp = afterState.player.employees[j]
+            collectedEvents.push(
+              `${afterState.time.year}.${String(afterState.time.month).padStart(2, '0')}.${String(afterState.time.day).padStart(2, '0')} - ${emp.name} Lv.${afterEmployeeLevels[j]} 달성`,
+            )
+            // Stop on level-up as interesting event
+            set({
+              fastForwardProgress: {
+                current: hoursProcessed,
+                skippedHours: MAX_HOURS,
+                events: collectedEvents,
+                startTime,
+              },
+            })
+            finalize()
+            return
+          }
+        }
+
+        // Check game year end
+        if (afterState.time.year > afterState.config.endYear) {
+          collectedEvents.push('게임 종료 연도 도달')
+          set({
+            fastForwardProgress: {
+              current: hoursProcessed,
+              skippedHours: MAX_HOURS,
+              events: collectedEvents,
+              startTime,
+            },
+          })
+          finalize()
+          return
+        }
+      }
+
+      // Update progress
+      set({
+        fastForwardProgress: {
+          current: hoursProcessed,
+          skippedHours: MAX_HOURS,
+          events: collectedEvents,
+          startTime,
+        },
+      })
+
+      if (hoursProcessed >= MAX_HOURS) {
+        if (collectedEvents.length === 0) {
+          collectedEvents.push('3개월간 특별한 이벤트 없음')
+        }
+        finalize()
+        return
+      }
+
+      // Schedule next batch
+      requestAnimationFrame(processBatch)
+    }
+
+    const finalize = () => {
+      // Keep paused state, stop fast forwarding to show summary
+      set((s) => ({
+        isFastForwarding: false,
+        time: { ...s.time, isPaused: true },
+      }))
+    }
+
+    // Start processing on next frame
+    requestAnimationFrame(processBatch)
   },
 
   /* ── M&A System ── */

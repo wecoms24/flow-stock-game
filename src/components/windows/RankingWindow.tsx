@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
-import type { Company, TradingStyle } from '../../types'
+import type { Company, TradingStyle, PlayerTauntResponse } from '../../types'
+import { PLAYER_RESPONSE_LABELS } from '../../data/taunts'
 
 /* ── Constants ── */
 const STYLE_EMOJI: Record<TradingStyle, string> = {
@@ -37,6 +38,7 @@ export function RankingWindow() {
   const competitorActions = useGameStore((s) => s.competitorActions)
   const playerProfile = useGameStore((s) => s.playerProfile)
   const personalizationEnabled = useGameStore((s) => s.personalizationEnabled)
+  const respondToTaunt = useGameStore((s) => s.respondToTaunt)
 
   const [selectedCompetitorId, setSelectedCompetitorId] = useState<string | null>(null)
 
@@ -386,6 +388,34 @@ export function RankingWindow() {
                         >
                           <span className="font-semibold">{taunt.competitorName}:</span>
                           <span className="ml-1 text-retro-gray">{taunt.message}</span>
+                          {/* Player Response */}
+                          {taunt.playerResponse ? (
+                            <div className="mt-1 text-[9px] p-1 bg-green-50 border-l-2 border-green-500 rounded">
+                              <span className="font-semibold">나:</span>
+                              <span className="ml-1 text-retro-gray">{taunt.playerResponseMessage}</span>
+                            </div>
+                          ) : (
+                            <div className="mt-1 flex gap-1">
+                              {(['confident', 'dismissive', 'humble'] as PlayerTauntResponse[]).map(
+                                (resp) => (
+                                  <button
+                                    key={resp}
+                                    onClick={() => respondToTaunt(taunt.id, resp)}
+                                    className="text-[8px] px-1.5 py-0.5 bg-win-face border border-win-shadow rounded hover:bg-win-highlight active:border-win-darkshadow cursor-pointer"
+                                    title={
+                                      resp === 'confident'
+                                        ? '상대가 20% 더 자주 거래 (50시간)'
+                                        : resp === 'humble'
+                                          ? '상대 도발 50% 감소 (100시간)'
+                                          : '효과 없음'
+                                    }
+                                  >
+                                    {PLAYER_RESPONSE_LABELS[resp]}
+                                  </button>
+                                ),
+                              )}
+                            </div>
+                          )}
                         </div>
                       ))}
                   </div>
@@ -616,6 +646,29 @@ export function RankingWindow() {
                               }`}
                             >
                               {taunt.message}
+                              {/* Player Response */}
+                              {taunt.playerResponse ? (
+                                <div className="mt-1 text-[9px] p-1 bg-green-50 border-l-2 border-green-500 rounded">
+                                  <span className="font-semibold">나:</span>
+                                  <span className="ml-1 text-retro-gray">
+                                    {taunt.playerResponseMessage}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="mt-1 flex gap-1">
+                                  {(
+                                    ['confident', 'dismissive', 'humble'] as PlayerTauntResponse[]
+                                  ).map((resp) => (
+                                    <button
+                                      key={resp}
+                                      onClick={() => respondToTaunt(taunt.id, resp)}
+                                      className="text-[8px] px-1.5 py-0.5 bg-win-face border border-win-shadow rounded hover:bg-win-highlight active:border-win-darkshadow cursor-pointer"
+                                    >
+                                      {PLAYER_RESPONSE_LABELS[resp]}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           ))}
                       </div>

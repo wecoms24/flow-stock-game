@@ -27,6 +27,7 @@ const MENU_ITEMS = [
   { category: '정보', type: 'dashboard' as WindowType, icon: 'chart' as IconName, label: '대시보드', menuLabel: '종합 대시보드' },
   { category: '정보', type: 'monthly_cards' as WindowType, icon: 'news' as IconName, label: '월간 카드', menuLabel: '이달의 카드' },
   { category: '정보', type: 'event_chain_tracker' as WindowType, icon: 'news' as IconName, label: '이벤트', menuLabel: '이벤트 체인' },
+  { category: '정보', type: 'playstyle_analytics' as WindowType, icon: 'chart' as IconName, label: '분석', menuLabel: '플레이스타일 분석' },
   { category: '시스템', type: 'settings' as WindowType, icon: 'settings' as IconName, label: '설정', menuLabel: '설정' },
 ] as const
 

@@ -6,6 +6,8 @@ import { generateEndgameRecap } from '../../engines/endgameRecapEngine'
 import type { EndgameRecap, SectorAnalysis } from '../../types/endgame'
 import { checkMetaAchievements, loadMetaProgression } from '../../systems/metaProgressionSystem'
 import { META_ACHIEVEMENTS } from '../../data/metaAchievements'
+import { loadPrestige, recordPrestigeCompletion, getPrestigeStars } from '../../systems/prestigeSystem'
+import type { CorporateSkill } from '../../types/corporateSkill'
 
 type RecapTab = 'summary' | 'timeline' | 'employees' | 'competitors' | 'analysis'
 
@@ -51,9 +53,35 @@ function formatMoney(amount: number): string {
 }
 
 export function EndingScreen() {
-  const { endingResult, player, time, config, startGame, competitors, employeeBios, realizedTrades, monthlyCashFlowSummaries, companies, companyProfile } = useGameStore()
+  const { endingResult, player, time, config, startGame, competitors, employeeBios, realizedTrades, monthlyCashFlowSummaries, companies, companyProfile, corporateSkills } = useGameStore()
   const [tab, setTab] = useState<RecapTab>('summary')
   const [newAchievements, setNewAchievements] = useState<string[]>([])
+  const [showSkillSelect, setShowSkillSelect] = useState(false)
+  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null)
+
+  const prestige = useMemo(() => loadPrestige(), [])
+
+  // 해금된 Corporate Skill 목록
+  const unlockedSkills: CorporateSkill[] = useMemo(() => {
+    if (!corporateSkills?.skills) return []
+    return Object.values(corporateSkills.skills).filter((s) => s.unlocked)
+  }, [corporateSkills])
+
+  const handleNewGamePlus = () => {
+    if (unlockedSkills.length > 0) {
+      setShowSkillSelect(true)
+    } else {
+      executeNewGamePlus(null)
+    }
+  }
+
+  const executeNewGamePlus = (skillId: string | null) => {
+    const totalROI = recap?.totalROI ?? 0
+    const finalAssets = recap?.finalAssets ?? player.totalAssetValue
+    recordPrestigeCompletion(finalAssets, totalROI, skillId)
+    setShowSkillSelect(false)
+    startGame(config.difficulty, config.targetAsset)
+  }
 
   const recap: EndgameRecap | null = useMemo(() => {
     if (!endingResult) return null
