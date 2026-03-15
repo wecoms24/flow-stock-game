@@ -8,7 +8,7 @@ import wasmUrl from '@subframe7536/sqlite-wasm/wasm-async?url'
 let dbInstance: SQLiteDB | null = null
 
 /** Current schema version -- bump this when adding migrations */
-const SCHEMA_VERSION = 9
+const SCHEMA_VERSION = 10
 
 /**
  * Initialize SQLite database with IndexedDB persistence
@@ -115,7 +115,7 @@ async function createSchema(db: SQLiteDB): Promise<void> {
       month INTEGER CHECK(month BETWEEN 1 AND 12) NOT NULL,
       day INTEGER CHECK(day BETWEEN 1 AND 30) NOT NULL,
       hour INTEGER CHECK(hour BETWEEN 9 AND 18) NOT NULL,
-      speed INTEGER CHECK(speed IN (1, 2, 4)) DEFAULT 1,
+      speed INTEGER CHECK(speed IN (1, 2, 4, 8, 16)) DEFAULT 1,
       is_paused INTEGER DEFAULT 0,
 
       -- Player state
@@ -580,6 +580,87 @@ async function runMigrations(db: SQLiteDB): Promise<void> {
       console.log('[SQLite] Migration v9 applied: competitor head-to-head columns')
     } catch (error) {
       console.error('[SQLite] Migration v9 failed:', error)
+      throw error
+    }
+  }
+
+  // Migration v10: Expand speed constraint (8x/16x) + add tradeStreak column
+  if (currentVersion < 10) {
+    try {
+      // SQLite doesn't support ALTER CHECK constraint, so we recreate it via pragmas
+      // For existing databases, the CHECK constraint is part of the CREATE TABLE DDL.
+      // New inserts with speed 8 or 16 will fail on old schema.
+      // Workaround: disable constraint checking temporarily for the ALTER TABLE.
+      // Actually, SQLite CHECK constraints cannot be altered. The safest approach:
+      // We can't modify existing CHECK constraints in SQLite without recreating the table.
+      // Instead, we'll drop the constraint by recreating the table (too risky for data).
+      // Pragmatic approach: just ensure speed values 8/16 are clamped to 4 before save
+      // and update the schema for NEW databases (already done in CREATE TABLE above).
+      // For existing databases, we'll work around by storing min(speed, 4) and
+      // reconstructing on load. BUT that loses the user's speed preference.
+      // Best approach: recreate table with new constraint via temp table.
+
+      // Step 1: Create temp table, copy data, drop old, rename
+      await db.run('PRAGMA foreign_keys = OFF;')
+
+      // Check if saves table has the old constraint by trying an insert with speed=8
+      // If it fails, we need to recreate. If column doesn't exist yet for tradeStreak, add it.
+      const v10Columns = [
+        'ALTER TABLE saves ADD COLUMN player_trade_streak INTEGER DEFAULT 0;',
+      ]
+      for (const sql of v10Columns) {
+        try {
+          await db.run(sql)
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : ''
+          if (!msg.includes('duplicate column')) throw e
+        }
+      }
+
+      // For the CHECK constraint, we need to drop and recreate.
+      // Use the "rename old, create new, copy, drop old" pattern.
+      await db.run('ALTER TABLE saves RENAME TO saves_old_v9;')
+
+      // Get the current CREATE TABLE statement columns from saves_old_v9
+      // Recreate with updated CHECK constraint
+      const rows = await db.run(`SELECT sql FROM sqlite_master WHERE type='table' AND name='saves_old_v9';`)
+      let createSQL = (rows[0] as any)?.sql as string
+      if (createSQL) {
+        // Replace table name back and update the speed constraint
+        createSQL = createSQL
+          .replace('saves_old_v9', 'saves')
+          .replace(/speed INTEGER CHECK\(speed IN \([^)]+\)\)/g, 'speed INTEGER CHECK(speed IN (1, 2, 4, 8, 16))')
+        await db.run(createSQL)
+
+        // Copy all data
+        // Get column names from old table
+        const colInfo = await db.run('PRAGMA table_info(saves_old_v9);')
+        const columnNames = (colInfo as any[]).map((c: any) => c.name).join(', ')
+        await db.run(`INSERT INTO saves (${columnNames}) SELECT ${columnNames} FROM saves_old_v9;`)
+        await db.run('DROP TABLE saves_old_v9;')
+      }
+
+      await db.run('PRAGMA foreign_keys = ON;')
+
+      await db.run('INSERT OR REPLACE INTO schema_versions (version, applied_at) VALUES (?, ?);', [
+        10,
+        Date.now(),
+      ])
+      console.log('[SQLite] Migration v10 applied: speed constraint expanded, tradeStreak column added')
+    } catch (error) {
+      console.error('[SQLite] Migration v10 failed:', error)
+      // Try to recover by renaming back if migration partially failed
+      try {
+        const checkOld = await db.run("SELECT name FROM sqlite_master WHERE type='table' AND name='saves_old_v9';")
+        if ((checkOld as any[]).length > 0) {
+          const checkNew = await db.run("SELECT name FROM sqlite_master WHERE type='table' AND name='saves';")
+          if ((checkNew as any[]).length === 0) {
+            await db.run('ALTER TABLE saves_old_v9 RENAME TO saves;')
+          }
+        }
+      } catch {
+        // Recovery failed, original error is more important
+      }
       throw error
     }
   }

@@ -60,11 +60,12 @@ export async function saveDataToSQLite(
         player_portfolio, player_office_grid, player_office_layout,
         player_last_day_change, player_previous_day_assets,
         player_best_day_change, player_worst_day_change,
+        player_trade_streak,
         last_processed_month, last_mna_quarter, auto_sell_enabled, auto_sell_percent,
         market_regime, market_index_history, circuit_breaker,
         cash_flow_log, realized_trades, monthly_summaries,
         game_mode
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(slot_name) DO UPDATE SET
         updated_at = ?,
         current_tick = ?,
@@ -74,6 +75,7 @@ export async function saveDataToSQLite(
         player_portfolio = ?, player_office_grid = ?, player_office_layout = ?,
         player_last_day_change = ?, player_previous_day_assets = ?,
         player_best_day_change = ?, player_worst_day_change = ?,
+        player_trade_streak = ?,
         last_processed_month = ?, last_mna_quarter = ?,
         auto_sell_enabled = ?, auto_sell_percent = ?,
         market_regime = ?, market_index_history = ?, circuit_breaker = ?,
@@ -108,6 +110,7 @@ export async function saveDataToSQLite(
       data.player.previousDayAssets,
       isFinite(data.player.bestDayChange) ? data.player.bestDayChange : -9999,
       isFinite(data.player.worstDayChange) ? data.player.worstDayChange : 9999,
+      data.player.tradeStreak ?? 0,
       data.lastProcessedMonth ?? 0,
       data.lastMnaQuarter ?? 0,
       data.autoSellEnabled ? 1 : 0,
@@ -140,6 +143,7 @@ export async function saveDataToSQLite(
       data.player.previousDayAssets,
       isFinite(data.player.bestDayChange) ? data.player.bestDayChange : -9999,
       isFinite(data.player.worstDayChange) ? data.player.worstDayChange : 9999,
+      data.player.tradeStreak ?? 0,
       data.lastProcessedMonth ?? 0,
       data.lastMnaQuarter ?? 0,
       data.autoSellEnabled ? 1 : 0,
@@ -775,7 +779,7 @@ export async function sqliteToSaveData(
         worstDayChange: ((save as any).player_worst_day_change ?? 9999) >= 9999 ? Infinity : (save as any).player_worst_day_change,
         lastDailyTradeResetDay: 0,
         dailyTradeCount: 0,
-        tradeStreak: 0,
+        tradeStreak: (save as any).player_trade_streak ?? 0,
       },
       companies,
       events,
