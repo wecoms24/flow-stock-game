@@ -71,6 +71,7 @@ import {
   generateCompetitors,
   processAITrading,
   getPriceHistory,
+  computePlayerResponseEffects,
 } from '../engines/competitorEngine'
 import {
   generateInstitutions,
@@ -87,7 +88,8 @@ import { createTradeAnimationSequence, createMilestoneAnimationSequence } from '
 import { MILESTONE_DEFINITIONS, createInitialMilestones, type MilestoneContext } from '../data/milestones'
 import { resetNewsEngine } from '../engines/newsEngine'
 import { generateBadgesFromSkills } from '../utils/badgeConverter' // ✨ 신규: 뱃지 생성
-import { createInitialCorporateSkills } from '../data/corporateSkills'
+import { createInitialCorporateSkills, CORPORATE_SKILL_DEFINITIONS } from '../data/corporateSkills'
+import { getPrestigeBonuses } from '../systems/prestigeSystem'
 import {
   validateUnlock,
   unlockCorporateSkill as unlockCorpSkill,
@@ -3115,6 +3117,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         event_chain_tracker: '이벤트 체인',
         skill_library: '스킬 도감',
         training_center: '교육 센터',
+        playstyle_analytics: '플레이스타일 분석',
       }
 
       const windowSizes: Record<string, { width: number; height: number }> = {
@@ -3126,6 +3129,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         proposals: { width: 480, height: 420 },
         skill_library: { width: 580, height: 500 },
         training_center: { width: 580, height: 500 },
+        playstyle_analytics: { width: 400, height: 480 },
         monthly_cards: { width: 620, height: 480 },
         acquisition: { width: 680, height: 560 },
         ranking: { width: 420, height: 480 },
@@ -3183,6 +3187,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
               proposals: { width: 480, height: 420 },
               skill_library: { width: 580, height: 500 },
               training_center: { width: 580, height: 500 },
+              playstyle_analytics: { width: 400, height: 480 },
               monthly_cards: { width: 620, height: 480 },
               acquisition: { width: 680, height: 560 },
               ranking: { width: 420, height: 480 },
@@ -4927,7 +4932,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // Get price history for technical analysis
     const priceHistory = getPriceHistory(companies)
 
-    // Process AI trading (with Mirror Rival personalization)
+    // Compute player taunt response effects on competitors
+    const currentTick = getAbsoluteTimestamp(time, updatedState.config.startYear)
+    const responseEffects = computePlayerResponseEffects(updatedState.taunts, currentTick)
+
+    // Process AI trading (with Mirror Rival personalization + player response effects)
     const actions = processAITrading(
       updatedState.competitors,
       companies,
@@ -4935,6 +4944,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       priceHistory,
       playerProfile,
       personalizationEnabled,
+      responseEffects,
     )
 
     // Filter out actions targeting VI-halted companies

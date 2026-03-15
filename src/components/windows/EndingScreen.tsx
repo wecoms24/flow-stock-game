@@ -175,9 +175,19 @@ export function EndingScreen() {
           {tab === 'analysis' && <DecisionAnalysisTab recap={recap} />}
         </div>
 
+        {/* Prestige banner */}
+        {prestige.level > 0 && (
+          <div className="bg-purple-50 border-b border-purple-200 px-3 py-1.5 text-xs text-center">
+            {getPrestigeStars(prestige.level)} 프레스티지 Lv.{prestige.level} · 총 {prestige.totalCompletions}회 클리어
+          </div>
+        )}
+
         {/* Actions */}
-        <div className="flex gap-2 justify-center p-3 border-t border-win-shadow">
-          <RetroButton variant="primary" onClick={() => startGame(config.difficulty, config.targetAsset)}>
+        <div className="flex gap-2 justify-center p-3 border-t border-win-shadow flex-wrap">
+          <RetroButton variant="primary" onClick={handleNewGamePlus}>
+            ⭐ New Game+
+          </RetroButton>
+          <RetroButton onClick={() => startGame(config.difficulty, config.targetAsset)}>
             다시 시작
           </RetroButton>
           <RetroButton onClick={() => startGame('easy', config.targetAsset)}>Easy</RetroButton>
@@ -188,6 +198,66 @@ export function EndingScreen() {
           <RetroButton onClick={handleShare}>📋 공유</RetroButton>
         </div>
       </RetroPanel>
+
+      {/* Skill Carryover Selection Modal */}
+      {showSkillSelect && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-[20001]">
+          <RetroPanel className="p-1 max-w-sm w-full mx-4">
+            <div className="bg-win-title-active text-win-title-text px-2 py-1 text-sm font-bold flex justify-between items-center">
+              <span>⭐ New Game+ — 스킬 이월</span>
+              <button
+                onClick={() => setShowSkillSelect(false)}
+                className="text-win-title-text hover:text-white text-xs px-1"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="text-xs text-retro-gray text-center">
+                이월할 기업 스킬을 1개 선택하세요.
+                <br />
+                선택한 스킬은 다음 게임 시작 시 자동 해금됩니다.
+              </div>
+
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {unlockedSkills.map((skill) => (
+                  <button
+                    key={skill.id}
+                    onClick={() => setSelectedSkillId(skill.id)}
+                    className={`w-full text-left p-2 text-xs border rounded transition-colors ${
+                      selectedSkillId === skill.id
+                        ? 'border-win-highlight bg-win-highlight/10 font-bold'
+                        : 'border-win-shadow bg-win-face hover:bg-win-highlight/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{skill.icon}</span>
+                      <div>
+                        <div className="font-semibold">{skill.name}</div>
+                        <div className="text-[10px] text-retro-gray">{skill.description}</div>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              <div className="text-xs text-center text-retro-gray">
+                프레스티지 Lv.{prestige.level + 1} — 초기 자본 +{Math.min((prestige.level + 1) * 5, 50)}%
+              </div>
+
+              <div className="flex gap-2 justify-center">
+                <RetroButton
+                  variant="primary"
+                  onClick={() => executeNewGamePlus(selectedSkillId)}
+                >
+                  {selectedSkillId ? '스킬 이월하고 시작' : '스킬 없이 시작'}
+                </RetroButton>
+                <RetroButton onClick={() => setShowSkillSelect(false)}>취소</RetroButton>
+              </div>
+            </div>
+          </RetroPanel>
+        </div>
+      )}
     </div>
   )
 }

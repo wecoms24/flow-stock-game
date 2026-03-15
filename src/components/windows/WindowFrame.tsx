@@ -27,6 +27,7 @@ const WINDOW_SIZE_CONSTRAINTS: Record<
   event_chain_tracker: { minWidth: 440, minHeight: 380 },
   skill_library: { minWidth: 540, minHeight: 440 },
   training_center: { minWidth: 540, minHeight: 440 },
+  playstyle_analytics: { minWidth: 360, minHeight: 400 },
 }
 
 /* ── Resize Handle Directions ── */

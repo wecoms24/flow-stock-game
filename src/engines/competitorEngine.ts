@@ -1,7 +1,50 @@
-import type { Competitor, Company, TradingStyle, CompetitorAction } from '../types'
+import type { Competitor, Company, TradingStyle, CompetitorAction, TauntMessage } from '../types'
 import type { PlayerProfile } from '../types/personalization'
 import { PANIC_SELL_CONFIG, AI_STRATEGY_CONFIG, PERFORMANCE_CONFIG } from '../config/aiConfig'
 import { calculateMA, calculateRSI } from '../utils/technicalIndicators'
+import { PLAYER_RESPONSE_EFFECT_DURATION } from '../data/taunts'
+
+/** Per-competitor effects from player taunt responses */
+export interface PlayerResponseEffect {
+  /** 자신감 응답: 거래 빈도 20% 증가 */
+  tradeFrequencyBoost: boolean
+  /** 겸손 응답: 도발 빈도 50% 감소 */
+  tauntSuppression: boolean
+}
+
+/**
+ * 플레이어의 최근 도발 응답으로부터 경쟁자별 효과를 계산
+ * @param taunts 전체 도발 메시지 목록
+ * @param currentTick 현재 게임 시간 (absolute timestamp)
+ * @returns competitorId → PlayerResponseEffect 매핑
+ */
+export function computePlayerResponseEffects(
+  taunts: TauntMessage[],
+  currentTick: number,
+): Record<string, PlayerResponseEffect> {
+  const effects: Record<string, PlayerResponseEffect> = {}
+
+  for (const taunt of taunts) {
+    if (!taunt.playerResponse) continue
+
+    const hoursElapsed = currentTick - taunt.timestamp
+    const duration = PLAYER_RESPONSE_EFFECT_DURATION[taunt.playerResponse]
+
+    if (duration <= 0 || hoursElapsed > duration) continue
+
+    if (!effects[taunt.competitorId]) {
+      effects[taunt.competitorId] = { tradeFrequencyBoost: false, tauntSuppression: false }
+    }
+
+    if (taunt.playerResponse === 'confident') {
+      effects[taunt.competitorId].tradeFrequencyBoost = true
+    } else if (taunt.playerResponse === 'humble') {
+      effects[taunt.competitorId].tauntSuppression = true
+    }
+  }
+
+  return effects
+}
 
 function random(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min
@@ -384,6 +427,7 @@ export function processAITrading(
   priceHistory: Record<string, number[]>,
   playerProfile?: PlayerProfile,
   personalizationEnabled?: boolean,
+  responseEffects?: Record<string, PlayerResponseEffect>,
 ): CompetitorAction[] {
   const actions: CompetitorAction[] = []
 
@@ -399,6 +443,18 @@ export function processAITrading(
     // 2. Execute normal strategy
     const strategy = STRATEGIES[competitor.style]
     const action = strategy(competitor, companies, tick, priceHistory)
+
+    // 2.5. Player "confident" response → 20% extra trade attempt
+    // If normal strategy returned null, give a bonus chance to trade
+    if (!action && responseEffects?.[competitor.id]?.tradeFrequencyBoost) {
+      if (Math.random() < 0.20) {
+        const bonusAction = strategy(competitor, companies, tick, priceHistory)
+        if (bonusAction) {
+          actions.push(bonusAction)
+          return
+        }
+      }
+    }
 
     if (action) {
       // 3. Mirror Rival: adjust parameters based on player profile

@@ -341,6 +341,14 @@ export function Taskbar() {
             {spd}x
           </RetroButton>
         ))}
+        <RetroButton
+          size="sm"
+          onClick={() => useGameStore.getState().fastForward()}
+          title="다음 이벤트까지 빨리감기 (최대 3개월)"
+          className="text-[10px]"
+        >
+          &gt;&gt;
+        </RetroButton>
       </div>
 
       {/* Monthly Card Notification Badge */}
