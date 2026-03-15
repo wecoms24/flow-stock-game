@@ -57,6 +57,7 @@ import { historicalDataService } from '../services/historicalDataService'
 import { DIFFICULTY_TABLE } from '../data/difficulty'
 import { generateEmployeeName, resetNamePool, generateRandomTraits, generateInitialSkills, generateAssignedSectors } from '../data/employees'
 import { calculateMarketSentiment } from '../engines/tickEngine'
+import { generateRandomEvent } from '../engines/newsEngine'
 import { TRAIT_DEFINITIONS } from '../data/traits'
 import { FURNITURE_CATALOG, canBuyFurniture, DESK_CATALOG, DECORATION_CATALOG } from '../data/furniture'
 import { saveGame, loadGame, deleteSave } from '../systems/saveSystem'
@@ -88,7 +89,7 @@ import { createTradeAnimationSequence, createMilestoneAnimationSequence } from '
 import { MILESTONE_DEFINITIONS, createInitialMilestones, type MilestoneContext } from '../data/milestones'
 import { resetNewsEngine } from '../engines/newsEngine'
 import { generateBadgesFromSkills } from '../utils/badgeConverter' // ✨ 신규: 뱃지 생성
-import { createInitialCorporateSkills, CORPORATE_SKILL_DEFINITIONS } from '../data/corporateSkills'
+import { createInitialCorporateSkills } from '../data/corporateSkills'
 import { getPrestigeBonuses } from '../systems/prestigeSystem'
 import {
   validateUnlock,
@@ -785,6 +786,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         worstDayChange: 0,
         lastDailyTradeResetDay: 0, // ✨ 하루 거래 제한 초기화
         dailyTradeCount: 0, // ✨ 하루 거래 제한 초기화
+        tradeStreak: 0,
       },
       companies,
       events: [],
@@ -820,6 +822,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         activeCards: [],
         drawMonth: 0,
         selectionDeadlineTick: 0,
+        pendingNotification: false,
       },
       eventChains: { chains: [], completedChainIds: [], lastChainEndTick: 0 },
       employeeBios: {},
@@ -1001,7 +1004,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // ✨ UX Enhancement System (v7 migration with defaults)
       animationQueue: data.animationQueue ?? { queue: [], current: null, currentStepIndex: 0, isPlaying: false },
       monthlyCards: {
-        pendingNotification: false,
         ...(data.monthlyCards ?? {
           availableCards: [],
           selectedCardIds: [],
@@ -1011,6 +1013,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           drawMonth: 0,
           selectionDeadlineTick: 0,
         }),
+        pendingNotification: (data.monthlyCards as any)?.pendingNotification ?? false,
       },
       eventChains: data.eventChains ?? { chains: [], completedChainIds: [], lastChainEndTick: 0 },
       employeeBios: data.employeeBios ?? {},
@@ -4021,8 +4024,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }).filter(Boolean),
     )
     const maxEmpLevel = s.player.employees.reduce((max, emp) => Math.max(max, emp.level ?? 1), 0)
-    const unlockedSkillCount = Object.values(s.corporateSkills?.skills ?? {}).filter((sk) => sk.isUnlocked).length
-    const totalRealizedProfit = (s.realizedTrades ?? []).reduce((sum, t) => sum + (t.profit > 0 ? t.profit : 0), 0)
+    const unlockedSkillCount = Object.values(s.corporateSkills?.skills ?? {}).filter((sk) => sk.unlocked).length
+    const totalRealizedProfit = (s.realizedTrades ?? []).reduce((sum, t) => sum + (t.pnl > 0 ? t.pnl : 0), 0)
 
     const ctx: MilestoneContext = {
       totalAssets: s.player.totalAssetValue,
@@ -4339,6 +4342,32 @@ export const useGameStore = create<GameStore>((set, get) => ({
           })
           finalize()
           return
+        }
+
+        // Random event generation (same probability as tick engine)
+        const eventChance = afterState.difficultyConfig.eventChance / afterState.time.speed
+        if (Math.random() < eventChance) {
+          generateRandomEvent()
+          // Re-check if new events appeared
+          const postEventState = get()
+          if (postEventState.events.length > beforeEventCount) {
+            const newEvts = postEventState.events.slice(beforeEventCount)
+            for (const evt of newEvts) {
+              collectedEvents.push(
+                `${postEventState.time.year}.${String(postEventState.time.month).padStart(2, '0')}.${String(postEventState.time.day).padStart(2, '0')} - ${evt.title}`,
+              )
+            }
+            set({
+              fastForwardProgress: {
+                current: hoursProcessed,
+                skippedHours: MAX_HOURS,
+                events: collectedEvents,
+                startTime,
+              },
+            })
+            finalize()
+            return
+          }
         }
 
         // Check employee level-ups
@@ -5033,21 +5062,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
           // Add taunt for panic sell and set cooldown
           if (action.action === 'panic_sell') {
             competitor.panicSellCooldown = PANIC_SELL_CONFIG.COOLDOWN_HOURS
-            const panicMsg = getRandomTauntFn('panic', state.time.hour, competitor.style)
+            if (!isTauntSuppressed) {
+              const panicMsg = getRandomTauntFn('panic', state.time.hour, competitor.style)
 
-            newTaunts.push({
-              id: `taunt-${batchTick}-${competitor.id}-panic`,
-              competitorId: competitor.id,
-              competitorName: competitor.name,
-              message: `${competitor.name}: "${panicMsg}"`,
-              type: 'panic',
-              timestamp: batchTick,
-            })
+              newTaunts.push({
+                id: `taunt-${batchTick}-${competitor.id}-panic`,
+                competitorId: competitor.id,
+                competitorName: competitor.name,
+                message: `${competitor.name}: "${panicMsg}"`,
+                type: 'panic',
+                timestamp: batchTick,
+              })
+            }
           }
         }
 
-        // ✨ Core Values: Contextual trade brag (~8% probability)
-        if (action.action === 'buy' && Math.random() < 0.08) {
+        // ✨ Core Values: Contextual trade brag (~8% probability, suppressed by humble response)
+        if (action.action === 'buy' && Math.random() < 0.08 && !isTauntSuppressed) {
           const company = state.companies.find((c) => c.id === action.companyId)
           const bragMsg = getContextualTradeTaunt(competitor.style, {
             ticker: action.ticker ?? company?.ticker,
@@ -5065,8 +5096,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
           }
         }
 
-        // ✨ Core Values: 대량 거래 알림 (자산의 15% 이상, 매수/매도 모두)
-        if (action.action === 'buy' || action.action === 'sell') {
+        // ✨ Core Values: 대량 거래 알림 (자산의 15% 이상, 매수/매도 모두, suppressed by humble response)
+        if ((action.action === 'buy' || action.action === 'sell') && !isTauntSuppressed) {
           const tradeValue = action.quantity * action.price
           const totalAssets = competitor.totalAssetValue || competitor.cash + tradeValue
           if (totalAssets > 0 && tradeValue / totalAssets >= 0.15) {

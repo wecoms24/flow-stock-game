@@ -563,6 +563,9 @@ export interface SaveData {
   realizedTrades?: import('./cashFlow').RealizedTrade[]
   monthlyCashFlowSummaries?: import('./cashFlow').MonthlySummary[]
 
+  // Auto-HR System
+  autoHREnabled?: boolean
+  autoHRThreshold?: number
   // ✨ UX Enhancement System (v7)
   animationQueue?: import('./animation').AnimationQueueState
   monthlyCards?: import('./newsCard').MonthlyCardDrawState

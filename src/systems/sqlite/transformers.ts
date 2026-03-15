@@ -775,6 +775,7 @@ export async function sqliteToSaveData(
         worstDayChange: (save as any).player_worst_day_change ?? 0,
         lastDailyTradeResetDay: 0,
         dailyTradeCount: 0,
+        tradeStreak: 0,
       },
       companies,
       events,
