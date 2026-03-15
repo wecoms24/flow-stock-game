@@ -22,8 +22,6 @@ import { SECTOR_CORRELATION, SPILLOVER_FACTOR } from '../data/sectorCorrelation'
 import type { Sector, MarketEvent } from '../types'
 import { getRandomTaunt } from '../data/taunts'
 import { computePlayerResponseEffects } from './competitorEngine'
-import { dispatchCelebration } from '../components/ui/CelebrationManager'
-import { celebrateRankOvertake } from '../systems/celebrationSystem'
 import { getBusinessHourIndex, getAbsoluteTimestamp } from '../config/timeConfig'
 import { MARKET_IMPACT_CONFIG } from '../config/marketImpactConfig'
 import { autoSelectCards } from './cardDrawEngine'
@@ -699,7 +697,7 @@ function checkRankChanges(rankings: Array<{ name: string; rank: number; isPlayer
           }
         }
 
-        // Player rank changed - dispatch event for UI
+        // Player rank changed - use dedicated RankCelebration (richer Win95 UI with confetti)
         window.dispatchEvent(
           new CustomEvent('rankChange', {
             detail: {
@@ -709,13 +707,6 @@ function checkRankChanges(rankings: Array<{ name: string; rank: number; isPlayer
             },
           }),
         )
-
-        // Dispatch celebration for rank overtake
-        if (entry.rank < prevRank && overtaken.length > 0) {
-          dispatchCelebration(
-            celebrateRankOvertake(overtaken[0].name, entry.rank),
-          )
-        }
       } else {
         // AI competitor rank changed
         const competitor = store.competitors.find((c) => c.name === entry.name)

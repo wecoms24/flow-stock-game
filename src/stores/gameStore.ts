@@ -91,12 +91,9 @@ import { resetNewsEngine } from '../engines/newsEngine'
 import { generateBadgesFromSkills } from '../utils/badgeConverter' // ✨ 신규: 뱃지 생성
 import { createInitialCorporateSkills } from '../data/corporateSkills'
 import { getPrestigeBonuses } from '../systems/prestigeSystem'
-import { dispatchCelebration } from '../components/ui/CelebrationManager'
+import { dispatchCelebration, setCelebrationSuppressed } from '../components/ui/CelebrationManager'
 import {
   celebrateStreak,
-  celebrateOfficeUpgrade,
-  celebrateBestDay,
-  celebrateWorstDay,
   celebrateMilestone,
   celebrateRivalDefeated,
 } from '../systems/celebrationSystem'
@@ -1945,12 +1942,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
         if (changePercent > newBest) {
           newBest = changePercent
           if (changePercent > 0.1) {
+            // Use dedicated DailyRecordToast (richer Win95 UI) instead of generic celebration
             window.dispatchEvent(
               new CustomEvent('dailyRecord', {
                 detail: { type: 'best', changePercent },
               }),
             )
-            dispatchCelebration(celebrateBestDay(changePercent))
           }
         }
         if (changePercent < newWorst) {
@@ -1961,7 +1958,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 detail: { type: 'worst', changePercent },
               }),
             )
-            dispatchCelebration(celebrateWorstDay(changePercent))
           }
         }
 
@@ -3107,12 +3103,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // Record with pre-computed cost (no race condition)
     get().recordCashFlow('OFFICE_UPGRADE', -cost, `사무실 레벨 ${newLevel} 업그레이드`)
 
-    // Trigger ceremony overlay and pause game
+    // Trigger dedicated CeremonyOverlay (richer Win95 UI) and pause game
     set((st) => ({
       pendingCeremony: { type: 'office_upgrade', fromLevel: currentLevel, toLevel: newLevel },
       time: { ...st.time, isPaused: true },
     }))
-    dispatchCelebration(celebrateOfficeUpgrade(currentLevel, newLevel))
   },
 
   /* ── Windows ── */
@@ -4262,11 +4257,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   /* ── Fast Forward System ── */
   cancelFastForward: () => {
+    setCelebrationSuppressed(false)
     const progress = get().fastForwardProgress
     set({
       isFastForwarding: false,
-      // Keep progress for summary display; time already advanced is retained
-      // (reverting time would invalidate all processed state changes)
     })
     // If no events collected, clear progress entirely
     if (!progress || progress.events.length === 0) {
@@ -4285,6 +4279,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       day: state.time.day,
       hour: state.time.hour,
     }
+
+    // Suppress celebrations during fast-forward to prevent spam
+    setCelebrationSuppressed(true)
 
     set({
       isFastForwarding: true,
@@ -4459,7 +4456,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     const finalize = () => {
-      // Keep paused state, stop fast forwarding to show summary
+      // Re-enable celebrations and stop fast forwarding
+      setCelebrationSuppressed(false)
       set((s) => ({
         isFastForwarding: false,
         time: { ...s.time, isPaused: true },

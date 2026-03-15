@@ -169,7 +169,13 @@ export function CelebrationManager() {
 
 /**
  * Dispatch a celebration event
+ * Suppressed during fast-forward to prevent spam
  */
+let _isFastForwarding = false
+export function setCelebrationSuppressed(suppressed: boolean) {
+  _isFastForwarding = suppressed
+}
 export function dispatchCelebration(event: CelebrationEvent) {
+  if (_isFastForwarding) return
   window.dispatchEvent(new CustomEvent('celebration', { detail: event }))
 }
