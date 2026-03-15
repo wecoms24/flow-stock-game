@@ -24,11 +24,11 @@ const CATEGORY_INFO: Record<
 
 function MilestoneCard({ milestone, def }: { milestone: Milestone; def: (typeof MILESTONE_DEFINITIONS)[number] | undefined }) {
   const time = useGameStore((s) => s.time)
-  const currentTick = useGameStore((s) => s.currentTick)
 
   const progress = useMemo(() => {
     if (!def || milestone.isUnlocked) return 100
     const s = useGameStore.getState()
+    const companyMap = new Map(s.companies.map((c) => [c.id, c]))
     const ctx: MilestoneContext = {
       totalAssets: s.player.totalAssetValue,
       cash: s.player.cash,
@@ -40,15 +40,15 @@ function MilestoneCard({ milestone, def }: { milestone: Milestone; def: (typeof 
       officeLevel: s.player.officeLevel,
       competitorRank: 99,
       tradeStreak: s.player.tradeStreak ?? 0,
-      bestDayChange: s.player.bestDayChange ?? 0,
+      bestDayChange: isFinite(s.player.bestDayChange) ? s.player.bestDayChange : 0,
       maxEmployeeLevel: s.player.employees.reduce((max, emp) => Math.max(max, emp.level ?? 1), 0),
       totalRealizedProfit: (s.realizedTrades ?? []).reduce((sum, t) => sum + (t.pnl > 0 ? t.pnl : 0), 0),
-      sectorCount: new Set(Object.keys(s.player.portfolio).map((id) => s.companies.find((c) => c.id === id)?.sector).filter(Boolean)).size,
+      sectorCount: new Set(Object.keys(s.player.portfolio).map((id) => companyMap.get(id)?.sector).filter(Boolean)).size,
       corporateSkillCount: Object.values(s.corporateSkills?.skills ?? {}).filter((sk) => sk.unlocked).length,
     }
     const currentValue = def.checkFn(ctx)
     return Math.min(100, Math.floor((currentValue / def.targetValue) * 100))
-  }, [def, milestone.isUnlocked, time.year, currentTick])
+  }, [def, milestone.isUnlocked, time.year, time.month])
 
   return (
     <div

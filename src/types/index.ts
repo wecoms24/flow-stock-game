@@ -583,6 +583,9 @@ export interface SaveData {
   // Chapter & Company Profile (v9)
   chapterProgress?: import('./chapter').ChapterProgress
   companyProfile?: import('./chapter').CompanyProfile
+
+  // UX: pending ceremony state
+  pendingCeremony?: { type: string; fromLevel: number; toLevel: number } | null
 }
 
 export interface HourlyAccumulators {

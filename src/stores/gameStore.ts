@@ -91,6 +91,8 @@ import { resetNewsEngine } from '../engines/newsEngine'
 import { generateBadgesFromSkills } from '../utils/badgeConverter' // ✨ 신규: 뱃지 생성
 import { createInitialCorporateSkills } from '../data/corporateSkills'
 import { getPrestigeBonuses } from '../systems/prestigeSystem'
+import { dispatchCelebration } from '../components/ui/CelebrationManager'
+import { celebrateStreak, celebrateOfficeUpgrade } from '../systems/celebrationSystem'
 import {
   validateUnlock,
   unlockCorporateSkill as unlockCorpSkill,
@@ -782,8 +784,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         officeLevel: 1,
         lastDayChange: 0,
         previousDayAssets: initialCash,
-        bestDayChange: 0,
-        worstDayChange: 0,
+        bestDayChange: -Infinity,
+        worstDayChange: Infinity,
         lastDailyTradeResetDay: 0, // ✨ 하루 거래 제한 초기화
         dailyTradeCount: 0, // ✨ 하루 거래 제한 초기화
         tradeStreak: 0,
@@ -911,8 +913,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ...data.player,
       officeLevel: data.player.officeLevel ?? 1,
       tradeStreak: data.player.tradeStreak ?? 0,
-      bestDayChange: data.player.bestDayChange ?? 0,
-      worstDayChange: data.player.worstDayChange ?? 0,
+      bestDayChange: data.player.bestDayChange != null && isFinite(data.player.bestDayChange) ? data.player.bestDayChange : -Infinity,
+      worstDayChange: data.player.worstDayChange != null && isFinite(data.player.worstDayChange) ? data.player.worstDayChange : Infinity,
       employees: data.player.employees.map((emp) => ({
         ...emp,
         stress: emp.stress ?? 0,
@@ -1034,6 +1036,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       hourlyAccumulators: { salaryPaid: 0, taxPaid: 0 }, // Always reset on load to prevent double-counting across save/load
       chapterProgress: (data as any).chapterProgress ?? { ...defaultChapterProgress(), currentChapter: getChapterNumber(data.time.year) },
       companyProfile: (data as any).companyProfile ?? defaultCompanyProfile(),
+      pendingCeremony: (data as any).pendingCeremony ?? null,
       windows: [],
       nextZIndex: 1,
       windowIdCounter: 0,
@@ -1107,6 +1110,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       hourlyAccumulators: s.hourlyAccumulators,
       chapterProgress: s.chapterProgress,
       companyProfile: s.companyProfile,
+      pendingCeremony: s.pendingCeremony ?? undefined,
     }
     saveGame(data)
   },
@@ -2547,8 +2551,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
           const cx = window.innerWidth / 2
           const cy = window.innerHeight / 3
           emitFloatingText(`🔥 ${newStreak}연승!`, cx, cy, '#FF4500')
+          dispatchCelebration(celebrateStreak(newStreak))
         }
-      } else {
+      } else if (pnl < 0) {
+        // Only reset streak on actual losses, not break-even
         if (prevStreak > 0) {
           set((s) => ({
             player: { ...s.player, tradeStreak: 0 },
@@ -3045,6 +3051,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   upgradeOffice: () => {
     const s = get()
+    if (s.pendingCeremony) return // Guard: ceremony already in progress
     const currentLevel = s.player.officeLevel
     if (currentLevel >= OFFICE_BALANCE.MAX_LEVEL) return
     const cost = OFFICE_BALANCE.UPGRADE_COSTS[currentLevel]
@@ -3096,6 +3103,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       pendingCeremony: { type: 'office_upgrade', fromLevel: currentLevel, toLevel: newLevel },
       time: { ...st.time, isPaused: true },
     }))
+    dispatchCelebration(celebrateOfficeUpgrade(currentLevel, newLevel))
   },
 
   /* ── Windows ── */
@@ -4017,11 +4025,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const playerRank = rankings.find((r) => r.isPlayer)?.rank ?? 99
 
     const portfolio = s.player.portfolio
+    const companyMap = new Map(s.companies.map((c) => [c.id, c]))
     const sectors = new Set(
-      Object.keys(portfolio).map((compId) => {
-        const company = s.companies.find((c) => c.id === compId)
-        return company?.sector
-      }).filter(Boolean),
+      Object.keys(portfolio).map((compId) => companyMap.get(compId)?.sector).filter(Boolean),
     )
     const maxEmpLevel = s.player.employees.reduce((max, emp) => Math.max(max, emp.level ?? 1), 0)
     const unlockedSkillCount = Object.values(s.corporateSkills?.skills ?? {}).filter((sk) => sk.unlocked).length
@@ -4038,7 +4044,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       officeLevel: s.player.officeLevel,
       competitorRank: playerRank,
       tradeStreak: s.player.tradeStreak ?? 0,
-      bestDayChange: s.player.bestDayChange ?? 0,
+      bestDayChange: isFinite(s.player.bestDayChange) ? s.player.bestDayChange : 0,
       maxEmployeeLevel: maxEmpLevel,
       totalRealizedProfit,
       sectorCount: sectors.size,
@@ -4246,7 +4252,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   /* ── Fast Forward System ── */
   cancelFastForward: () => {
-    set({ isFastForwarding: false })
+    const progress = get().fastForwardProgress
+    set({
+      isFastForwarding: false,
+      // Keep progress for summary display; time already advanced is retained
+      // (reverting time would invalidate all processed state changes)
+    })
+    // If no events collected, clear progress entirely
+    if (!progress || progress.events.length === 0) {
+      set({ fastForwardProgress: null })
+    }
   },
 
   fastForward: () => {
@@ -4273,7 +4288,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
 
     const MAX_HOURS = 720 // 3 months max
-    const BATCH_SIZE = 10 // hours per frame for responsiveness
+    const BATCH_SIZE = 3 // hours per frame for responsiveness (small to avoid jank)
     let hoursProcessed = 0
     const collectedEvents: string[] = []
     let cancelled = false
@@ -5206,7 +5221,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const responseMessage = getPlayerResponseMessage(response)
     set((state) => ({
       taunts: state.taunts.map((t) =>
-        t.id === tauntId ? { ...t, playerResponse: response, playerResponseMessage: responseMessage } : t,
+        t.id === tauntId && !t.playerResponse
+          ? { ...t, playerResponse: response, playerResponseMessage: responseMessage }
+          : t,
       ),
     }))
   },
