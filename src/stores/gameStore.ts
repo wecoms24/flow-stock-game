@@ -92,7 +92,14 @@ import { generateBadgesFromSkills } from '../utils/badgeConverter' // ✨ 신규
 import { createInitialCorporateSkills } from '../data/corporateSkills'
 import { getPrestigeBonuses } from '../systems/prestigeSystem'
 import { dispatchCelebration } from '../components/ui/CelebrationManager'
-import { celebrateStreak, celebrateOfficeUpgrade } from '../systems/celebrationSystem'
+import {
+  celebrateStreak,
+  celebrateOfficeUpgrade,
+  celebrateBestDay,
+  celebrateWorstDay,
+  celebrateMilestone,
+  celebrateRivalDefeated,
+} from '../systems/celebrationSystem'
 import {
   validateUnlock,
   unlockCorporateSkill as unlockCorpSkill,
@@ -1943,6 +1950,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 detail: { type: 'best', changePercent },
               }),
             )
+            dispatchCelebration(celebrateBestDay(changePercent))
           }
         }
         if (changePercent < newWorst) {
@@ -1953,6 +1961,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 detail: { type: 'worst', changePercent },
               }),
             )
+            dispatchCelebration(celebrateWorstDay(changePercent))
           }
         }
 
@@ -4062,7 +4071,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         updated[def.id] = { ...milestone, isUnlocked: true, unlockedAt: s.currentTick }
         totalUnlocked++
 
-        // Queue celebration animation
+        // Queue celebration animation + unified celebration
         get().queueAnimation(
           createMilestoneAnimationSequence({
             title: milestone.title,
@@ -4070,6 +4079,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             icon: milestone.icon,
           })
         )
+        dispatchCelebration(celebrateMilestone(milestone.title, milestone.description, milestone.icon))
       }
     }
 
@@ -5230,6 +5240,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   /* ── Core Values: Rivalry Tracking ── */
   updateRivalryTracking: (competitorName: string, competitorIsAhead: boolean) => {
+    const prev = get().competitors.find((c) => c.name === competitorName)
+    const prevLosses = prev?.headToHeadLosses ?? 0
+
     set((st) => ({
       competitors: st.competitors.map((c) =>
         c.name === competitorName
@@ -5241,6 +5254,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
           : c,
       ),
     }))
+
+    // Player defeated rival (competitor lost): celebrate at 3-win milestones
+    if (!competitorIsAhead) {
+      const newLosses = prevLosses + 1
+      if (newLosses >= 3 && newLosses % 3 === 0) {
+        dispatchCelebration(celebrateRivalDefeated(competitorName, newLosses))
+      }
+    }
   },
 
   /* ── Institutional Investors ── */
