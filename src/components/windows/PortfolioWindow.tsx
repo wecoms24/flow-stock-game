@@ -227,6 +227,24 @@ function OverviewTab() {
         </div>
       </div>
 
+      {/* ── Trade Streak ── */}
+      {(player.tradeStreak ?? 0) > 0 && (
+        <div className="win-inset bg-white p-1.5 flex items-center justify-between">
+          <span className="text-[9px] text-retro-gray">연속 수익</span>
+          <span
+            className={`font-bold text-[11px] ${
+              (player.tradeStreak ?? 0) >= 10
+                ? 'text-orange-500'
+                : (player.tradeStreak ?? 0) >= 5
+                  ? 'text-yellow-500'
+                  : 'text-stock-up'
+            }`}
+          >
+            🔥 {player.tradeStreak}연승
+          </span>
+        </div>
+      )}
+
       {/* ── Asset Breakdown ── */}
       <div className="win-inset bg-white p-2 space-y-1">
         <div className="flex justify-between">

@@ -52,6 +52,8 @@ export interface SaveRow {
   player_office_layout: string | null // JSON: OfficeLayout (new)
   player_last_day_change: number
   player_previous_day_assets: number
+  player_best_day_change: number
+  player_worst_day_change: number
 
   // System state
   last_processed_month: number

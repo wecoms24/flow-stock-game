@@ -84,6 +84,8 @@ export function RankingWindow() {
         totalAssets: player.totalAssetValue,
         roi: playerROI,
         oneDayChange: player.lastDayChange,
+        h2hWins: 0,
+        h2hLosses: 0,
       },
       ...competitors.map((c) => ({
         id: c.id,
@@ -93,6 +95,8 @@ export function RankingWindow() {
         totalAssets: c.totalAssetValue,
         roi: c.roi,
         oneDayChange: c.lastDayChange,
+        h2hWins: c.headToHeadWins ?? 0,
+        h2hLosses: c.headToHeadLosses ?? 0,
       })),
     ]
 
@@ -260,6 +264,7 @@ export function RankingWindow() {
                       <th className="p-1 text-right">자산</th>
                       <th className="p-1 text-right">수익률</th>
                       <th className="p-1 text-right">일간</th>
+                      <th className="p-1 text-center">전적</th>
                       <th className="p-1"></th>
                     </tr>
                   </thead>
@@ -307,6 +312,18 @@ export function RankingWindow() {
                           {entry.trend === 'up' && <span className="text-green-600">📈</span>}
                           {entry.trend === 'down' && <span className="text-red-600">📉</span>}
                           {entry.trend === 'same' && <span className="text-retro-gray">—</span>}
+                        </td>
+                        <td className="p-1 text-center font-mono text-[10px]">
+                          {!entry.isPlayer && (
+                            <span
+                              title={`${entry.h2hLosses ?? 0}승 ${entry.h2hWins ?? 0}패`}
+                            >
+                              {entry.h2hLosses ?? 0}승{entry.h2hWins ?? 0}패
+                            </span>
+                          )}
+                          {entry.isPlayer && (
+                            <span className="text-retro-gray">-</span>
+                          )}
                         </td>
                         <td className="p-1">
                           {!entry.isPlayer && (
@@ -362,7 +379,9 @@ export function RankingWindow() {
                                     ? 'bg-orange-50 border-l-2 border-orange-500'
                                     : taunt.type === 'trade_brag'
                                       ? 'bg-teal-50 border-l-2 border-teal-500'
-                                      : 'bg-blue-50 border-l-2 border-blue-500'
+                                      : taunt.type === 'rival_defeated'
+                                        ? 'bg-amber-50 border-l-2 border-amber-600'
+                                        : 'bg-blue-50 border-l-2 border-blue-500'
                           }`}
                         >
                           <span className="font-semibold">{taunt.competitorName}:</span>
@@ -451,6 +470,13 @@ export function RankingWindow() {
                     </div>
                     <div className="text-[10px] text-retro-gray">
                       전략: {STYLE_LABELS[selectedCompetitor.style]}
+                    </div>
+                    <div className="text-[10px] mt-1 font-mono">
+                      ⚔️ 전적: <span className="text-green-600">{selectedCompetitor.headToHeadLosses ?? 0}승</span>{' '}
+                      <span className="text-red-600">{selectedCompetitor.headToHeadWins ?? 0}패</span>
+                      {(selectedCompetitor.headToHeadLosses ?? 0) >= 3 && (
+                        <span className="ml-1 text-yellow-600 font-bold">🔥 라이벌!</span>
+                      )}
                     </div>
                   </div>
 
@@ -584,7 +610,9 @@ export function RankingWindow() {
                                   ? 'bg-red-50 border-l-2 border-red-500'
                                   : taunt.type === 'champion'
                                     ? 'bg-yellow-50 border-l-2 border-yellow-500'
-                                    : 'bg-blue-50 border-l-2 border-blue-500'
+                                    : taunt.type === 'rival_defeated'
+                                      ? 'bg-amber-50 border-l-2 border-amber-600'
+                                      : 'bg-blue-50 border-l-2 border-blue-500'
                               }`}
                             >
                               {taunt.message}

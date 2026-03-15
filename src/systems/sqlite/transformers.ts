@@ -59,11 +59,12 @@ export async function saveDataToSQLite(
         player_cash, player_total_assets, player_monthly_expenses, player_office_level,
         player_portfolio, player_office_grid, player_office_layout,
         player_last_day_change, player_previous_day_assets,
+        player_best_day_change, player_worst_day_change,
         last_processed_month, last_mna_quarter, auto_sell_enabled, auto_sell_percent,
         market_regime, market_index_history, circuit_breaker,
         cash_flow_log, realized_trades, monthly_summaries,
         game_mode
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(slot_name) DO UPDATE SET
         updated_at = ?,
         current_tick = ?,
@@ -72,6 +73,7 @@ export async function saveDataToSQLite(
         player_cash = ?, player_total_assets = ?, player_monthly_expenses = ?, player_office_level = ?,
         player_portfolio = ?, player_office_grid = ?, player_office_layout = ?,
         player_last_day_change = ?, player_previous_day_assets = ?,
+        player_best_day_change = ?, player_worst_day_change = ?,
         last_processed_month = ?, last_mna_quarter = ?,
         auto_sell_enabled = ?, auto_sell_percent = ?,
         market_regime = ?, market_index_history = ?, circuit_breaker = ?,
@@ -104,6 +106,8 @@ export async function saveDataToSQLite(
       data.player.officeLayout ? JSON.stringify(data.player.officeLayout) : null,
       data.player.lastDayChange,
       data.player.previousDayAssets,
+      data.player.bestDayChange ?? 0,
+      data.player.worstDayChange ?? 0,
       data.lastProcessedMonth ?? 0,
       data.lastMnaQuarter ?? 0,
       data.autoSellEnabled ? 1 : 0,
@@ -134,6 +138,8 @@ export async function saveDataToSQLite(
       data.player.officeLayout ? JSON.stringify(data.player.officeLayout) : null,
       data.player.lastDayChange,
       data.player.previousDayAssets,
+      data.player.bestDayChange ?? 0,
+      data.player.worstDayChange ?? 0,
       data.lastProcessedMonth ?? 0,
       data.lastMnaQuarter ?? 0,
       data.autoSellEnabled ? 1 : 0,
@@ -765,6 +771,8 @@ export async function sqliteToSaveData(
         officeLayout: safeParseJSONOptional(save.player_office_layout),
         lastDayChange: save.player_last_day_change,
         previousDayAssets: save.player_previous_day_assets,
+        bestDayChange: (save as any).player_best_day_change ?? 0,
+        worstDayChange: (save as any).player_worst_day_change ?? 0,
         lastDailyTradeResetDay: 0,
         dailyTradeCount: 0,
       },

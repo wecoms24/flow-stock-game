@@ -1,4 +1,4 @@
-import type { TradingStyle } from '../types'
+import type { TradingStyle, PlayerTauntResponse } from '../types'
 
 export const PANIC_SELL_TAUNTS = [
   '손절이다! 더 떨어지기 전에!! 😱',
@@ -40,8 +40,17 @@ export const CHAMPION_TAUNTS = [
   '챔피언 등극! 🎉🎊',
 ]
 
+/** ✨ Core Values: 패배 인정 도발 (3연패 시 특수 대사) */
+export const RIVAL_DEFEATED_TAUNTS = [
+  '또 졌어... 인정할 수밖에 없군 😤',
+  '3번이나 밀리다니... 대단해 👏',
+  '이번엔 확실히 졌다. 다음엔 안 져! 🔥',
+  '패배 인정! 하지만 끝까지 간다 💪',
+  '연패 중... 전략을 바꿔야겠어 📝',
+]
+
 /** ✨ Core Values: 스타일별 도발 (라이벌 개성 강화) */
-export type TauntType = 'panic' | 'rank_up' | 'rank_down' | 'overtake' | 'champion' | 'trade_brag' | 'big_trade'
+export type TauntType = 'panic' | 'rank_up' | 'rank_down' | 'overtake' | 'champion' | 'trade_brag' | 'big_trade' | 'rival_defeated'
 
 export const STYLE_TAUNTS: Record<TradingStyle, Partial<Record<TauntType, string[]>>> = {
   aggressive: {
@@ -83,6 +92,11 @@ export const STYLE_TAUNTS: Record<TradingStyle, Partial<Record<TauntType, string
       '⚡ {ticker}에 올인 수준으로 갔다! 나를 따라올 수 있겠어?',
       '💰 {ticker} 대규모 포지션 구축 완료. 두고 봐',
     ],
+    rival_defeated: [
+      '3연패라고? 잠깐 숨 고르는 거야! 🦈🔥',
+      '인정한다... 하지만 상어는 포기하지 않아 🦈',
+      '패배 인정! 더 세게 공격할 준비 중 ⚡',
+    ],
   },
   conservative: {
     rank_up: [
@@ -119,6 +133,11 @@ export const STYLE_TAUNTS: Record<TradingStyle, Partial<Record<TauntType, string
     big_trade: [
       '🐢 {ticker} {amount} 규모로 조용히 담았어. 장기 투자야',
       '🛡️ {ticker} {amount} 대량 매집 완료. 느리지만 확실하지',
+    ],
+    rival_defeated: [
+      '3번 졌지만... 장기전은 아직이야 🐢',
+      '인내심으로 버틸게. 인정은 한다 📈',
+      '느려도 끝까지 간다. 기다려봐 🛡️',
     ],
   },
   'trend-follower': {
@@ -157,6 +176,11 @@ export const STYLE_TAUNTS: Record<TradingStyle, Partial<Record<TauntType, string
       '🏄 {ticker} {amount} 규모 서핑 시작! 이 파도는 크다',
       '🌊 {ticker} {amount} 대량 매수! 트렌드가 말해주고 있어',
     ],
+    rival_defeated: [
+      '파도를 잘못 탔나... 3연패 인정 🏄',
+      '다음 파도에서 반드시 역전한다! 🌊',
+      '트렌드를 놓쳤어... 하지만 끝이 아냐 📊',
+    ],
   },
   contrarian: {
     rank_up: [
@@ -193,6 +217,11 @@ export const STYLE_TAUNTS: Record<TradingStyle, Partial<Record<TauntType, string
     big_trade: [
       '🐻 {ticker} {amount} 역발상 매수! 다들 팔 때가 기회지',
       '🔄 {ticker} {amount} 대량 매집. 모두가 공포에 떨 때 사는 거야',
+    ],
+    rival_defeated: [
+      '역발상도 3번 틀리면... 인정해야지 🐻',
+      '시장이 내 편이 아니었나... 다음엔 보자 🔄',
+      '곰도 울 때가 있는 법이야 😤',
     ],
   },
 }
@@ -269,7 +298,7 @@ function getTimePrefix(hour?: number): string {
  * @param style 옵션: AI 트레이딩 스타일 (제공 시 스타일별 대사 우선)
  */
 export function getRandomTaunt(
-  type: 'panic' | 'rank_up' | 'rank_down' | 'overtake' | 'champion',
+  type: 'panic' | 'rank_up' | 'rank_down' | 'overtake' | 'champion' | 'rival_defeated',
   hour?: number,
   style?: TradingStyle,
   playerCompanyName?: string,
@@ -291,6 +320,7 @@ export function getRandomTaunt(
     rank_down: RANK_DOWN_TAUNTS,
     overtake: OVERTAKE_PLAYER_TAUNTS,
     champion: CHAMPION_TAUNTS,
+    rival_defeated: RIVAL_DEFEATED_TAUNTS,
   }
 
   const pool = taunts[type]
@@ -340,4 +370,50 @@ export function getFinalQuote(style: TradingStyle, playerWon: boolean): string {
   const quotes = FINAL_QUOTES[style]
   const pool = playerWon ? quotes.lose : quotes.win
   return pool[Math.floor(Math.random() * pool.length)]
+}
+
+/* ── Player Taunt Response System ── */
+
+/** 플레이어 응답 버튼 라벨 */
+export const PLAYER_RESPONSE_LABELS: Record<PlayerTauntResponse, string> = {
+  confident: '자신감 💪',
+  dismissive: '무시 😒',
+  humble: '겸손 🙏',
+}
+
+/** 플레이어 응답 메시지 템플릿 */
+export const PLAYER_RESPONSE_TEMPLATES: Record<PlayerTauntResponse, string[]> = {
+  confident: [
+    '두고 봐라! 끝에 웃는 자가 진짜 승자야! 🔥',
+    '그 정도로는 부족해. 내 실력을 보여주지! 💪',
+    '재밌네? 결과로 말해줄게! ⚡',
+    '아직 시작도 안 했어. 기다려봐! 😎',
+  ],
+  dismissive: [
+    '...알겠어. 🙄',
+    '그래, 그래... 바쁘니까. 😒',
+    '들었어. 다음은? 🤷',
+    '...좋은 하루 보내. 👋',
+  ],
+  humble: [
+    '좋은 조언이네요. 배우겠습니다! 🙏',
+    '대단하시네요... 저도 더 노력할게요! 📝',
+    '인정합니다. 많이 배워야죠! 😊',
+    '감사합니다. 참고하겠습니다! 🙇',
+  ],
+}
+
+/**
+ * 플레이어 응답 메시지 선택
+ */
+export function getPlayerResponseMessage(response: PlayerTauntResponse): string {
+  const templates = PLAYER_RESPONSE_TEMPLATES[response]
+  return templates[Math.floor(Math.random() * templates.length)]
+}
+
+/** 플레이어 응답에 따른 효과 지속 시간 (hours) */
+export const PLAYER_RESPONSE_EFFECT_DURATION: Record<PlayerTauntResponse, number> = {
+  confident: 50,
+  dismissive: 0,
+  humble: 100,
 }

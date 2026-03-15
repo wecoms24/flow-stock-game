@@ -25,6 +25,7 @@ import type {
   LimitOrder,
   TradingLimits,
   StopLossTakeProfit,
+  PlayerTauntResponse,
 } from '../types'
 import type { OfficeGrid, FurnitureType, FurnitureItem, OfficeLayout, DeskType, DecorationType, DeskItem, DecorationItem } from '../types/office'
 import type { TradeProposal, ProposalStatus } from '../types/trade'
@@ -34,12 +35,13 @@ import type { PlayerEvent, PlayerProfile } from '../types/personalization'
 import type { MnaDeal } from '../engines/mnaEngine'
 import { MAX_EVENT_LOG_SIZE, defaultProfile } from '../types/personalization'
 import { computeProfileFromEvents } from '../systems/personalization/profile'
+import { emitFloatingText } from '../utils/floatingTextEmitter'
 import { TRADE_AI_CONFIG } from '../config/tradeAIConfig'
 import { getAbsoluteTimestamp, TIME_CONFIG } from '../config/timeConfig'
 import { drawCards } from '../engines/cardDrawEngine'
 import { createBio, inferEmotion, updateGoals } from '../engines/employeeBioEngine'
 import { checkEmployeeMilestones } from '../engines/employeeMilestoneEngine'
-import { getRandomTaunt as getRandomTauntFn, getContextualTradeTaunt, getBigTradeTaunt } from '../data/taunts'
+import { getRandomTaunt as getRandomTauntFn, getContextualTradeTaunt, getBigTradeTaunt, getPlayerResponseMessage } from '../data/taunts'
 import { calculateBonuses } from '../engines/skillPathEngine'
 import { selectChain, initChainState, advanceChainWeek, getCurrentWeekModifiers, canStartChain } from '../engines/eventChainEngine'
 import { EVENT_CHAIN_TEMPLATES } from '../data/eventChains'
@@ -184,6 +186,10 @@ interface GameStore {
   isGameOver: boolean
   endingResult: EndingScenario | null
 
+  // Ceremony
+  pendingCeremony: { type: string; fromLevel: number; toLevel: number } | null
+  dismissCeremony: () => void
+
   // Time
   time: GameTime
   lastProcessedMonth: number
@@ -308,7 +314,8 @@ interface GameStore {
   executeBatchActions: (actions: CompetitorAction[]) => void
   updateCompetitorAssets: () => void
   calculateRankings: () => Array<{ rank: number; name: string; roi: number; isPlayer: boolean }>
-  addTaunt: (taunt: TauntMessage) => void
+  addTaunt: (taunt: Omit<TauntMessage, 'id'> & { id?: string }) => void
+  respondToTaunt: (tauntId: string, response: PlayerTauntResponse) => void
   updateRivalryTracking: (competitorName: string, competitorIsAhead: boolean) => void
 
   // Actions - Institutional Investors
@@ -382,6 +389,10 @@ interface GameStore {
   autoSellEnabled: boolean
   autoSellPercent: number
 
+  // Auto-HR (Smart Auto-Counseling) System
+  autoHREnabled: boolean
+  autoHRThreshold: number
+
   // Cash Flow Tracking
   cashFlowLog: CashFlowEntry[]
   realizedTrades: RealizedTrade[]
@@ -397,6 +408,10 @@ interface GameStore {
   setAutoSellEnabled: (enabled: boolean) => void
   setAutoSellPercent: (percent: number) => void
   processAutoSell: () => void
+
+  // Actions - Auto-HR
+  setAutoHREnabled: (enabled: boolean) => void
+  setAutoHRThreshold: (threshold: number) => void
 
   // Actions - Limit Orders
   createLimitOrder: (companyId: string, targetPrice: number, shares: number) => void
@@ -490,6 +505,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   isGameStarted: false,
   isGameOver: false,
   endingResult: null,
+  pendingCeremony: null,
 
   time: { year: 1995, quarter: 1, month: 1, day: 1, hour: 9, speed: 1, isPaused: true },
   lastProcessedMonth: 0,
@@ -505,8 +521,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     officeLevel: 1,
     lastDayChange: 0,
     previousDayAssets: 50_000_000,
+    bestDayChange: 0,
+    worstDayChange: 0,
     lastDailyTradeResetDay: 0,
     dailyTradeCount: 0,
+    tradeStreak: 0,
   },
 
   companies: [],
@@ -531,6 +550,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   limitOrders: [],
   autoSellEnabled: false,
   autoSellPercent: 10,
+  autoHREnabled: false,
+  autoHRThreshold: 70,
 
   competitors: [],
   competitorCount: 0,
@@ -569,6 +590,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     activeCards: [],
     drawMonth: 0,
     selectionDeadlineTick: 0,
+    pendingNotification: false,
   },
   eventChains: { chains: [], completedChainIds: [], lastChainEndTick: 0 },
   employeeBios: {},
@@ -736,6 +758,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         officeLevel: 1,
         lastDayChange: 0,
         previousDayAssets: initialCash,
+        bestDayChange: 0,
+        worstDayChange: 0,
         lastDailyTradeResetDay: 0, // ✨ 하루 거래 제한 초기화
         dailyTradeCount: 0, // ✨ 하루 거래 제한 초기화
       },
@@ -759,6 +783,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       institutions,
       autoSellEnabled: false,
       autoSellPercent: 10,
+      autoHREnabled: false,
+      autoHRThreshold: 70,
       // Personalization: sync lastUpdatedDay with game start day
       playerProfile: { ...defaultProfile(), lastUpdatedDay: 1 },
       // ✨ UX Enhancement System reset
@@ -849,6 +875,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const migratedPlayer = {
       ...data.player,
       officeLevel: data.player.officeLevel ?? 1,
+      tradeStreak: data.player.tradeStreak ?? 0,
+      bestDayChange: data.player.bestDayChange ?? 0,
+      worstDayChange: data.player.worstDayChange ?? 0,
       employees: data.player.employees.map((emp) => ({
         ...emp,
         stress: emp.stress ?? 0,
@@ -931,20 +960,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
       marketIndexHistory: data.marketIndexHistory ?? [],
       autoSellEnabled: data.autoSellEnabled ?? false,
       autoSellPercent: data.autoSellPercent ?? 10,
+      autoHREnabled: data.autoHREnabled ?? false,
+      autoHRThreshold: data.autoHRThreshold ?? 70,
       cashFlowLog: data.cashFlowLog ?? [],
       realizedTrades: data.realizedTrades ?? [],
       monthlyCashFlowSummaries: data.monthlyCashFlowSummaries ?? [],
       cashFlowAnomalies: [],
       // ✨ UX Enhancement System (v7 migration with defaults)
       animationQueue: data.animationQueue ?? { queue: [], current: null, currentStepIndex: 0, isPlaying: false },
-      monthlyCards: data.monthlyCards ?? {
-        availableCards: [],
-        selectedCardIds: [],
-        isDrawn: false,
-        isSelectionComplete: false,
-        activeCards: [],
-        drawMonth: 0,
-        selectionDeadlineTick: 0,
+      monthlyCards: {
+        pendingNotification: false,
+        ...(data.monthlyCards ?? {
+          availableCards: [],
+          selectedCardIds: [],
+          isDrawn: false,
+          isSelectionComplete: false,
+          activeCards: [],
+          drawMonth: 0,
+          selectionDeadlineTick: 0,
+        }),
       },
       eventChains: data.eventChains ?? { chains: [], completedChainIds: [], lastChainEndTick: 0 },
       employeeBios: data.employeeBios ?? {},
@@ -1020,6 +1054,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       marketIndexHistory: s.marketIndexHistory,
       autoSellEnabled: s.autoSellEnabled,
       autoSellPercent: s.autoSellPercent,
+      autoHREnabled: s.autoHREnabled,
+      autoHRThreshold: s.autoHRThreshold,
       cashFlowLog: s.cashFlowLog,
       realizedTrades: s.realizedTrades,
       monthlyCashFlowSummaries: s.monthlyCashFlowSummaries,
@@ -1795,6 +1831,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     get().logPlayerEvent('SETTINGS', { isPaused: !wasPaused })
   },
 
+  dismissCeremony: () => {
+    set((s) => ({
+      pendingCeremony: null,
+      time: { ...s.time, isPaused: false },
+    }))
+  },
+
   checkEnding: () => {
     const state = get()
     if (state.isGameOver) return
@@ -1849,11 +1892,38 @@ export const useGameStore = create<GameStore>((set, get) => ({
           scoldCooldown: Math.max(0, (emp.scoldCooldown ?? 0) - 1),
         }))
 
+        // Best/Worst day record detection
+        let newBest = s.player.bestDayChange ?? 0
+        let newWorst = s.player.worstDayChange ?? 0
+
+        if (changePercent > newBest) {
+          newBest = changePercent
+          if (changePercent > 0.1) {
+            window.dispatchEvent(
+              new CustomEvent('dailyRecord', {
+                detail: { type: 'best', changePercent },
+              }),
+            )
+          }
+        }
+        if (changePercent < newWorst) {
+          newWorst = changePercent
+          if (changePercent < -0.1) {
+            window.dispatchEvent(
+              new CustomEvent('dailyRecord', {
+                detail: { type: 'worst', changePercent },
+              }),
+            )
+          }
+        }
+
         updatedPlayer = {
           ...s.player,
           employees: decayedEmployees,
           lastDayChange: changePercent,
           previousDayAssets: currentAssets,
+          bestDayChange: newBest,
+          worstDayChange: newWorst,
         }
       }
 
@@ -2011,6 +2081,39 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ...(firstLevelUp ? { pendingLevelUp: firstLevelUp } : {}),
       }
     })
+
+    // ── Auto-HR: smart auto-counseling (once per day at hour 9) ──
+    const afterState = get()
+    if (afterState.autoHREnabled && afterState.time.hour === 9) {
+      const AUTO_HR_COST = 50_000
+      set((st) => {
+        let remainingCash = st.player.cash
+        const hasCounseled = [] as string[]
+        const updatedEmps = st.player.employees.map((emp) => {
+          if (
+            (emp.stress ?? 0) > st.autoHRThreshold &&
+            remainingCash >= AUTO_HR_COST
+          ) {
+            remainingCash -= AUTO_HR_COST
+            hasCounseled.push(emp.id)
+            return {
+              ...emp,
+              stress: Math.max(0, (emp.stress ?? 0) - 15),
+              satisfaction: Math.min(100, (emp.satisfaction ?? 80) + 5),
+            }
+          }
+          return emp
+        })
+        if (hasCounseled.length === 0) return {}
+        return {
+          player: {
+            ...st.player,
+            cash: remainingCash,
+            employees: updatedEmps,
+          },
+        }
+      })
+    }
   },
 
   /* ── Monthly Processing: cashflow recording + monthly events ── */
@@ -2395,6 +2498,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
           profitLoss: pnl,
         })
       )
+
+      // ✨ Trade Streak Counter
+      const prevStreak = get().player.tradeStreak ?? 0
+      if (pnl > 0) {
+        const newStreak = prevStreak + 1
+        set((s) => ({
+          player: { ...s.player, tradeStreak: newStreak },
+        }))
+        // Emit floating text at milestones
+        const STREAK_MILESTONES = [3, 5, 10, 20]
+        if (STREAK_MILESTONES.includes(newStreak)) {
+          const cx = window.innerWidth / 2
+          const cy = window.innerHeight / 3
+          emitFloatingText(`🔥 ${newStreak}연승!`, cx, cy, '#FF4500')
+        }
+      } else {
+        if (prevStreak > 0) {
+          set((s) => ({
+            player: { ...s.player, tradeStreak: 0 },
+          }))
+        }
+      }
     }
   },
 
@@ -2930,6 +3055,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // Record with pre-computed cost (no race condition)
     get().recordCashFlow('OFFICE_UPGRADE', -cost, `사무실 레벨 ${newLevel} 업그레이드`)
+
+    // Trigger ceremony overlay and pause game
+    set((st) => ({
+      pendingCeremony: { type: 'office_upgrade', fromLevel: currentLevel, toLevel: newLevel },
+      time: { ...st.time, isPaused: true },
+    }))
   },
 
   /* ── Windows ── */
@@ -3481,11 +3612,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         isSelectionComplete: false,
         drawMonth: s.time.month,
         selectionDeadlineTick: currentTimestamp + 100, // ~10시간 후 자동 선택
+        pendingNotification: true, // 태스크바 뱃지로 알림 (비모달)
       },
     })
-
-    // 카드 드로우 윈도우 자동 열기
-    get().openWindow('monthly_cards')
   },
 
   selectCard: (cardId) => {
@@ -3533,6 +3662,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       monthlyCards: {
         ...st.monthlyCards,
         isSelectionComplete: true,
+        pendingNotification: false,
         activeCards: [...st.monthlyCards.activeCards, ...newActiveCards],
       },
     }))
@@ -3848,16 +3978,33 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const rankings = s.calculateRankings()
     const playerRank = rankings.find((r) => r.isPlayer)?.rank ?? 99
 
+    const portfolio = s.player.portfolio
+    const sectors = new Set(
+      Object.keys(portfolio).map((compId) => {
+        const company = s.companies.find((c) => c.id === compId)
+        return company?.sector
+      }).filter(Boolean),
+    )
+    const maxEmpLevel = s.player.employees.reduce((max, emp) => Math.max(max, emp.level ?? 1), 0)
+    const unlockedSkillCount = Object.values(s.corporateSkills?.skills ?? {}).filter((sk) => sk.isUnlocked).length
+    const totalRealizedProfit = (s.realizedTrades ?? []).reduce((sum, t) => sum + (t.profit > 0 ? t.profit : 0), 0)
+
     const ctx: MilestoneContext = {
       totalAssets: s.player.totalAssetValue,
       cash: s.player.cash,
-      portfolioCount: Object.keys(s.player.portfolio).length,
+      portfolioCount: Object.keys(portfolio).length,
       employeeCount: s.player.employees.length,
       yearsPassed: s.time.year - s.config.startYear,
-      totalTrades: 0,
+      totalTrades: (s.realizedTrades ?? []).length,
       currentYear: s.time.year,
       officeLevel: s.player.officeLevel,
       competitorRank: playerRank,
+      tradeStreak: s.player.tradeStreak ?? 0,
+      bestDayChange: s.player.bestDayChange ?? 0,
+      maxEmployeeLevel: maxEmpLevel,
+      totalRealizedProfit,
+      sectorCount: sectors.size,
+      corporateSkillCount: unlockedSkillCount,
     }
 
     let totalUnlocked = s.milestones.totalUnlocked
@@ -4437,6 +4584,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setAutoSellEnabled: (enabled) => set({ autoSellEnabled: enabled }),
   setAutoSellPercent: (percent) => set({ autoSellPercent: Math.max(1, Math.min(100, percent)) }),
 
+  /* ── Auto-HR (Smart Auto-Counseling) Actions ── */
+  setAutoHREnabled: (enabled) => set({ autoHREnabled: enabled }),
+  setAutoHRThreshold: (threshold) =>
+    set({ autoHRThreshold: Math.max(10, Math.min(100, threshold)) }),
+
   processAutoSell: () => {
     const state = get()
     if (!state.autoSellEnabled || state.autoSellPercent <= 0) return
@@ -4662,6 +4814,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             const panicMsg = getRandomTauntFn('panic', state.time.hour, competitor.style)
 
             newTaunts.push({
+              id: `taunt-${batchTick}-${competitor.id}-panic`,
               competitorId: competitor.id,
               competitorName: competitor.name,
               message: `${competitor.name}: "${panicMsg}"`,
@@ -4680,6 +4833,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           })
           if (bragMsg) {
             newTaunts.push({
+              id: `taunt-${batchTick}-${competitor.id}-brag`,
               competitorId: competitor.id,
               competitorName: competitor.name,
               message: `${competitor.name}: "${bragMsg}"`,
@@ -4701,6 +4855,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
               : `${(tradeValue / 10_000).toFixed(0)}만`
             const bigMsg = getBigTradeTaunt(competitor.style, { ticker, amount: amountText })
             newTaunts.push({
+              id: `taunt-${batchTick}-${competitor.id}-big`,
               competitorId: competitor.id,
               competitorName: competitor.name,
               message: `${competitor.name}: "${action.action === 'sell' ? '[매도] ' : ''}${bigMsg}"`,
@@ -4786,8 +4941,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   addTaunt: (taunt) => {
+    const tauntWithId: TauntMessage = taunt.id
+      ? (taunt as TauntMessage)
+      : { ...taunt, id: `taunt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` }
     set((state) => ({
-      taunts: [...state.taunts, taunt].slice(-20), // Keep last 20
+      taunts: [...state.taunts, tauntWithId].slice(-20), // Keep last 20
+    }))
+  },
+
+  respondToTaunt: (tauntId, response) => {
+    const responseMessage = getPlayerResponseMessage(response)
+    set((state) => ({
+      taunts: state.taunts.map((t) =>
+        t.id === tauntId ? { ...t, playerResponse: response, playerResponseMessage: responseMessage } : t,
+      ),
     }))
   },
 

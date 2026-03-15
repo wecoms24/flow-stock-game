@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 export interface RankChangeData {
   oldRank: number
   newRank: number
+  overtaken?: Array<{ name: string; style: string }>
 }
 
 export function useRankChangeNotification() {

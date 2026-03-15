@@ -128,6 +128,8 @@ async function createSchema(db: SQLiteDB): Promise<void> {
       player_office_layout TEXT,
       player_last_day_change REAL DEFAULT 0,
       player_previous_day_assets REAL DEFAULT 0,
+      player_best_day_change REAL DEFAULT 0,
+      player_worst_day_change REAL DEFAULT 0,
 
       -- System state
       last_processed_month INTEGER DEFAULT 0,
