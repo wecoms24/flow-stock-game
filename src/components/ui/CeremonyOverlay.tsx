@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import confetti from 'canvas-confetti'
 import { useGameStore } from '../../stores/gameStore'
 import { OFFICE_BACKGROUNDS } from '../../data/officeBackgrounds'
@@ -23,6 +23,15 @@ export function CeremonyOverlay() {
     }
   }, [pendingCeremony])
 
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape' && pendingCeremony) dismissCeremony()
+  }, [pendingCeremony, dismissCeremony])
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [handleKeyDown])
+
   if (!pendingCeremony) return null
 
   const { fromLevel, toLevel } = pendingCeremony
@@ -37,7 +46,7 @@ export function CeremonyOverlay() {
   const newGrid = OFFICE_BALANCE.GRID_SIZES[toLevel]
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50" role="dialog" aria-modal="true">
       <div className="win-panel bg-win-face w-[420px] max-w-[90vw]">
         {/* Title bar */}
         <div className="bg-win-title-active text-white px-2 py-1 flex items-center gap-2 text-sm font-bold select-none">

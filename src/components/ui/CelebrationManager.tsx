@@ -59,13 +59,15 @@ export function CelebrationManager() {
 
       // Confetti for level 3
       if (event.confetti) {
-        import('canvas-confetti').then((mod) => {
-          mod.default({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 },
+        import('canvas-confetti')
+          .then((mod) => {
+            mod.default({
+              particleCount: 100,
+              spread: 70,
+              origin: { y: 0.6 },
+            })
           })
-        })
+          .catch(() => {})
       }
     }
 
@@ -94,7 +96,7 @@ export function CelebrationManager() {
     <>
       {/* Level 1: Toasts (bottom-right) */}
       {toasts.length > 0 && (
-        <div className="fixed bottom-10 right-4 z-[9998] flex flex-col gap-1.5 pointer-events-none">
+        <div className="fixed bottom-10 right-4 z-[9998] flex flex-col gap-1.5 pointer-events-none" role="status" aria-live="polite">
           {toasts.map((toast) => (
             <div
               key={toast.id}
@@ -115,7 +117,7 @@ export function CelebrationManager() {
 
       {/* Level 2: Banners (top-center) */}
       {banners.length > 0 && (
-        <div className="fixed top-2 left-1/2 -translate-x-1/2 z-[9998] flex flex-col gap-1.5 pointer-events-none">
+        <div className="fixed top-2 left-1/2 -translate-x-1/2 z-[9998] flex flex-col gap-1.5 pointer-events-none" role="status" aria-live="assertive">
           {banners.map((banner) => (
             <div
               key={banner.id}
@@ -138,6 +140,8 @@ export function CelebrationManager() {
       {ceremony && (
         <div
           className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40"
+          role="dialog"
+          aria-modal="true"
           onClick={dismissCeremony}
         >
           <div

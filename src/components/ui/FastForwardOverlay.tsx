@@ -1,9 +1,26 @@
+import { useEffect, useCallback } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from './RetroButton'
 
 export function FastForwardOverlay() {
   const isFastForwarding = useGameStore((s) => s.isFastForwarding)
   const progress = useGameStore((s) => s.fastForwardProgress)
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      if (isFastForwarding) {
+        useGameStore.getState().cancelFastForward()
+      } else {
+        useGameStore.setState({ fastForwardProgress: null })
+      }
+    }
+  }, [isFastForwarding])
+
+  useEffect(() => {
+    if (!progress) return
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [progress, handleKeyDown])
 
   // Show overlay during fast forward OR when summary is ready (progress exists but not forwarding)
   if (!progress) return null
@@ -22,7 +39,7 @@ export function FastForwardOverlay() {
   }
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70" role="dialog" aria-modal="true">
       <div className="win-outset bg-win-face p-4 min-w-[360px] max-w-[480px]">
         {/* Title bar */}
         <div className="flex items-center gap-2 mb-3 pb-2 border-b border-win-shadow">

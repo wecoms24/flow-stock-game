@@ -4061,20 +4061,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const milestone = updated[def.id]
       if (!milestone || milestone.isUnlocked) continue
 
-      const currentValue = def.checkFn(ctx)
-      if (currentValue >= def.targetValue) {
-        updated[def.id] = { ...milestone, isUnlocked: true, unlockedAt: s.currentTick }
-        totalUnlocked++
+      try {
+        const currentValue = def.checkFn(ctx)
+        if (currentValue >= def.targetValue) {
+          updated[def.id] = { ...milestone, isUnlocked: true, unlockedAt: s.currentTick }
+          totalUnlocked++
 
-        // Queue celebration animation + unified celebration
-        get().queueAnimation(
-          createMilestoneAnimationSequence({
-            title: milestone.title,
-            description: milestone.description,
-            icon: milestone.icon,
-          })
-        )
-        dispatchCelebration(celebrateMilestone(milestone.title, milestone.description, milestone.icon))
+          // Queue celebration animation + unified celebration
+          get().queueAnimation(
+            createMilestoneAnimationSequence({
+              title: milestone.title,
+              description: milestone.description,
+              icon: milestone.icon,
+            })
+          )
+          dispatchCelebration(celebrateMilestone(milestone.title, milestone.description, milestone.icon))
+        }
+      } catch (err) {
+        console.error(`[Milestone] checkFn failed for ${def.id}:`, err)
       }
     }
 
@@ -4319,8 +4323,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const beforeEmployeeLevels = before.player.employees.map((e) => e.level ?? 1)
 
         // Advance time (simplified - no worker/rendering)
-        before.advanceHour()
-        get().processHourly()
+        try {
+          before.advanceHour()
+          get().processHourly()
+        } catch (err) {
+          console.error('[FastForward] Error during hour processing:', err)
+          collectedEvents.push(`오류 발생 - 빨리감기 중단`)
+          set({
+            fastForwardProgress: {
+              current: hoursProcessed,
+              skippedHours: MAX_HOURS,
+              events: collectedEvents,
+              startTime,
+            },
+          })
+          finalize()
+          return
+        }
 
         // Re-read state after advancement
         const after = get()
