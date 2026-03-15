@@ -9,7 +9,6 @@ export function FastForwardOverlay() {
   if (!progress) return null
 
   const isProcessing = isFastForwarding
-  const isDone = !isFastForwarding && progress !== null
   const percent = progress.skippedHours > 0
     ? Math.round((progress.current / progress.skippedHours) * 100)
     : 0

@@ -723,6 +723,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       } catch { /* ignore parse errors */ }
     }
 
+    // Prestige / New Game+ bonus (cash multiplier + skill carryover)
+    const prestigeBonuses = getPrestigeBonuses()
+    let prestigeCarryOverSkillId: string | null = null
+    if (prestigeBonuses.level > 0 && !customInitialCash) {
+      initialCash = Math.round(initialCash * prestigeBonuses.cashMultiplier)
+      prestigeCarryOverSkillId = prestigeBonuses.carryOverSkillId
+    }
+
     // Company profile style bonuses
     const profile = companyProfile ?? defaultCompanyProfile()
     let styleHasAnalyst = false
@@ -828,7 +836,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
         reliefEligible: false,
       },
       milestones: { milestones: {}, totalUnlocked: 0, lastCheckedTick: 0 },
-      corporateSkills: { skills: createInitialCorporateSkills(), totalUnlocked: 0, totalSpent: 0 },
+      corporateSkills: (() => {
+        const skills = createInitialCorporateSkills()
+        let totalUnlocked = 0
+        // Prestige: carry over 1 corporate skill from previous run
+        if (prestigeCarryOverSkillId && skills[prestigeCarryOverSkillId]) {
+          skills[prestigeCarryOverSkillId] = { ...skills[prestigeCarryOverSkillId], unlocked: true, unlockedAt: 0 }
+          totalUnlocked = 1
+        }
+        return { skills, totalUnlocked, totalSpent: 0 }
+      })(),
       training: { programs: [], completedCount: 0, totalTraineesGraduated: 0 },
       hourlyAccumulators: { salaryPaid: 0, taxPaid: 0 },
       chapterProgress: defaultChapterProgress(),
@@ -4324,15 +4341,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
           return
         }
 
-        // Random event generation (same logic as tick engine)
-        const eventChance = afterState.difficultyConfig.eventChance / afterState.time.speed
-        if (Math.random() < eventChance) {
-          const evtCountBefore = get().events.length
-          // Import not needed - generateRandomEvent is already imported via tickEngine
-          // We call it indirectly through the event system
-          // Instead, just check for events that naturally spawn
-        }
-
         // Check employee level-ups
         const afterEmployeeLevels = afterState.player.employees.map((e) => e.level ?? 1)
         for (let j = 0; j < afterEmployeeLevels.length; j++) {
@@ -4965,9 +4973,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const newTaunts = [...state.taunts]
       const batchTick = getAbsoluteTimestamp(state.time, state.config.startYear)
 
+      // Compute taunt suppression from player "humble" responses
+      const tauntResponseEffects = computePlayerResponseEffects(state.taunts, batchTick)
+
       actions.forEach((action) => {
         const competitor = newCompetitors.find((c) => c.id === action.competitorId)
         if (!competitor) return
+
+        // Player "humble" response → 50% chance to suppress this competitor's taunts
+        const isTauntSuppressed =
+          tauntResponseEffects[competitor.id]?.tauntSuppression && Math.random() < 0.5
 
         if (action.action === 'buy') {
           const cost = action.quantity * action.price

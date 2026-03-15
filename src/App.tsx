@@ -26,6 +26,7 @@ import { RivalTradeToast } from './components/ui/RivalTradeToast'
 import { RankCelebration } from './components/ui/RankCelebration'
 import { CelebrationManager } from './components/ui/CelebrationManager'
 import { ChapterModal } from './components/tutorial/ChapterModal'
+import { FastForwardOverlay } from './components/ui/FastForwardOverlay'
 import { hasSaveData } from './systems/saveSystem'
 import { migrateIndexedDBToSQLite } from './systems/sqlite/migration'
 import { getFeatureFlag, setFeatureFlag } from './systems/featureFlags'
@@ -199,6 +200,7 @@ export default function App() {
         <CeremonyOverlay />
         <TradeAnimationSequence />
         <ChapterModal />
+        <FastForwardOverlay />
 
         {isGameOver && <EndingScreen />}
 
