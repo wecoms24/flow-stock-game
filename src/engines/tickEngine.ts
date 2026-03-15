@@ -21,6 +21,7 @@ import { evaluateMnaOpportunity, generateNewCompany } from './mnaEngine'
 import { SECTOR_CORRELATION, SPILLOVER_FACTOR } from '../data/sectorCorrelation'
 import type { Sector, MarketEvent } from '../types'
 import { getRandomTaunt } from '../data/taunts'
+import { computePlayerResponseEffects } from './competitorEngine'
 import { getBusinessHourIndex, getAbsoluteTimestamp } from '../config/timeConfig'
 import { MARKET_IMPACT_CONFIG } from '../config/marketImpactConfig'
 import { autoSelectCards } from './cardDrawEngine'
@@ -646,16 +647,64 @@ function checkRankChanges(rankings: Array<{ name: string; rank: number; isPlayer
   const store = useGameStore.getState()
   const companyName = store.companyProfile?.name
 
+  // Compute taunt suppression from player "humble" responses
+  const currentTick = getAbsoluteTimestamp(store.time, store.config.startYear)
+  const responseEffects = computePlayerResponseEffects(store.taunts, currentTick)
+
   rankings.forEach((entry) => {
     const prevRank = previousRankings[entry.name]
 
     if (prevRank && prevRank !== entry.rank) {
       // Rank changed - trigger notification
       if (entry.isPlayer) {
-        // Player rank changed - dispatch event for UI
+        // Find competitors that the player overtook (they dropped, player rose)
+        const overtaken: Array<{ name: string; style: string }> = []
+        if (entry.rank < prevRank) {
+          // Player moved up — find competitors who were between newRank and oldRank
+          for (const other of rankings) {
+            if (other.isPlayer) continue
+            const otherPrev = previousRankings[other.name]
+            // Competitor was ahead of player before, now behind
+            if (otherPrev && otherPrev < prevRank && other.rank > entry.rank) {
+              const comp = store.competitors.find((c) => c.name === other.name)
+              overtaken.push({ name: other.name, style: comp?.style ?? 'aggressive' })
+            }
+          }
+        }
+
+        // Update H2H records for overtaken competitors (player beat them)
+        for (const ot of overtaken) {
+          const comp = store.competitors.find((c) => c.name === ot.name)
+          if (comp) {
+            store.updateRivalryTracking(ot.name, false) // competitor is NOT ahead → loss for competitor
+            const newLosses = (comp.headToHeadLosses ?? 0) + 1
+            // Trigger rival_defeated taunt at 3+ losses (every 3rd loss)
+            if (newLosses >= 3 && newLosses % 3 === 0) {
+              // Check taunt suppression from player "humble" response
+              const compSuppressed =
+                responseEffects[comp.id]?.tauntSuppression && Math.random() < 0.5
+              if (!compSuppressed) {
+                const msg = getRandomTaunt('rival_defeated', store.time.hour, comp.style)
+                store.addTaunt({
+                  competitorId: comp.name,
+                  competitorName: comp.name,
+                  message: `${comp.name}: "${msg}"`,
+                  type: 'rival_defeated',
+                  timestamp: Date.now(),
+                })
+              }
+            }
+          }
+        }
+
+        // Player rank changed - use dedicated RankCelebration (richer Win95 UI with confetti)
         window.dispatchEvent(
           new CustomEvent('rankChange', {
-            detail: { oldRank: prevRank, newRank: entry.rank },
+            detail: {
+              oldRank: prevRank,
+              newRank: entry.rank,
+              overtaken,
+            },
           }),
         )
       } else {
@@ -663,36 +712,43 @@ function checkRankChanges(rankings: Array<{ name: string; rank: number; isPlayer
         const competitor = store.competitors.find((c) => c.name === entry.name)
         const style = competitor?.style
 
-        if (entry.rank === 1 && prevRank !== 1) {
-          // Became champion
-          const msg = getRandomTaunt('champion', store.time.hour, style)
-          store.addTaunt({
-            competitorId: entry.name,
-            competitorName: entry.name,
-            message: `${entry.name}: "${msg}"`,
-            type: 'champion',
-            timestamp: Date.now(),
-          })
-        } else if (entry.rank < prevRank) {
-          // Rank up
-          const msg = getRandomTaunt('rank_up', store.time.hour, style)
-          store.addTaunt({
-            competitorId: entry.name,
-            competitorName: entry.name,
-            message: `${entry.name}: "${msg}"`,
-            type: 'rank_up',
-            timestamp: Date.now(),
-          })
-        } else if (entry.rank > prevRank) {
-          // ✨ Core Values: Rank down (was missing!)
-          const msg = getRandomTaunt('rank_down', store.time.hour, style)
-          store.addTaunt({
-            competitorId: entry.name,
-            competitorName: entry.name,
-            message: `${entry.name}: "${msg}"`,
-            type: 'rank_down',
-            timestamp: Date.now(),
-          })
+        // Player "humble" response → 50% chance to suppress taunts
+        const competitorId = competitor?.id ?? entry.name
+        const isTauntSuppressed =
+          responseEffects[competitorId]?.tauntSuppression && Math.random() < 0.5
+
+        if (!isTauntSuppressed) {
+          if (entry.rank === 1 && prevRank !== 1) {
+            // Became champion
+            const msg = getRandomTaunt('champion', store.time.hour, style)
+            store.addTaunt({
+              competitorId: entry.name,
+              competitorName: entry.name,
+              message: `${entry.name}: "${msg}"`,
+              type: 'champion',
+              timestamp: Date.now(),
+            })
+          } else if (entry.rank < prevRank) {
+            // Rank up
+            const msg = getRandomTaunt('rank_up', store.time.hour, style)
+            store.addTaunt({
+              competitorId: entry.name,
+              competitorName: entry.name,
+              message: `${entry.name}: "${msg}"`,
+              type: 'rank_up',
+              timestamp: Date.now(),
+            })
+          } else if (entry.rank > prevRank) {
+            // ✨ Core Values: Rank down (was missing!)
+            const msg = getRandomTaunt('rank_down', store.time.hour, style)
+            store.addTaunt({
+              competitorId: entry.name,
+              competitorName: entry.name,
+              message: `${entry.name}: "${msg}"`,
+              type: 'rank_down',
+              timestamp: Date.now(),
+            })
+          }
         }
 
         // Check if overtook player
@@ -705,17 +761,22 @@ function checkRankChanges(rankings: Array<{ name: string; rank: number; isPlayer
           entry.rank < playerEntry.rank &&
           prevRank > prevPlayerRank
         ) {
-          const msg = getRandomTaunt('overtake', store.time.hour, style, companyName)
-          store.addTaunt({
-            competitorId: entry.name,
-            competitorName: entry.name,
-            message: `${entry.name}: "${msg}"`,
-            type: 'overtake_player',
-            timestamp: Date.now(),
-          })
+          if (!isTauntSuppressed) {
+            const msg = getRandomTaunt('overtake', store.time.hour, style, companyName)
+            store.addTaunt({
+              competitorId: entry.name,
+              competitorName: entry.name,
+              message: `${entry.name}: "${msg}"`,
+              type: 'overtake_player',
+              timestamp: Date.now(),
+            })
+          }
+
+          // H2H: competitor overtook player → win for competitor (always tracked regardless of suppression)
+          store.updateRivalryTracking(entry.name, true)
         }
 
-        // ✨ Core Values: Rivalry tracking → 월 1회 processMonthly에서 처리
+        // Note: player overtaking competitors is handled in the isPlayer branch above
       }
     }
   })

@@ -21,6 +21,10 @@ export function SettingsWindow() {
     autoSellPercent,
     setAutoSellEnabled,
     setAutoSellPercent,
+    autoHREnabled,
+    autoHRThreshold,
+    setAutoHREnabled,
+    setAutoHRThreshold,
   } = useGameStore()
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled)
   const [volume, setVolume] = useState(soundManager.volume)
@@ -191,6 +195,40 @@ export function SettingsWindow() {
           </div>
           <div className="text-[10px] text-retro-gray">
             보유 주식 수익률이 {autoSellPercent}% 이상이면 자동 전량 매도
+          </div>
+        </div>
+      </div>
+
+      {/* Auto-HR (Smart Auto-Counseling) */}
+      <div className="space-y-1">
+        <div className="font-bold">🏥 자동 HR (스마트 상담)</div>
+        <div className="win-inset bg-white p-2 space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-retro-gray">자동 상담:</span>
+            <RetroButton
+              size="sm"
+              onClick={() => setAutoHREnabled(!autoHREnabled)}
+              className={autoHREnabled ? 'win-pressed' : ''}
+            >
+              {autoHREnabled ? 'ON' : 'OFF'}
+            </RetroButton>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-retro-gray">스트레스 기준:</span>
+            <input
+              type="range"
+              min="10"
+              max="100"
+              value={autoHRThreshold}
+              onChange={(e) => setAutoHRThreshold(Number(e.target.value))}
+              className="flex-1"
+              style={{ accentColor: '#000080' }}
+              disabled={!autoHREnabled}
+            />
+            <span className="text-[10px] w-8 text-right">{autoHRThreshold}</span>
+          </div>
+          <div className="text-[10px] text-retro-gray">
+            스트레스 {autoHRThreshold} 초과 직원을 매일 자동 상담 (5만원/회)
           </div>
         </div>
       </div>

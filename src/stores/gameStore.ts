@@ -25,6 +25,7 @@ import type {
   LimitOrder,
   TradingLimits,
   StopLossTakeProfit,
+  PlayerTauntResponse,
 } from '../types'
 import type { OfficeGrid, FurnitureType, FurnitureItem, OfficeLayout, DeskType, DecorationType, DeskItem, DecorationItem } from '../types/office'
 import type { TradeProposal, ProposalStatus } from '../types/trade'
@@ -34,12 +35,13 @@ import type { PlayerEvent, PlayerProfile } from '../types/personalization'
 import type { MnaDeal } from '../engines/mnaEngine'
 import { MAX_EVENT_LOG_SIZE, defaultProfile } from '../types/personalization'
 import { computeProfileFromEvents } from '../systems/personalization/profile'
+import { emitFloatingText } from '../utils/floatingTextEmitter'
 import { TRADE_AI_CONFIG } from '../config/tradeAIConfig'
 import { getAbsoluteTimestamp, TIME_CONFIG } from '../config/timeConfig'
 import { drawCards } from '../engines/cardDrawEngine'
 import { createBio, inferEmotion, updateGoals } from '../engines/employeeBioEngine'
 import { checkEmployeeMilestones } from '../engines/employeeMilestoneEngine'
-import { getRandomTaunt as getRandomTauntFn, getContextualTradeTaunt, getBigTradeTaunt } from '../data/taunts'
+import { getRandomTaunt as getRandomTauntFn, getContextualTradeTaunt, getBigTradeTaunt, getPlayerResponseMessage } from '../data/taunts'
 import { calculateBonuses } from '../engines/skillPathEngine'
 import { selectChain, initChainState, advanceChainWeek, getCurrentWeekModifiers, canStartChain } from '../engines/eventChainEngine'
 import { EVENT_CHAIN_TEMPLATES } from '../data/eventChains'
@@ -55,6 +57,7 @@ import { historicalDataService } from '../services/historicalDataService'
 import { DIFFICULTY_TABLE } from '../data/difficulty'
 import { generateEmployeeName, resetNamePool, generateRandomTraits, generateInitialSkills, generateAssignedSectors } from '../data/employees'
 import { calculateMarketSentiment } from '../engines/tickEngine'
+import { generateRandomEvent } from '../engines/newsEngine'
 import { TRAIT_DEFINITIONS } from '../data/traits'
 import { FURNITURE_CATALOG, canBuyFurniture, DESK_CATALOG, DECORATION_CATALOG } from '../data/furniture'
 import { saveGame, loadGame, deleteSave } from '../systems/saveSystem'
@@ -69,6 +72,7 @@ import {
   generateCompetitors,
   processAITrading,
   getPriceHistory,
+  computePlayerResponseEffects,
 } from '../engines/competitorEngine'
 import {
   generateInstitutions,
@@ -86,6 +90,13 @@ import { MILESTONE_DEFINITIONS, createInitialMilestones, type MilestoneContext }
 import { resetNewsEngine } from '../engines/newsEngine'
 import { generateBadgesFromSkills } from '../utils/badgeConverter' // ✨ 신규: 뱃지 생성
 import { createInitialCorporateSkills } from '../data/corporateSkills'
+import { getPrestigeBonuses } from '../systems/prestigeSystem'
+import { dispatchCelebration, setCelebrationSuppressed } from '../components/ui/CelebrationManager'
+import {
+  celebrateStreak,
+  celebrateMilestone,
+  celebrateRivalDefeated,
+} from '../systems/celebrationSystem'
 import {
   validateUnlock,
   unlockCorporateSkill as unlockCorpSkill,
@@ -183,6 +194,10 @@ interface GameStore {
   isGameStarted: boolean
   isGameOver: boolean
   endingResult: EndingScenario | null
+
+  // Ceremony
+  pendingCeremony: { type: string; fromLevel: number; toLevel: number } | null
+  dismissCeremony: () => void
 
   // Time
   time: GameTime
@@ -308,7 +323,8 @@ interface GameStore {
   executeBatchActions: (actions: CompetitorAction[]) => void
   updateCompetitorAssets: () => void
   calculateRankings: () => Array<{ rank: number; name: string; roi: number; isPlayer: boolean }>
-  addTaunt: (taunt: TauntMessage) => void
+  addTaunt: (taunt: Omit<TauntMessage, 'id'> & { id?: string }) => void
+  respondToTaunt: (tauntId: string, response: PlayerTauntResponse) => void
   updateRivalryTracking: (competitorName: string, competitorIsAhead: boolean) => void
 
   // Actions - Institutional Investors
@@ -382,6 +398,10 @@ interface GameStore {
   autoSellEnabled: boolean
   autoSellPercent: number
 
+  // Auto-HR (Smart Auto-Counseling) System
+  autoHREnabled: boolean
+  autoHRThreshold: number
+
   // Cash Flow Tracking
   cashFlowLog: CashFlowEntry[]
   realizedTrades: RealizedTrade[]
@@ -397,6 +417,10 @@ interface GameStore {
   setAutoSellEnabled: (enabled: boolean) => void
   setAutoSellPercent: (percent: number) => void
   processAutoSell: () => void
+
+  // Actions - Auto-HR
+  setAutoHREnabled: (enabled: boolean) => void
+  setAutoHRThreshold: (threshold: number) => void
 
   // Actions - Limit Orders
   createLimitOrder: (companyId: string, targetPrice: number, shares: number) => void
@@ -472,6 +496,17 @@ interface GameStore {
 
   // Flash
   triggerFlash: () => void
+
+  // Fast Forward System
+  isFastForwarding: boolean
+  fastForwardProgress: {
+    current: number
+    skippedHours: number
+    events: string[]
+    startTime: { year: number; month: number; day: number; hour: number }
+  } | null
+  fastForward: () => void
+  cancelFastForward: () => void
 }
 
 let employeeIdCounter = 0
@@ -490,6 +525,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   isGameStarted: false,
   isGameOver: false,
   endingResult: null,
+  pendingCeremony: null,
+  isFastForwarding: false,
+  fastForwardProgress: null,
 
   time: { year: 1995, quarter: 1, month: 1, day: 1, hour: 9, speed: 1, isPaused: true },
   lastProcessedMonth: 0,
@@ -505,8 +543,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     officeLevel: 1,
     lastDayChange: 0,
     previousDayAssets: 50_000_000,
+    bestDayChange: 0,
+    worstDayChange: 0,
     lastDailyTradeResetDay: 0,
     dailyTradeCount: 0,
+    tradeStreak: 0,
   },
 
   companies: [],
@@ -531,6 +572,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   limitOrders: [],
   autoSellEnabled: false,
   autoSellPercent: 10,
+  autoHREnabled: false,
+  autoHRThreshold: 70,
 
   competitors: [],
   competitorCount: 0,
@@ -569,6 +612,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     activeCards: [],
     drawMonth: 0,
     selectionDeadlineTick: 0,
+    pendingNotification: false,
   },
   eventChains: { chains: [], completedChainIds: [], lastChainEndTick: 0 },
   employeeBios: {},
@@ -686,6 +730,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       } catch { /* ignore parse errors */ }
     }
 
+    // Prestige / New Game+ bonus (cash multiplier + skill carryover)
+    const prestigeBonuses = getPrestigeBonuses()
+    let prestigeCarryOverSkillId: string | null = null
+    if (prestigeBonuses.level > 0 && !customInitialCash) {
+      initialCash = Math.round(initialCash * prestigeBonuses.cashMultiplier)
+      prestigeCarryOverSkillId = prestigeBonuses.carryOverSkillId
+    }
+
     // Company profile style bonuses
     const profile = companyProfile ?? defaultCompanyProfile()
     let styleHasAnalyst = false
@@ -736,8 +788,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
         officeLevel: 1,
         lastDayChange: 0,
         previousDayAssets: initialCash,
+        bestDayChange: -Infinity,
+        worstDayChange: Infinity,
         lastDailyTradeResetDay: 0, // ✨ 하루 거래 제한 초기화
         dailyTradeCount: 0, // ✨ 하루 거래 제한 초기화
+        tradeStreak: 0,
       },
       companies,
       events: [],
@@ -759,6 +814,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       institutions,
       autoSellEnabled: false,
       autoSellPercent: 10,
+      autoHREnabled: false,
+      autoHRThreshold: 70,
       // Personalization: sync lastUpdatedDay with game start day
       playerProfile: { ...defaultProfile(), lastUpdatedDay: 1 },
       // ✨ UX Enhancement System reset
@@ -771,6 +828,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         activeCards: [],
         drawMonth: 0,
         selectionDeadlineTick: 0,
+        pendingNotification: false,
       },
       eventChains: { chains: [], completedChainIds: [], lastChainEndTick: 0 },
       employeeBios: {},
@@ -787,7 +845,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
         reliefEligible: false,
       },
       milestones: { milestones: {}, totalUnlocked: 0, lastCheckedTick: 0 },
-      corporateSkills: { skills: createInitialCorporateSkills(), totalUnlocked: 0, totalSpent: 0 },
+      corporateSkills: (() => {
+        const skills = createInitialCorporateSkills()
+        let totalUnlocked = 0
+        // Prestige: carry over 1 corporate skill from previous run
+        if (prestigeCarryOverSkillId && skills[prestigeCarryOverSkillId]) {
+          skills[prestigeCarryOverSkillId] = { ...skills[prestigeCarryOverSkillId], unlocked: true, unlockedAt: 0 }
+          totalUnlocked = 1
+        }
+        return { skills, totalUnlocked, totalSpent: 0 }
+      })(),
       training: { programs: [], completedCount: 0, totalTraineesGraduated: 0 },
       hourlyAccumulators: { salaryPaid: 0, taxPaid: 0 },
       chapterProgress: defaultChapterProgress(),
@@ -849,6 +916,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const migratedPlayer = {
       ...data.player,
       officeLevel: data.player.officeLevel ?? 1,
+      tradeStreak: data.player.tradeStreak ?? 0,
+      bestDayChange: data.player.bestDayChange != null && isFinite(data.player.bestDayChange) ? data.player.bestDayChange : -Infinity,
+      worstDayChange: data.player.worstDayChange != null && isFinite(data.player.worstDayChange) ? data.player.worstDayChange : Infinity,
       employees: data.player.employees.map((emp) => ({
         ...emp,
         stress: emp.stress ?? 0,
@@ -931,20 +1001,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
       marketIndexHistory: data.marketIndexHistory ?? [],
       autoSellEnabled: data.autoSellEnabled ?? false,
       autoSellPercent: data.autoSellPercent ?? 10,
+      autoHREnabled: data.autoHREnabled ?? false,
+      autoHRThreshold: data.autoHRThreshold ?? 70,
       cashFlowLog: data.cashFlowLog ?? [],
       realizedTrades: data.realizedTrades ?? [],
       monthlyCashFlowSummaries: data.monthlyCashFlowSummaries ?? [],
       cashFlowAnomalies: [],
       // ✨ UX Enhancement System (v7 migration with defaults)
       animationQueue: data.animationQueue ?? { queue: [], current: null, currentStepIndex: 0, isPlaying: false },
-      monthlyCards: data.monthlyCards ?? {
-        availableCards: [],
-        selectedCardIds: [],
-        isDrawn: false,
-        isSelectionComplete: false,
-        activeCards: [],
-        drawMonth: 0,
-        selectionDeadlineTick: 0,
+      monthlyCards: {
+        ...(data.monthlyCards ?? {
+          availableCards: [],
+          selectedCardIds: [],
+          isDrawn: false,
+          isSelectionComplete: false,
+          activeCards: [],
+          drawMonth: 0,
+          selectionDeadlineTick: 0,
+        }),
+        pendingNotification: (data.monthlyCards as any)?.pendingNotification ?? false,
       },
       eventChains: data.eventChains ?? { chains: [], completedChainIds: [], lastChainEndTick: 0 },
       employeeBios: data.employeeBios ?? {},
@@ -965,6 +1040,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       hourlyAccumulators: { salaryPaid: 0, taxPaid: 0 }, // Always reset on load to prevent double-counting across save/load
       chapterProgress: (data as any).chapterProgress ?? { ...defaultChapterProgress(), currentChapter: getChapterNumber(data.time.year) },
       companyProfile: (data as any).companyProfile ?? defaultCompanyProfile(),
+      pendingCeremony: (data as any).pendingCeremony ?? null,
       windows: [],
       nextZIndex: 1,
       windowIdCounter: 0,
@@ -1020,6 +1096,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       marketIndexHistory: s.marketIndexHistory,
       autoSellEnabled: s.autoSellEnabled,
       autoSellPercent: s.autoSellPercent,
+      autoHREnabled: s.autoHREnabled,
+      autoHRThreshold: s.autoHRThreshold,
       cashFlowLog: s.cashFlowLog,
       realizedTrades: s.realizedTrades,
       monthlyCashFlowSummaries: s.monthlyCashFlowSummaries,
@@ -1036,6 +1114,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       hourlyAccumulators: s.hourlyAccumulators,
       chapterProgress: s.chapterProgress,
       companyProfile: s.companyProfile,
+      pendingCeremony: s.pendingCeremony ?? undefined,
     }
     saveGame(data)
   },
@@ -1795,6 +1874,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     get().logPlayerEvent('SETTINGS', { isPaused: !wasPaused })
   },
 
+  dismissCeremony: () => {
+    set((s) => ({
+      pendingCeremony: null,
+      time: { ...s.time, isPaused: false },
+    }))
+  },
+
   checkEnding: () => {
     const state = get()
     if (state.isGameOver) return
@@ -1849,11 +1935,39 @@ export const useGameStore = create<GameStore>((set, get) => ({
           scoldCooldown: Math.max(0, (emp.scoldCooldown ?? 0) - 1),
         }))
 
+        // Best/Worst day record detection
+        let newBest = s.player.bestDayChange ?? 0
+        let newWorst = s.player.worstDayChange ?? 0
+
+        if (changePercent > newBest) {
+          newBest = changePercent
+          if (changePercent > 0.1) {
+            // Use dedicated DailyRecordToast (richer Win95 UI) instead of generic celebration
+            window.dispatchEvent(
+              new CustomEvent('dailyRecord', {
+                detail: { type: 'best', changePercent },
+              }),
+            )
+          }
+        }
+        if (changePercent < newWorst) {
+          newWorst = changePercent
+          if (changePercent < -0.1) {
+            window.dispatchEvent(
+              new CustomEvent('dailyRecord', {
+                detail: { type: 'worst', changePercent },
+              }),
+            )
+          }
+        }
+
         updatedPlayer = {
           ...s.player,
           employees: decayedEmployees,
           lastDayChange: changePercent,
           previousDayAssets: currentAssets,
+          bestDayChange: newBest,
+          worstDayChange: newWorst,
         }
       }
 
@@ -2011,6 +2125,39 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ...(firstLevelUp ? { pendingLevelUp: firstLevelUp } : {}),
       }
     })
+
+    // ── Auto-HR: smart auto-counseling (once per day at hour 9) ──
+    const afterState = get()
+    if (afterState.autoHREnabled && afterState.time.hour === 9) {
+      const AUTO_HR_COST = 50_000
+      set((st) => {
+        let remainingCash = st.player.cash
+        const hasCounseled = [] as string[]
+        const updatedEmps = st.player.employees.map((emp) => {
+          if (
+            (emp.stress ?? 0) > st.autoHRThreshold &&
+            remainingCash >= AUTO_HR_COST
+          ) {
+            remainingCash -= AUTO_HR_COST
+            hasCounseled.push(emp.id)
+            return {
+              ...emp,
+              stress: Math.max(0, (emp.stress ?? 0) - 15),
+              satisfaction: Math.min(100, (emp.satisfaction ?? 80) + 5),
+            }
+          }
+          return emp
+        })
+        if (hasCounseled.length === 0) return {}
+        return {
+          player: {
+            ...st.player,
+            cash: remainingCash,
+            employees: updatedEmps,
+          },
+        }
+      })
+    }
   },
 
   /* ── Monthly Processing: cashflow recording + monthly events ── */
@@ -2395,6 +2542,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
           profitLoss: pnl,
         })
       )
+
+      // ✨ Trade Streak Counter
+      const prevStreak = get().player.tradeStreak ?? 0
+      if (pnl > 0) {
+        const newStreak = prevStreak + 1
+        set((s) => ({
+          player: { ...s.player, tradeStreak: newStreak },
+        }))
+        // Emit floating text at milestones
+        const STREAK_MILESTONES = [3, 5, 10, 20]
+        if (STREAK_MILESTONES.includes(newStreak)) {
+          const cx = window.innerWidth / 2
+          const cy = window.innerHeight / 3
+          emitFloatingText(`🔥 ${newStreak}연승!`, cx, cy, '#FF4500')
+          dispatchCelebration(celebrateStreak(newStreak))
+        }
+      } else if (pnl < 0) {
+        // Only reset streak on actual losses, not break-even
+        if (prevStreak > 0) {
+          set((s) => ({
+            player: { ...s.player, tradeStreak: 0 },
+          }))
+        }
+      }
     }
   },
 
@@ -2885,6 +3056,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   upgradeOffice: () => {
     const s = get()
+    if (s.pendingCeremony) return // Guard: ceremony already in progress
     const currentLevel = s.player.officeLevel
     if (currentLevel >= OFFICE_BALANCE.MAX_LEVEL) return
     const cost = OFFICE_BALANCE.UPGRADE_COSTS[currentLevel]
@@ -2930,6 +3102,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // Record with pre-computed cost (no race condition)
     get().recordCashFlow('OFFICE_UPGRADE', -cost, `사무실 레벨 ${newLevel} 업그레이드`)
+
+    // Trigger dedicated CeremonyOverlay (richer Win95 UI) and pause game
+    set((st) => ({
+      pendingCeremony: { type: 'office_upgrade', fromLevel: currentLevel, toLevel: newLevel },
+      time: { ...st.time, isPaused: true },
+    }))
   },
 
   /* ── Windows ── */
@@ -2971,6 +3149,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         event_chain_tracker: '이벤트 체인',
         skill_library: '스킬 도감',
         training_center: '교육 센터',
+        playstyle_analytics: '플레이스타일 분석',
       }
 
       const windowSizes: Record<string, { width: number; height: number }> = {
@@ -2982,6 +3161,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         proposals: { width: 480, height: 420 },
         skill_library: { width: 580, height: 500 },
         training_center: { width: 580, height: 500 },
+        playstyle_analytics: { width: 400, height: 480 },
         monthly_cards: { width: 620, height: 480 },
         acquisition: { width: 680, height: 560 },
         ranking: { width: 420, height: 480 },
@@ -3039,6 +3219,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
               proposals: { width: 480, height: 420 },
               skill_library: { width: 580, height: 500 },
               training_center: { width: 580, height: 500 },
+              playstyle_analytics: { width: 400, height: 480 },
               monthly_cards: { width: 620, height: 480 },
               acquisition: { width: 680, height: 560 },
               ranking: { width: 420, height: 480 },
@@ -3481,11 +3662,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         isSelectionComplete: false,
         drawMonth: s.time.month,
         selectionDeadlineTick: currentTimestamp + 100, // ~10시간 후 자동 선택
+        pendingNotification: true, // 태스크바 뱃지로 알림 (비모달)
       },
     })
-
-    // 카드 드로우 윈도우 자동 열기
-    get().openWindow('monthly_cards')
   },
 
   selectCard: (cardId) => {
@@ -3533,6 +3712,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       monthlyCards: {
         ...st.monthlyCards,
         isSelectionComplete: true,
+        pendingNotification: false,
         activeCards: [...st.monthlyCards.activeCards, ...newActiveCards],
       },
     }))
@@ -3848,16 +4028,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const rankings = s.calculateRankings()
     const playerRank = rankings.find((r) => r.isPlayer)?.rank ?? 99
 
+    const portfolio = s.player.portfolio
+    const companyMap = new Map(s.companies.map((c) => [c.id, c]))
+    const sectors = new Set(
+      Object.keys(portfolio).map((compId) => companyMap.get(compId)?.sector).filter(Boolean),
+    )
+    const maxEmpLevel = s.player.employees.reduce((max, emp) => Math.max(max, emp.level ?? 1), 0)
+    const unlockedSkillCount = Object.values(s.corporateSkills?.skills ?? {}).filter((sk) => sk.unlocked).length
+    const totalRealizedProfit = (s.realizedTrades ?? []).reduce((sum, t) => sum + (t.pnl > 0 ? t.pnl : 0), 0)
+
     const ctx: MilestoneContext = {
       totalAssets: s.player.totalAssetValue,
       cash: s.player.cash,
-      portfolioCount: Object.keys(s.player.portfolio).length,
+      portfolioCount: Object.keys(portfolio).length,
       employeeCount: s.player.employees.length,
       yearsPassed: s.time.year - s.config.startYear,
-      totalTrades: 0,
+      totalTrades: (s.realizedTrades ?? []).length,
       currentYear: s.time.year,
       officeLevel: s.player.officeLevel,
       competitorRank: playerRank,
+      tradeStreak: s.player.tradeStreak ?? 0,
+      bestDayChange: isFinite(s.player.bestDayChange) ? s.player.bestDayChange : 0,
+      maxEmployeeLevel: maxEmpLevel,
+      totalRealizedProfit,
+      sectorCount: sectors.size,
+      corporateSkillCount: unlockedSkillCount,
     }
 
     let totalUnlocked = s.milestones.totalUnlocked
@@ -3866,19 +4061,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const milestone = updated[def.id]
       if (!milestone || milestone.isUnlocked) continue
 
-      const currentValue = def.checkFn(ctx)
-      if (currentValue >= def.targetValue) {
-        updated[def.id] = { ...milestone, isUnlocked: true, unlockedAt: s.currentTick }
-        totalUnlocked++
+      try {
+        const currentValue = def.checkFn(ctx)
+        if (currentValue >= def.targetValue) {
+          updated[def.id] = { ...milestone, isUnlocked: true, unlockedAt: s.currentTick }
+          totalUnlocked++
 
-        // Queue celebration animation
-        get().queueAnimation(
-          createMilestoneAnimationSequence({
-            title: milestone.title,
-            description: milestone.description,
-            icon: milestone.icon,
-          })
-        )
+          // Queue celebration animation + unified celebration
+          get().queueAnimation(
+            createMilestoneAnimationSequence({
+              title: milestone.title,
+              description: milestone.description,
+              icon: milestone.icon,
+            })
+          )
+          dispatchCelebration(celebrateMilestone(milestone.title, milestone.description, milestone.icon))
+        }
+      } catch (err) {
+        console.error(`[Milestone] checkFn failed for ${def.id}:`, err)
       }
     }
 
@@ -4057,6 +4257,234 @@ export const useGameStore = create<GameStore>((set, get) => ({
   triggerFlash: () => {
     set({ isFlashing: true })
     setTimeout(() => set({ isFlashing: false }), 500)
+  },
+
+  /* ── Fast Forward System ── */
+  cancelFastForward: () => {
+    setCelebrationSuppressed(false)
+    const progress = get().fastForwardProgress
+    set({
+      isFastForwarding: false,
+    })
+    // If no events collected, clear progress entirely
+    if (!progress || progress.events.length === 0) {
+      set({ fastForwardProgress: null })
+    }
+  },
+
+  fastForward: () => {
+    const state = get()
+    if (state.isFastForwarding || !state.isGameStarted || state.isGameOver) return
+
+    // Pause the game and set fast forward mode
+    const startTime = {
+      year: state.time.year,
+      month: state.time.month,
+      day: state.time.day,
+      hour: state.time.hour,
+    }
+
+    // Suppress celebrations during fast-forward to prevent spam
+    setCelebrationSuppressed(true)
+
+    set({
+      isFastForwarding: true,
+      fastForwardProgress: {
+        current: 0,
+        skippedHours: 0,
+        events: [],
+        startTime,
+      },
+      time: { ...state.time, isPaused: true },
+    })
+
+    const MAX_HOURS = 720 // 3 months max
+    const BATCH_SIZE = 3 // hours per frame for responsiveness (small to avoid jank)
+    let hoursProcessed = 0
+    const collectedEvents: string[] = []
+    let cancelled = false
+
+    const processBatch = () => {
+      if (cancelled) return
+
+      const currentState = get()
+      if (!currentState.isFastForwarding) {
+        // User cancelled
+        cancelled = true
+        return
+      }
+
+      for (let i = 0; i < BATCH_SIZE && hoursProcessed < MAX_HOURS; i++) {
+        hoursProcessed++
+
+        // Snapshot state before advancement
+        const before = get()
+        const beforeEventCount = before.events.length
+        const beforeEmployeeLevels = before.player.employees.map((e) => e.level ?? 1)
+
+        // Advance time (simplified - no worker/rendering)
+        try {
+          before.advanceHour()
+          get().processHourly()
+        } catch (err) {
+          console.error('[FastForward] Error during hour processing:', err)
+          collectedEvents.push(`오류 발생 - 빨리감기 중단`)
+          set({
+            fastForwardProgress: {
+              current: hoursProcessed,
+              skippedHours: MAX_HOURS,
+              events: collectedEvents,
+              startTime,
+            },
+          })
+          finalize()
+          return
+        }
+
+        // Re-read state after advancement
+        const after = get()
+
+        // Check monthly processing trigger (day 1, hour 9)
+        if (after.time.day === 1 && after.time.hour === 9) {
+          after.processMonthly()
+          collectedEvents.push(
+            `${after.time.year}.${String(after.time.month).padStart(2, '0')} - 월간 정산`,
+          )
+        }
+
+        // Check M&A trigger (quarterly)
+        if (
+          [3, 6, 9, 12].includes(after.time.month) &&
+          after.time.day === 30 &&
+          after.time.hour === 18
+        ) {
+          collectedEvents.push(
+            `${after.time.year}.${String(after.time.month).padStart(2, '0')} - 분기 M&A 평가`,
+          )
+        }
+
+        // Check for new market events
+        const afterState = get()
+        if (afterState.events.length > beforeEventCount) {
+          const newEvents = afterState.events.slice(beforeEventCount)
+          for (const evt of newEvents) {
+            collectedEvents.push(
+              `${afterState.time.year}.${String(afterState.time.month).padStart(2, '0')}.${String(afterState.time.day).padStart(2, '0')} - ${evt.title}`,
+            )
+          }
+          // Stop on significant event
+          set({
+            fastForwardProgress: {
+              current: hoursProcessed,
+              skippedHours: MAX_HOURS,
+              events: collectedEvents,
+              startTime,
+            },
+          })
+          finalize()
+          return
+        }
+
+        // Random event generation (same probability as tick engine)
+        const eventChance = afterState.difficultyConfig.eventChance / afterState.time.speed
+        if (Math.random() < eventChance) {
+          generateRandomEvent()
+          // Re-check if new events appeared
+          const postEventState = get()
+          if (postEventState.events.length > beforeEventCount) {
+            const newEvts = postEventState.events.slice(beforeEventCount)
+            for (const evt of newEvts) {
+              collectedEvents.push(
+                `${postEventState.time.year}.${String(postEventState.time.month).padStart(2, '0')}.${String(postEventState.time.day).padStart(2, '0')} - ${evt.title}`,
+              )
+            }
+            set({
+              fastForwardProgress: {
+                current: hoursProcessed,
+                skippedHours: MAX_HOURS,
+                events: collectedEvents,
+                startTime,
+              },
+            })
+            finalize()
+            return
+          }
+        }
+
+        // Check employee level-ups
+        const afterEmployeeLevels = afterState.player.employees.map((e) => e.level ?? 1)
+        for (let j = 0; j < afterEmployeeLevels.length; j++) {
+          if (
+            j < beforeEmployeeLevels.length &&
+            afterEmployeeLevels[j] > beforeEmployeeLevels[j]
+          ) {
+            const emp = afterState.player.employees[j]
+            collectedEvents.push(
+              `${afterState.time.year}.${String(afterState.time.month).padStart(2, '0')}.${String(afterState.time.day).padStart(2, '0')} - ${emp.name} Lv.${afterEmployeeLevels[j]} 달성`,
+            )
+            // Stop on level-up as interesting event
+            set({
+              fastForwardProgress: {
+                current: hoursProcessed,
+                skippedHours: MAX_HOURS,
+                events: collectedEvents,
+                startTime,
+              },
+            })
+            finalize()
+            return
+          }
+        }
+
+        // Check game year end
+        if (afterState.time.year > afterState.config.endYear) {
+          collectedEvents.push('게임 종료 연도 도달')
+          set({
+            fastForwardProgress: {
+              current: hoursProcessed,
+              skippedHours: MAX_HOURS,
+              events: collectedEvents,
+              startTime,
+            },
+          })
+          finalize()
+          return
+        }
+      }
+
+      // Update progress
+      set({
+        fastForwardProgress: {
+          current: hoursProcessed,
+          skippedHours: MAX_HOURS,
+          events: collectedEvents,
+          startTime,
+        },
+      })
+
+      if (hoursProcessed >= MAX_HOURS) {
+        if (collectedEvents.length === 0) {
+          collectedEvents.push('3개월간 특별한 이벤트 없음')
+        }
+        finalize()
+        return
+      }
+
+      // Schedule next batch
+      requestAnimationFrame(processBatch)
+    }
+
+    const finalize = () => {
+      // Re-enable celebrations and stop fast forwarding
+      setCelebrationSuppressed(false)
+      set((s) => ({
+        isFastForwarding: false,
+        time: { ...s.time, isPaused: true },
+      }))
+    }
+
+    // Start processing on next frame
+    requestAnimationFrame(processBatch)
   },
 
   /* ── M&A System ── */
@@ -4437,6 +4865,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setAutoSellEnabled: (enabled) => set({ autoSellEnabled: enabled }),
   setAutoSellPercent: (percent) => set({ autoSellPercent: Math.max(1, Math.min(100, percent)) }),
 
+  /* ── Auto-HR (Smart Auto-Counseling) Actions ── */
+  setAutoHREnabled: (enabled) => set({ autoHREnabled: enabled }),
+  setAutoHRThreshold: (threshold) =>
+    set({ autoHRThreshold: Math.max(10, Math.min(100, threshold)) }),
+
   processAutoSell: () => {
     const state = get()
     if (!state.autoSellEnabled || state.autoSellPercent <= 0) return
@@ -4578,7 +5011,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // Get price history for technical analysis
     const priceHistory = getPriceHistory(companies)
 
-    // Process AI trading (with Mirror Rival personalization)
+    // Compute player taunt response effects on competitors
+    const currentTick = getAbsoluteTimestamp(time, updatedState.config.startYear)
+    const responseEffects = computePlayerResponseEffects(updatedState.taunts, currentTick)
+
+    // Process AI trading (with Mirror Rival personalization + player response effects)
     const actions = processAITrading(
       updatedState.competitors,
       companies,
@@ -4586,6 +5023,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       priceHistory,
       playerProfile,
       personalizationEnabled,
+      responseEffects,
     )
 
     // Filter out actions targeting VI-halted companies
@@ -4606,9 +5044,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const newTaunts = [...state.taunts]
       const batchTick = getAbsoluteTimestamp(state.time, state.config.startYear)
 
+      // Compute taunt suppression from player "humble" responses
+      const tauntResponseEffects = computePlayerResponseEffects(state.taunts, batchTick)
+
       actions.forEach((action) => {
         const competitor = newCompetitors.find((c) => c.id === action.competitorId)
         if (!competitor) return
+
+        // Player "humble" response → 50% chance to suppress this competitor's taunts
+        const isTauntSuppressed =
+          tauntResponseEffects[competitor.id]?.tauntSuppression && Math.random() < 0.5
 
         if (action.action === 'buy') {
           const cost = action.quantity * action.price
@@ -4659,20 +5104,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
           // Add taunt for panic sell and set cooldown
           if (action.action === 'panic_sell') {
             competitor.panicSellCooldown = PANIC_SELL_CONFIG.COOLDOWN_HOURS
-            const panicMsg = getRandomTauntFn('panic', state.time.hour, competitor.style)
+            if (!isTauntSuppressed) {
+              const panicMsg = getRandomTauntFn('panic', state.time.hour, competitor.style)
 
-            newTaunts.push({
-              competitorId: competitor.id,
-              competitorName: competitor.name,
-              message: `${competitor.name}: "${panicMsg}"`,
-              type: 'panic',
-              timestamp: batchTick,
-            })
+              newTaunts.push({
+                id: `taunt-${batchTick}-${competitor.id}-panic`,
+                competitorId: competitor.id,
+                competitorName: competitor.name,
+                message: `${competitor.name}: "${panicMsg}"`,
+                type: 'panic',
+                timestamp: batchTick,
+              })
+            }
           }
         }
 
-        // ✨ Core Values: Contextual trade brag (~8% probability)
-        if (action.action === 'buy' && Math.random() < 0.08) {
+        // ✨ Core Values: Contextual trade brag (~8% probability, suppressed by humble response)
+        if (action.action === 'buy' && Math.random() < 0.08 && !isTauntSuppressed) {
           const company = state.companies.find((c) => c.id === action.companyId)
           const bragMsg = getContextualTradeTaunt(competitor.style, {
             ticker: action.ticker ?? company?.ticker,
@@ -4680,6 +5128,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           })
           if (bragMsg) {
             newTaunts.push({
+              id: `taunt-${batchTick}-${competitor.id}-brag`,
               competitorId: competitor.id,
               competitorName: competitor.name,
               message: `${competitor.name}: "${bragMsg}"`,
@@ -4689,8 +5138,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
           }
         }
 
-        // ✨ Core Values: 대량 거래 알림 (자산의 15% 이상, 매수/매도 모두)
-        if (action.action === 'buy' || action.action === 'sell') {
+        // ✨ Core Values: 대량 거래 알림 (자산의 15% 이상, 매수/매도 모두, suppressed by humble response)
+        if ((action.action === 'buy' || action.action === 'sell') && !isTauntSuppressed) {
           const tradeValue = action.quantity * action.price
           const totalAssets = competitor.totalAssetValue || competitor.cash + tradeValue
           if (totalAssets > 0 && tradeValue / totalAssets >= 0.15) {
@@ -4701,6 +5150,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
               : `${(tradeValue / 10_000).toFixed(0)}만`
             const bigMsg = getBigTradeTaunt(competitor.style, { ticker, amount: amountText })
             newTaunts.push({
+              id: `taunt-${batchTick}-${competitor.id}-big`,
               competitorId: competitor.id,
               competitorName: competitor.name,
               message: `${competitor.name}: "${action.action === 'sell' ? '[매도] ' : ''}${bigMsg}"`,
@@ -4786,13 +5236,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   addTaunt: (taunt) => {
+    const tauntWithId: TauntMessage = taunt.id
+      ? (taunt as TauntMessage)
+      : { ...taunt, id: `taunt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` }
     set((state) => ({
-      taunts: [...state.taunts, taunt].slice(-20), // Keep last 20
+      taunts: [...state.taunts, tauntWithId].slice(-20), // Keep last 20
+    }))
+  },
+
+  respondToTaunt: (tauntId, response) => {
+    const responseMessage = getPlayerResponseMessage(response)
+    set((state) => ({
+      taunts: state.taunts.map((t) =>
+        t.id === tauntId && !t.playerResponse
+          ? { ...t, playerResponse: response, playerResponseMessage: responseMessage }
+          : t,
+      ),
     }))
   },
 
   /* ── Core Values: Rivalry Tracking ── */
   updateRivalryTracking: (competitorName: string, competitorIsAhead: boolean) => {
+    const prev = get().competitors.find((c) => c.name === competitorName)
+    const prevLosses = prev?.headToHeadLosses ?? 0
+
     set((st) => ({
       competitors: st.competitors.map((c) =>
         c.name === competitorName
@@ -4804,6 +5271,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
           : c,
       ),
     }))
+
+    // Player defeated rival (competitor lost): celebrate at 3-win milestones
+    if (!competitorIsAhead) {
+      const newLosses = prevLosses + 1
+      if (newLosses >= 3 && newLosses % 3 === 0) {
+        dispatchCelebration(celebrateRivalDefeated(competitorName, newLosses))
+      }
+    }
   },
 
   /* ── Institutional Investors ── */

@@ -19,6 +19,7 @@ import { EventChainTracker } from './EventChainTracker'
 import { AchievementLogWindow } from './AchievementLogWindow'
 import { SkillLibraryWindow } from './SkillLibraryWindow'
 import { TrainingCenterWindow } from './TrainingCenterWindow'
+import { PlaystyleWindow } from './PlaystyleWindow'
 import type { WindowType } from '../../types'
 
 const WINDOW_COMPONENTS: Record<WindowType, React.ComponentType<unknown>> = {
@@ -42,6 +43,7 @@ const WINDOW_COMPONENTS: Record<WindowType, React.ComponentType<unknown>> = {
   event_chain_tracker: EventChainTracker as React.ComponentType<unknown>,
   skill_library: SkillLibraryWindow as React.ComponentType<unknown>,
   training_center: TrainingCenterWindow as React.ComponentType<unknown>,
+  playstyle_analytics: PlaystyleWindow as React.ComponentType<unknown>,
 }
 
 export function WindowManager() {

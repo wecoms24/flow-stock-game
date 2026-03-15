@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { RetroPanel } from '../ui/RetroPanel'
@@ -12,6 +12,7 @@ import { getFeatureFlag } from '../../systems/featureFlags'
 import { historicalDataService } from '../../services/historicalDataService'
 import { KIS_CREDENTIALS_STORAGE_KEY } from '../../config/kisConfig'
 import { validateCredentials } from '../../services/kisAuthService'
+import { loadPrestige, getPrestigeStars, getPrestigeBonuses } from '../../systems/prestigeSystem'
 
 interface StartScreenProps {
   hasSave: boolean
@@ -78,6 +79,10 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
   const [companyName, setCompanyName] = useState('레트로 투자운용')
   const [investStyle, setInvestStyle] = useState<InvestmentStyle>('stable')
   const [companyLogo, setCompanyLogo] = useState('🏢')
+
+  // Prestige data
+  const prestige = useMemo(() => loadPrestige(), [])
+  const prestigeBonuses = useMemo(() => getPrestigeBonuses(), [])
 
   // 실시간 모드 상태
   const [kisAppKey, setKisAppKey] = useState('')
@@ -266,6 +271,17 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
             <div className="text-xs text-retro-gray">
               1995년부터 2025년까지, 30년간의 주식 투자 시뮬레이션
             </div>
+            {prestige.level > 0 && (
+              <div className="text-xs">
+                <span className="font-bold text-purple-700">
+                  {getPrestigeStars(prestige.level)} 프레스티지 Lv.{prestige.level}
+                </span>
+                <span className="text-retro-gray ml-1">
+                  · 초기 자본 +{Math.round((prestigeBonuses.cashMultiplier - 1) * 100)}%
+                  {prestigeBonuses.carryOverSkillId && ' · 스킬 이월'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Save Slot Display + Continue */}

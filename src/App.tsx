@@ -17,11 +17,16 @@ import { FloatingTextContainer } from './components/effects/FloatingText'
 import { TradeAnimationSequence } from './components/effects/TradeAnimationSequence'
 import { MarketClosedDialog } from './components/effects/MarketClosedDialog'
 import { RetroButton } from './components/ui/RetroButton'
+import { CeremonyOverlay } from './components/ui/CeremonyOverlay'
 import { OfficeToast } from './components/ui/OfficeToast'
 import { RegimeToast } from './components/ui/RegimeToast'
+import { DailyRecordToast } from './components/ui/DailyRecordToast'
 import { EmployeeMilestoneToast } from './components/effects/EmployeeMilestoneToast'
 import { RivalTradeToast } from './components/ui/RivalTradeToast'
+import { RankCelebration } from './components/ui/RankCelebration'
+import { CelebrationManager } from './components/ui/CelebrationManager'
 import { ChapterModal } from './components/tutorial/ChapterModal'
+import { FastForwardOverlay } from './components/ui/FastForwardOverlay'
 import { hasSaveData } from './systems/saveSystem'
 import { migrateIndexedDBToSQLite } from './systems/sqlite/migration'
 import { getFeatureFlag, setFeatureFlag } from './systems/featureFlags'
@@ -187,10 +192,15 @@ export default function App() {
         <LevelUpOverlay />
         <OfficeToast />
         <RegimeToast />
+        <DailyRecordToast />
         <EmployeeMilestoneToast />
         <RivalTradeToast />
+        <RankCelebration />
+        <CelebrationManager />
+        <CeremonyOverlay />
         <TradeAnimationSequence />
         <ChapterModal />
+        <FastForwardOverlay />
 
         {isGameOver && <EndingScreen />}
 

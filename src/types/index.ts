@@ -99,8 +99,11 @@ export interface PlayerState {
   officeLayout?: import('./office').OfficeLayout // ✨ 도트 형식 사무실 (새 시스템)
   lastDayChange: number // Yesterday's asset value change percentage
   previousDayAssets: number // Asset value at previous day start for change calculation
+  bestDayChange: number // Best single-day asset percentage change (record high)
+  worstDayChange: number // Worst single-day asset percentage change (record low)
   lastDailyTradeResetDay: number // ✨ 하루 거래 제한: 마지막 리셋 날짜
   dailyTradeCount: number // ✨ 하루 거래 제한: 오늘 실행된 거래 수
+  tradeStreak: number // ✨ 연속 수익 거래 카운터
 }
 
 export interface Employee {
@@ -326,7 +329,7 @@ export interface GameTime {
   isPaused: boolean
 }
 
-export type GameSpeed = 1 | 2 | 4
+export type GameSpeed = 1 | 2 | 4 | 8 | 16
 
 export const EventType = {
   Economic: 'Economic',
@@ -424,6 +427,7 @@ export type WindowType =
   | 'event_chain_tracker' // ✨ US6: 이벤트 체인 트래커
   | 'skill_library' // ✨ 스킬 도감/라이브러리
   | 'training_center' // ✨ 교육 센터
+  | 'playstyle_analytics' // ✨ 플레이스타일 분석
 
 export type WindowLayoutPreset =
   | 'trading'
@@ -559,6 +563,9 @@ export interface SaveData {
   realizedTrades?: import('./cashFlow').RealizedTrade[]
   monthlyCashFlowSummaries?: import('./cashFlow').MonthlySummary[]
 
+  // Auto-HR System
+  autoHREnabled?: boolean
+  autoHRThreshold?: number
   // ✨ UX Enhancement System (v7)
   animationQueue?: import('./animation').AnimationQueueState
   monthlyCards?: import('./newsCard').MonthlyCardDrawState
@@ -576,6 +583,9 @@ export interface SaveData {
   // Chapter & Company Profile (v9)
   chapterProgress?: import('./chapter').ChapterProgress
   companyProfile?: import('./chapter').CompanyProfile
+
+  // UX: pending ceremony state
+  pendingCeremony?: { type: string; fromLevel: number; toLevel: number } | null
 }
 
 export interface HourlyAccumulators {
@@ -622,12 +632,17 @@ export interface OrderFlow {
   tradeCount: number
 }
 
+export type PlayerTauntResponse = 'confident' | 'dismissive' | 'humble'
+
 export interface TauntMessage {
+  id: string
   competitorId: string
   competitorName: string
   message: string
-  type: 'rank_up' | 'rank_down' | 'overtake_player' | 'panic' | 'champion' | 'trade_brag' | 'big_trade'
+  type: 'rank_up' | 'rank_down' | 'overtake_player' | 'panic' | 'champion' | 'trade_brag' | 'big_trade' | 'rival_defeated'
   timestamp: number
+  playerResponse?: PlayerTauntResponse
+  playerResponseMessage?: string
 }
 
 /* ── Market Regime System (HMM-based) ── */

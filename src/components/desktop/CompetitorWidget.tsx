@@ -8,8 +8,18 @@ const STYLE_ICONS: Record<string, string> = {
   contrarian: '🐻',
 }
 
+function formatGap(amount: number): string {
+  const abs = Math.abs(amount)
+  if (abs >= 1_000_000_000_000) return `₩${(abs / 1_000_000_000_000).toFixed(1)}T`
+  if (abs >= 1_000_000_000) return `₩${(abs / 1_000_000_000).toFixed(1)}B`
+  if (abs >= 1_000_000) return `₩${(abs / 1_000_000).toFixed(1)}M`
+  if (abs >= 1_000) return `₩${(abs / 1_000).toFixed(0)}K`
+  return `₩${abs.toFixed(0)}`
+}
+
 export function CompetitorWidget() {
   const competitors = useGameStore((s) => s.competitors)
+  const playerTotalAssets = useGameStore((s) => s.player.totalAssetValue)
   const playerROI = useGameStore((s) => {
     const totalAssets = s.player.totalAssetValue
     const initialCash = s.config.initialCash
@@ -18,11 +28,21 @@ export function CompetitorWidget() {
 
   const prevRankRef = useRef<number | null>(null)
 
-  const { sorted, playerRank } = useMemo(() => {
+  const { sorted, playerRank, gapToFirst } = useMemo(() => {
     const sorted = [...competitors].sort((a, b) => b.roi - a.roi).slice(0, 3)
     const countAhead = competitors.filter((c) => c.roi > playerROI).length
-    return { sorted, playerRank: countAhead + 1 }
-  }, [competitors, playerROI])
+    const playerRank = countAhead + 1
+
+    let gapToFirst = 0
+    if (playerRank > 1) {
+      const firstPlace = competitors.reduce((best, c) =>
+        c.totalAssetValue > best.totalAssetValue ? c : best
+      , competitors[0])
+      gapToFirst = firstPlace.totalAssetValue - playerTotalAssets
+    }
+
+    return { sorted, playerRank, gapToFirst }
+  }, [competitors, playerROI, playerTotalAssets])
 
   const rankDelta = prevRankRef.current != null ? prevRankRef.current - playerRank : 0
 
@@ -38,6 +58,9 @@ export function CompetitorWidget() {
         #{playerRank}
         {rankDelta > 0 && <span className="text-stock-up ml-px">▲{rankDelta}</span>}
         {rankDelta < 0 && <span className="text-stock-down ml-px">▼{Math.abs(rankDelta)}</span>}
+      </span>
+      <span className="text-[7px] text-win-text opacity-60 mr-0.5">
+        {playerRank === 1 ? '1위 (나)' : `1위까지 ${formatGap(gapToFirst)}`}
       </span>
       {sorted.map((comp) => {
         const isAhead = comp.roi > playerROI

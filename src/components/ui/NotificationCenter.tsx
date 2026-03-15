@@ -19,30 +19,53 @@ const IMPORTANT_TYPES = [
   'regime_change', // 시장 레짐 변경 알림
 ]
 
+type NotificationFilter = 'all' | 'critical' | 'trade' | 'office'
+
+const FILTER_CATEGORIES: Record<NotificationFilter, string[]> = {
+  all: IMPORTANT_TYPES,
+  critical: ['resignation_warning', 'resignation', 'stressed_out', 'regime_change'],
+  trade: ['trade_executed', 'trade_failed'],
+  office: ['interaction', 'level_up', 'hire', 'counseling', 'conflict', 'mentoring', 'collaboration'],
+}
+
+const FILTER_LABELS: Record<NotificationFilter, string> = {
+  all: '전체',
+  critical: '긴급',
+  trade: '거래',
+  office: '오피스',
+}
+
 export function NotificationCenter() {
   const officeEvents = useGameStore((s) => s.officeEvents)
   const hour = useGameStore((s) => s.time.hour)
   const [isOpen, setIsOpen] = useState(false)
   const [lastReadIndex, setLastReadIndex] = useState(0)
+  const [filter, setFilter] = useState<NotificationFilter>('all')
 
-  const notifications = useMemo(() => {
+  const allNotifications = useMemo(() => {
     return officeEvents
       .filter((evt) => IMPORTANT_TYPES.some((t) => evt.type.includes(t)))
       .slice(-50) // 최근 50개만
       .reverse() // 최신순
   }, [officeEvents])
 
+  const notifications = useMemo(() => {
+    if (filter === 'all') return allNotifications
+    const types = FILTER_CATEGORIES[filter]
+    return allNotifications.filter((evt) => types.some((t) => evt.type.includes(t)))
+  }, [allNotifications, filter])
+
   const unreadCount = useMemo(() => {
-    return Math.max(0, notifications.length - lastReadIndex)
-  }, [notifications, lastReadIndex])
+    return Math.max(0, allNotifications.length - lastReadIndex)
+  }, [allNotifications, lastReadIndex])
 
   const handleToggle = useCallback(() => {
     if (!isOpen) {
       // 패널 열 때 현재 알림 수를 기록하여 읽음 처리
-      setLastReadIndex(notifications.length)
+      setLastReadIndex(allNotifications.length)
     }
     setIsOpen((prev) => !prev)
-  }, [isOpen, notifications.length])
+  }, [isOpen, allNotifications.length])
 
   return (
     <div className="relative">
@@ -75,6 +98,23 @@ export function NotificationCenter() {
             <div className="bg-win-title-active text-white px-2 py-1 text-xs font-bold flex items-center justify-between">
               <span>알림 센터</span>
               <span className="text-xs opacity-80">최근 {notifications.length}개</span>
+            </div>
+
+            {/* 필터 버튼 */}
+            <div className="flex gap-0.5 px-1 py-1 bg-win-face border-b border-win-shadow">
+              {(Object.keys(FILTER_LABELS) as NotificationFilter[]).map((key) => (
+                <button
+                  key={key}
+                  onClick={() => setFilter(key)}
+                  className={`px-1.5 py-0.5 text-[10px] ${
+                    filter === key
+                      ? 'win-pressed font-bold bg-win-highlight text-white'
+                      : 'win-outset bg-win-face hover:bg-win-highlight/20'
+                  }`}
+                >
+                  {FILTER_LABELS[key]}
+                </button>
+              ))}
             </div>
 
             {/* 알림 리스트 */}

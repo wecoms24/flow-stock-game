@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
-import type { Company, TradingStyle } from '../../types'
+import type { Company, TradingStyle, PlayerTauntResponse } from '../../types'
+import { PLAYER_RESPONSE_LABELS } from '../../data/taunts'
 
 /* ── Constants ── */
 const STYLE_EMOJI: Record<TradingStyle, string> = {
@@ -37,6 +38,7 @@ export function RankingWindow() {
   const competitorActions = useGameStore((s) => s.competitorActions)
   const playerProfile = useGameStore((s) => s.playerProfile)
   const personalizationEnabled = useGameStore((s) => s.personalizationEnabled)
+  const respondToTaunt = useGameStore((s) => s.respondToTaunt)
 
   const [selectedCompetitorId, setSelectedCompetitorId] = useState<string | null>(null)
 
@@ -84,6 +86,8 @@ export function RankingWindow() {
         totalAssets: player.totalAssetValue,
         roi: playerROI,
         oneDayChange: player.lastDayChange,
+        h2hWins: 0,
+        h2hLosses: 0,
       },
       ...competitors.map((c) => ({
         id: c.id,
@@ -93,6 +97,8 @@ export function RankingWindow() {
         totalAssets: c.totalAssetValue,
         roi: c.roi,
         oneDayChange: c.lastDayChange,
+        h2hWins: c.headToHeadWins ?? 0,
+        h2hLosses: c.headToHeadLosses ?? 0,
       })),
     ]
 
@@ -260,6 +266,7 @@ export function RankingWindow() {
                       <th className="p-1 text-right">자산</th>
                       <th className="p-1 text-right">수익률</th>
                       <th className="p-1 text-right">일간</th>
+                      <th className="p-1 text-center">전적</th>
                       <th className="p-1"></th>
                     </tr>
                   </thead>
@@ -307,6 +314,18 @@ export function RankingWindow() {
                           {entry.trend === 'up' && <span className="text-green-600">📈</span>}
                           {entry.trend === 'down' && <span className="text-red-600">📉</span>}
                           {entry.trend === 'same' && <span className="text-retro-gray">—</span>}
+                        </td>
+                        <td className="p-1 text-center font-mono text-[10px]">
+                          {!entry.isPlayer && (
+                            <span
+                              title={`${entry.h2hLosses ?? 0}승 ${entry.h2hWins ?? 0}패`}
+                            >
+                              {entry.h2hLosses ?? 0}승{entry.h2hWins ?? 0}패
+                            </span>
+                          )}
+                          {entry.isPlayer && (
+                            <span className="text-retro-gray">-</span>
+                          )}
                         </td>
                         <td className="p-1">
                           {!entry.isPlayer && (
@@ -362,11 +381,41 @@ export function RankingWindow() {
                                     ? 'bg-orange-50 border-l-2 border-orange-500'
                                     : taunt.type === 'trade_brag'
                                       ? 'bg-teal-50 border-l-2 border-teal-500'
-                                      : 'bg-blue-50 border-l-2 border-blue-500'
+                                      : taunt.type === 'rival_defeated'
+                                        ? 'bg-amber-50 border-l-2 border-amber-600'
+                                        : 'bg-blue-50 border-l-2 border-blue-500'
                           }`}
                         >
                           <span className="font-semibold">{taunt.competitorName}:</span>
                           <span className="ml-1 text-retro-gray">{taunt.message}</span>
+                          {/* Player Response */}
+                          {taunt.playerResponse ? (
+                            <div className="mt-1 text-[9px] p-1 bg-green-50 border-l-2 border-green-500 rounded">
+                              <span className="font-semibold">나:</span>
+                              <span className="ml-1 text-retro-gray">{taunt.playerResponseMessage}</span>
+                            </div>
+                          ) : (
+                            <div className="mt-1 flex gap-1">
+                              {(['confident', 'dismissive', 'humble'] as PlayerTauntResponse[]).map(
+                                (resp) => (
+                                  <button
+                                    key={resp}
+                                    onClick={() => respondToTaunt(taunt.id, resp)}
+                                    className="text-[8px] px-1.5 py-0.5 bg-win-face border border-win-shadow rounded hover:bg-win-highlight active:border-win-darkshadow cursor-pointer"
+                                    title={
+                                      resp === 'confident'
+                                        ? '상대가 20% 더 자주 거래 (50시간)'
+                                        : resp === 'humble'
+                                          ? '상대 도발 50% 감소 (100시간)'
+                                          : '효과 없음'
+                                    }
+                                  >
+                                    {PLAYER_RESPONSE_LABELS[resp]}
+                                  </button>
+                                ),
+                              )}
+                            </div>
+                          )}
                         </div>
                       ))}
                   </div>
@@ -451,6 +500,13 @@ export function RankingWindow() {
                     </div>
                     <div className="text-[10px] text-retro-gray">
                       전략: {STYLE_LABELS[selectedCompetitor.style]}
+                    </div>
+                    <div className="text-[10px] mt-1 font-mono">
+                      ⚔️ 전적: <span className="text-green-600">{selectedCompetitor.headToHeadLosses ?? 0}승</span>{' '}
+                      <span className="text-red-600">{selectedCompetitor.headToHeadWins ?? 0}패</span>
+                      {(selectedCompetitor.headToHeadLosses ?? 0) >= 3 && (
+                        <span className="ml-1 text-yellow-600 font-bold">🔥 라이벌!</span>
+                      )}
                     </div>
                   </div>
 
@@ -584,10 +640,35 @@ export function RankingWindow() {
                                   ? 'bg-red-50 border-l-2 border-red-500'
                                   : taunt.type === 'champion'
                                     ? 'bg-yellow-50 border-l-2 border-yellow-500'
-                                    : 'bg-blue-50 border-l-2 border-blue-500'
+                                    : taunt.type === 'rival_defeated'
+                                      ? 'bg-amber-50 border-l-2 border-amber-600'
+                                      : 'bg-blue-50 border-l-2 border-blue-500'
                               }`}
                             >
                               {taunt.message}
+                              {/* Player Response */}
+                              {taunt.playerResponse ? (
+                                <div className="mt-1 text-[9px] p-1 bg-green-50 border-l-2 border-green-500 rounded">
+                                  <span className="font-semibold">나:</span>
+                                  <span className="ml-1 text-retro-gray">
+                                    {taunt.playerResponseMessage}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="mt-1 flex gap-1">
+                                  {(
+                                    ['confident', 'dismissive', 'humble'] as PlayerTauntResponse[]
+                                  ).map((resp) => (
+                                    <button
+                                      key={resp}
+                                      onClick={() => respondToTaunt(taunt.id, resp)}
+                                      className="text-[8px] px-1.5 py-0.5 bg-win-face border border-win-shadow rounded hover:bg-win-highlight active:border-win-darkshadow cursor-pointer"
+                                    >
+                                      {PLAYER_RESPONSE_LABELS[resp]}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           ))}
                       </div>

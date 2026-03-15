@@ -48,6 +48,7 @@ export interface MonthlyCardDrawState {
   activeCards: ActiveNewsCard[] // 현재 적용 중인 카드 효과
   drawMonth: number // 카드를 뽑은 월 (중복 뽑기 방지)
   selectionDeadlineTick: number // 자동 선택 시한 (틱)
+  pendingNotification: boolean // 태스크바 뱃지 표시 여부
 }
 
 export interface ActiveNewsCard {

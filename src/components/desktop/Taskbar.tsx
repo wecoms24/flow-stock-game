@@ -27,6 +27,7 @@ const MENU_ITEMS = [
   { category: '정보', type: 'dashboard' as WindowType, icon: 'chart' as IconName, label: '대시보드', menuLabel: '종합 대시보드' },
   { category: '정보', type: 'monthly_cards' as WindowType, icon: 'news' as IconName, label: '월간 카드', menuLabel: '이달의 카드' },
   { category: '정보', type: 'event_chain_tracker' as WindowType, icon: 'news' as IconName, label: '이벤트', menuLabel: '이벤트 체인' },
+  { category: '정보', type: 'playstyle_analytics' as WindowType, icon: 'chart' as IconName, label: '분석', menuLabel: '플레이스타일 분석' },
   { category: '시스템', type: 'settings' as WindowType, icon: 'settings' as IconName, label: '설정', menuLabel: '설정' },
 ] as const
 
@@ -85,6 +86,7 @@ export function Taskbar() {
   const gameMode = useGameStore((s) => s.config.gameMode)
   const realtimeConnection = useGameStore((s) => s.realtimeConnection)
   const companyProfile = useGameStore((s) => s.companyProfile)
+  const monthlyCardPending = useGameStore((s) => s.monthlyCards.pendingNotification)
 
   const handleOpenWindow = (type: WindowType) => {
     // Institutional window needs a companyId prop
@@ -329,7 +331,7 @@ export function Taskbar() {
         <RetroButton size="sm" onClick={togglePause} title={time.isPaused ? '재생' : '일시정지'}>
           <span className="text-[10px]">{time.isPaused ? '▶' : '⏸'}</span>
         </RetroButton>
-        {([1, 2, 4] as const).map((spd) => (
+        {([1, 2, 4, 8, 16] as const).map((spd) => (
           <RetroButton
             key={spd}
             size="sm"
@@ -339,7 +341,32 @@ export function Taskbar() {
             {spd}x
           </RetroButton>
         ))}
+        <RetroButton
+          size="sm"
+          onClick={() => useGameStore.getState().fastForward()}
+          title="다음 이벤트까지 빨리감기 (최대 3개월)"
+          className="text-[10px]"
+        >
+          &gt;&gt;
+        </RetroButton>
       </div>
+
+      {/* Monthly Card Notification Badge */}
+      {monthlyCardPending && (
+        <RetroButton
+          size="sm"
+          onClick={() => {
+            openWindow('monthly_cards')
+            useGameStore.setState((s) => ({
+              monthlyCards: { ...s.monthlyCards, pendingNotification: false },
+            }))
+          }}
+          className="animate-pulse text-[10px] shrink-0"
+          title="이달의 카드가 도착했습니다!"
+        >
+          🃏 카드
+        </RetroButton>
+      )}
 
       <div className="w-px h-5 bg-win-shadow mx-0.5" />
 
