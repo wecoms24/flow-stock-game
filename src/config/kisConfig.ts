@@ -3,14 +3,14 @@
  * https://apiportal.koreainvestment.com
  */
 
-/** WebSocket 접속 URL */
+/** WebSocket 접속 URL (환경변수 우선, 없으면 기본값) */
 export const KIS_WS_URL = {
-  REAL: 'ws://ops.koreainvestment.com:21000',
-  DEMO: 'ws://ops.koreainvestment.com:31000',
+  REAL: (import.meta.env.VITE_KIS_WS_REAL as string) || 'ws://ops.koreainvestment.com:21000',
+  DEMO: (import.meta.env.VITE_KIS_WS_DEMO as string) || 'ws://ops.koreainvestment.com:31000',
 } as const
 
-/** REST API URL (Vite 프록시 경유) */
-export const KIS_REST_BASE = '/kis-api'
+/** REST API URL (환경변수 우선, 없으면 Vite 프록시 경유) */
+export const KIS_REST_BASE = (import.meta.env.VITE_KIS_REST_BASE as string) || '/kis-api'
 
 /** 실시간 체결가 TR ID */
 export const KIS_TR_ID = {
