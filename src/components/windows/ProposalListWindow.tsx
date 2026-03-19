@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
+import { EmptyState } from '../ui/EmptyState'
 import type { ProposalStatus, TradeProposal } from '../../types/trade'
 
 type FilterStatus = 'ALL' | ProposalStatus
@@ -149,7 +150,7 @@ export function ProposalListWindow() {
       {/* 제안서 리스트 */}
       <div className="flex-1 overflow-y-auto win-inset bg-white p-1">
         {filteredProposals.length === 0 ? (
-          <div className="text-center text-retro-gray py-4">제안서가 없습니다</div>
+          <EmptyState icon="📋" title="제안서가 없습니다" description="직원이 분석한 매매 제안이 여기에 표시됩니다" />
         ) : (
           <div className="space-y-1">
             {filteredProposals.map((proposal) => (

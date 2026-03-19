@@ -12,6 +12,7 @@ import {
 import type { Plugin } from 'chart.js'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
+import { EmptyState } from '../ui/EmptyState'
 import { getFearGreedIndex, isSentimentActive } from '../../engines/sentimentEngine'
 
 /* ── Event Marker + Band Plugin ── */
@@ -46,24 +47,41 @@ const eventMarkerPlugin: Plugin<'line', EventMarkerOptions> = {
     const fgi = options.fearGreedIndex
     if (fgi !== undefined && fgi !== null) {
       ctx.save()
-      const barWidth = chart.width - 40
-      const barX = 20
-      const barY = yAxis.top - 3
+      const barHeight = 8
+      const barWidth = chart.width - 80
+      const barX = 40
+      const barY = yAxis.top - barHeight - 4
 
       // 배경
       const grad = ctx.createLinearGradient(barX, 0, barX + barWidth, 0)
-      grad.addColorStop(0, 'rgba(0,0,255,0.3)')
-      grad.addColorStop(0.5, 'rgba(128,128,128,0.2)')
-      grad.addColorStop(1, 'rgba(255,0,0,0.3)')
+      grad.addColorStop(0, 'rgba(68,68,255,0.4)')
+      grad.addColorStop(0.5, 'rgba(128,128,128,0.25)')
+      grad.addColorStop(1, 'rgba(255,68,68,0.4)')
       ctx.fillStyle = grad
-      ctx.fillRect(barX, barY, barWidth, 3)
+      ctx.fillRect(barX, barY, barWidth, barHeight)
+
+      // 텍스트 라벨
+      ctx.font = '9px DungGeunMo, monospace'
+      ctx.fillStyle = '#4488FF'
+      ctx.textAlign = 'right'
+      ctx.fillText('공포', barX - 4, barY + barHeight - 1)
+      ctx.fillStyle = '#FF4444'
+      ctx.textAlign = 'left'
+      ctx.fillText('탐욕', barX + barWidth + 4, barY + barHeight - 1)
 
       // 인디케이터
       const indicatorX = barX + (fgi / 100) * barWidth
-      ctx.fillStyle = fgi > 60 ? '#FF4444' : fgi < 40 ? '#4444FF' : '#888888'
+      ctx.fillStyle = fgi > 60 ? '#FF4444' : fgi < 40 ? '#4488FF' : '#C0C0C0'
       ctx.beginPath()
-      ctx.arc(indicatorX, barY + 1.5, 3, 0, Math.PI * 2)
+      ctx.arc(indicatorX, barY + barHeight / 2, 5, 0, Math.PI * 2)
       ctx.fill()
+
+      // 수치 라벨
+      ctx.fillStyle = '#C0C0C0'
+      ctx.textAlign = 'center'
+      ctx.font = '8px DungGeunMo, monospace'
+      ctx.fillText(String(Math.round(fgi)), indicatorX, barY - 2)
+
       ctx.restore()
     }
 
@@ -128,9 +146,15 @@ const eventMarkerPlugin: Plugin<'line', EventMarkerOptions> = {
         : isPositive ? '💡'
         : '📰'
 
-      ctx.font = '10px serif'
+      ctx.font = '14px serif'
       ctx.textAlign = 'center'
-      ctx.fillText(icon, x, topY - 2)
+      // Glow effect for critical/high severity
+      if (severity === 'critical' || severity === 'high') {
+        ctx.shadowColor = severity === 'critical' ? 'rgba(255,0,0,0.8)' : 'rgba(255,165,0,0.6)'
+        ctx.shadowBlur = 8
+      }
+      ctx.fillText(icon, x, topY - 4)
+      ctx.shadowBlur = 0
 
       ctx.restore()
     })
@@ -372,9 +396,9 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
       datasets: [
         {
           data: history,
-          borderColor: selected.price >= selected.previousPrice ? '#FF0000' : '#0000FF',
+          borderColor: selected.price >= selected.previousPrice ? '#FF4444' : '#4488FF',
           backgroundColor:
-            selected.price >= selected.previousPrice ? 'rgba(255,0,0,0.1)' : 'rgba(0,0,255,0.1)',
+            selected.price >= selected.previousPrice ? 'rgba(255,68,68,0.15)' : 'rgba(68,136,255,0.15)',
           borderWidth: 1.5,
           pointRadius: 0,
           stepped: 'middle' as const,
@@ -451,6 +475,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
           display: true,
           ticks: {
             font: { family: 'DungGeunMo', size: 9 },
+            color: '#C0C0C0',
             maxRotation: 45,
             minRotation: 45,
             autoSkip: true,
@@ -459,15 +484,22 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
           grid: {
             display: false,
           },
+          border: {
+            color: 'rgba(192, 192, 192, 0.3)',
+          },
         },
         y: {
           ticks: {
             font: { family: 'DungGeunMo', size: 10 },
+            color: '#C0C0C0',
             callback: (value: string | number) =>
               typeof value === 'number' ? value.toLocaleString() : value,
           },
           grid: {
-            color: 'rgba(0,0,0,0.1)',
+            color: 'rgba(192, 192, 192, 0.12)',
+          },
+          border: {
+            color: 'rgba(192, 192, 192, 0.3)',
           },
         },
       },
@@ -475,6 +507,11 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
         tooltip: {
           titleFont: { family: 'DungGeunMo' },
           bodyFont: { family: 'DungGeunMo' },
+          backgroundColor: 'rgba(0, 0, 128, 0.92)',
+          titleColor: '#FFFFFF',
+          bodyColor: '#C0C0C0',
+          borderColor: '#C0C0C0',
+          borderWidth: 1,
         },
         eventMarkers: {
           markers: eventMarkers,
@@ -487,7 +524,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   )
 
   if (!selected || !chartData) {
-    return <div className="text-xs text-retro-gray">종목을 선택하세요</div>
+    return <EmptyState icon="📊" title="종목을 선택하세요" description="왼쪽 목록에서 관심 종목을 클릭하세요" />
   }
 
   const change = selected.price - selected.previousPrice
@@ -508,7 +545,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   return (
     <div className="flex flex-col h-full text-xs">
       {/* 통합 필터 패널 */}
-      <div className="win-inset bg-white p-1 mb-1 space-y-1">
+      <div className="win-inset bg-[#1a1a2e] p-1 mb-1 space-y-1 text-retro-silver">
         {/* 검색창 + 정렬 + 필터 토글 */}
         <div className="flex items-center gap-1">
           <input
@@ -516,12 +553,12 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
             placeholder="🔍 티커/이름 검색..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 win-inset bg-white px-1.5 py-0.5 text-xs"
+            className="flex-1 win-inset bg-[#0c0c1e] px-1.5 py-0.5 text-xs text-retro-silver"
           />
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as SortOption)}
-            className="win-inset bg-white px-1 py-0.5 text-xs"
+            className="win-inset bg-[#0c0c1e] text-retro-silver px-1 py-0.5 text-xs"
           >
             <option value="name">이름순</option>
             <option value="price">가격순</option>
@@ -663,7 +700,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
 
       {/* Price info */}
       <div className="flex items-baseline gap-2 mb-1">
-        <span className="text-base font-bold">{selected.price.toLocaleString()}원</span>
+        <span className="text-base font-bold tabular-nums">{selected.price.toLocaleString()}원</span>
         <span className={`font-bold ${isUp ? 'text-stock-up' : 'text-stock-down'}`}>
           {isUp ? '▲' : '▼'} {Math.abs(change).toLocaleString()} ({isUp ? '+' : ''}
           {changePercent.toFixed(2)}%)
@@ -671,14 +708,14 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
       </div>
 
       {/* Chart */}
-      <div className={`flex-1 min-h-0 transition-colors duration-500 ${isFlashing ? 'bg-yellow-100/40' : ''}`}>
+      <div className={`flex-1 min-h-0 transition-colors duration-500 bg-[#1a1a2e] win-inset ${isFlashing ? 'brightness-125' : ''}`}>
         <Line data={chartData} options={chartOptions} />
       </div>
 
       {/* Sentiment Indicator */}
       {fearGreedIdx !== undefined && (
-        <div className="mt-1 win-inset bg-white px-2 py-0.5 text-[10px] flex items-center gap-2">
-          <span className="text-retro-gray">센티먼트:</span>
+        <div className="mt-1 win-inset bg-[#1a1a2e] px-2 py-1 text-[10px] flex items-center gap-2">
+          <span className="text-retro-gray font-bold">공포</span>
           <span
             className={`font-bold ${fearGreedIdx > 60 ? 'text-red-500' : fearGreedIdx < 40 ? 'text-blue-500' : 'text-gray-600'}`}
           >
@@ -692,13 +729,14 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
                     ? '공포'
                     : '중립'}
           </span>
-          <span className="text-retro-gray">({Math.round(fearGreedIdx)})</span>
+          <span className="text-retro-silver tabular-nums">({Math.round(fearGreedIdx)})</span>
+          <span className="text-retro-gray font-bold">탐욕</span>
         </div>
       )}
 
       {/* Event Info Panel */}
       {showEventMarkers && relevantEvents.length > 0 && (
-        <div className="mt-1 win-inset bg-white p-1 text-[10px] overflow-y-auto">
+        <div className="mt-1 win-inset bg-[#1a1a2e] p-1 text-[10px] text-retro-silver overflow-y-auto">
           <div className="font-bold mb-0.5">관련 이벤트 ({relevantEvents.length})</div>
           <div className="space-y-0.5">
             {relevantEvents.slice(0, 5).map((evt) => {

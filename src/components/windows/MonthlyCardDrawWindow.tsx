@@ -7,6 +7,7 @@
 import { useCallback, useMemo } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { NewsCardComponent } from '../ui/NewsCard'
+import { EmptyState } from '../ui/EmptyState'
 
 export function MonthlyCardDrawWindow() {
   const monthlyCards = useGameStore((s) => s.monthlyCards)
@@ -40,15 +41,11 @@ export function MonthlyCardDrawWindow() {
 
   if (!isDrawn) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-400">
-        <div className="text-center">
-          <p className="text-lg mb-2">🃏</p>
-          <p className="text-xs">다음 달 초에 카드가 배분됩니다</p>
-          <p className="text-[10px] text-gray-500 mt-1">
-            {time.year}년 {time.month}월
-          </p>
-        </div>
-      </div>
+      <EmptyState
+        icon="🃏"
+        title="다음 달 초에 카드가 배분됩니다"
+        description={`${time.year}년 ${time.month}월`}
+      />
     )
   }
 
@@ -85,7 +82,7 @@ export function MonthlyCardDrawWindow() {
 
       {/* Cards */}
       <div className="flex justify-center gap-3 flex-1 items-center">
-        {availableCards.map((card) => {
+        {availableCards.map((card, i) => {
           const isSelected = selectedCardIds.includes(card.id)
           const isDisabled = !isSelected && selectedCardIds.length >= 2
           return (
@@ -95,6 +92,7 @@ export function MonthlyCardDrawWindow() {
               isSelected={isSelected}
               isDisabled={isDisabled}
               onSelect={handleSelect}
+              index={i}
             />
           )
         })}

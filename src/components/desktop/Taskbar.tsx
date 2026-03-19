@@ -13,11 +13,11 @@ const MENU_ITEMS = [
   { category: '거래', type: 'portfolio' as WindowType, icon: 'portfolio' as IconName, label: '포트폴리오', menuLabel: '포트폴리오' },
   { category: '거래', type: 'chart' as WindowType, icon: 'chart' as IconName, label: '차트', menuLabel: '차트' },
   { category: '거래', type: 'trading' as WindowType, icon: 'trading' as IconName, label: '매매', menuLabel: '매매' },
+  { category: '관리', type: 'office' as WindowType, icon: 'office' as IconName, label: '사무실', menuLabel: '사무실' },
+  { category: '정보', type: 'news' as WindowType, icon: 'news' as IconName, label: '뉴스', menuLabel: '뉴스' },
   { category: '거래', type: 'proposals' as WindowType, icon: 'proposal' as IconName, label: '제안서', menuLabel: 'AI 제안서' },
   { category: '거래', type: 'acquisition' as WindowType, icon: 'mna' as IconName, label: 'M&A', menuLabel: '기업 인수(M&A)' },
-  { category: '정보', type: 'news' as WindowType, icon: 'news' as IconName, label: '뉴스', menuLabel: '뉴스' },
   { category: '정보', type: 'institutional' as WindowType, icon: 'institution' as IconName, label: '기관', menuLabel: '기관 투자자' },
-  { category: '관리', type: 'office' as WindowType, icon: 'office' as IconName, label: '사무실', menuLabel: '사무실' },
   { category: '관리', type: 'office_history' as WindowType, icon: 'office_history' as IconName, label: '히스토리', menuLabel: '사무실 히스토리' },
   { category: '관리', type: 'employee_detail' as WindowType, icon: 'employee' as IconName, label: '직원 정보', menuLabel: '직원 정보' },
   { category: '관리', type: 'ranking' as WindowType, icon: 'ranking' as IconName, label: '랭킹', menuLabel: '랭킹' },
@@ -199,7 +199,7 @@ export function Taskbar() {
                       className="text-xs w-full justify-start mb-0.5"
                     >
                       <span className="flex items-center gap-2">
-                        <PixelIcon name={item.icon} size={14} />
+                        <PixelIcon name={item.icon} size="lg" />
                         {item.label}
                       </span>
                     </RetroButton>
@@ -220,15 +220,16 @@ export function Taskbar() {
       <div className="w-px h-5 bg-win-shadow mx-0.5" />
 
       {/* Quick launch — 상위 6개만 표시, 나머지 접기 */}
-      {TASKBAR_ITEMS.slice(0, 6).map((item) => (
+      {TASKBAR_ITEMS.slice(0, 4).map((item) => (
         <RetroButton
           key={item.type}
           size="sm"
           onClick={() => handleOpenWindow(item.type)}
           title={item.label}
           className="relative"
+          data-tutorial={`quick-launch-${item.type}`}
         >
-          <PixelIcon name={item.icon} size={14} />
+          <PixelIcon name={item.icon} size="md" />
           {item.type === 'news' && unreadNewsCount > 0 && (
             <span className="absolute -top-1 -right-1 bg-stock-up text-retro-white text-[10px] leading-none px-1 rounded-sm min-w-[12px] text-center">
               {unreadNewsCount > 9 ? '9+' : unreadNewsCount}
@@ -236,7 +237,7 @@ export function Taskbar() {
           )}
         </RetroButton>
       ))}
-      {TASKBAR_ITEMS.length > 6 && (
+      {TASKBAR_ITEMS.length > 4 && (
         <div className="relative shrink-0" ref={moreIconsRef}>
           <RetroButton
             size="sm"
@@ -248,7 +249,7 @@ export function Taskbar() {
           </RetroButton>
           {showMoreIcons && (
             <div className="absolute bottom-full left-0 mb-1 win-outset bg-win-face p-1 space-y-0.5 z-50">
-              {TASKBAR_ITEMS.slice(6).map((item) => (
+              {TASKBAR_ITEMS.slice(4).map((item) => (
                 <RetroButton
                   key={item.type}
                   size="sm"
@@ -259,7 +260,7 @@ export function Taskbar() {
                   className="text-[10px] w-full justify-start"
                 >
                   <span className="flex items-center gap-1">
-                    <PixelIcon name={item.icon} size={14} />
+                    <PixelIcon name={item.icon} size="md" />
                     {item.label}
                   </span>
                 </RetroButton>
@@ -327,7 +328,7 @@ export function Taskbar() {
       </div>
 
       {/* Speed controls */}
-      <div className="flex items-center gap-0.5 shrink-0">
+      <div className="flex items-center gap-0.5 shrink-0" data-tutorial="speed-controls">
         <RetroButton size="sm" onClick={togglePause} title={time.isPaused ? '재생' : '일시정지'}>
           <span className="text-[10px]">{time.isPaused ? '▶' : '⏸'}</span>
         </RetroButton>
@@ -336,7 +337,7 @@ export function Taskbar() {
             key={spd}
             size="sm"
             onClick={() => setSpeed(spd)}
-            className={`text-[10px] ${time.speed === spd ? 'win-pressed font-bold' : ''}`}
+            className={`text-[10px] ${time.speed === spd ? 'win-pressed font-bold !bg-win-title-active !text-white' : ''}`}
           >
             {spd}x
           </RetroButton>
@@ -361,7 +362,7 @@ export function Taskbar() {
               monthlyCards: { ...s.monthlyCards, pendingNotification: false },
             }))
           }}
-          className="animate-pulse text-[10px] shrink-0"
+          className="animate-bounce text-[10px] shrink-0"
           title="이달의 카드가 도착했습니다!"
         >
           🃏 카드

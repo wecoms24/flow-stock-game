@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useGameStore } from '../../stores/gameStore'
+import { EmptyState } from '../ui/EmptyState'
+import { SkeletonLoader } from '../ui/SkeletonLoader'
 import type { NewsSentiment } from '../../types'
 
 const PAGE_SIZE = 20
@@ -21,7 +23,9 @@ export function NewsWindow() {
   return (
     <div className="text-xs space-y-1">
       {news.length === 0 ? (
-        <div className="text-retro-gray text-center py-4">뉴스가 없습니다</div>
+        <EmptyState icon="📰" title="뉴스가 없습니다" description="게임이 진행되면 시장 뉴스가 여기에 표시됩니다">
+          <SkeletonLoader lines={3} className="mt-2 w-48" />
+        </EmptyState>
       ) : (
         <>
           {visibleNews.map((item) => {

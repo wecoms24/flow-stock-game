@@ -1,3 +1,4 @@
+import { AnimatePresence } from 'motion/react'
 import { useGameStore } from '../../stores/gameStore'
 import { WindowFrame } from './WindowFrame'
 import { PortfolioWindow } from './PortfolioWindow'
@@ -50,7 +51,7 @@ export function WindowManager() {
   const windows = useGameStore((s) => s.windows)
 
   return (
-    <>
+    <AnimatePresence mode="popLayout">
       {windows.map((win) => {
         const Component = WINDOW_COMPONENTS[win.type]
         return (
@@ -59,6 +60,6 @@ export function WindowManager() {
           </WindowFrame>
         )
       })}
-    </>
+    </AnimatePresence>
   )
 }

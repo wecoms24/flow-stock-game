@@ -249,16 +249,16 @@ function OverviewTab() {
       <div className="win-inset bg-white p-2 space-y-1">
         <div className="flex justify-between">
           <span className="text-retro-gray">보유 현금</span>
-          <span className="font-bold">{player.cash.toLocaleString()}원</span>
+          <span className="font-bold tabular-nums">{player.cash.toLocaleString()}원</span>
         </div>
         <div className="flex justify-between">
           <span className="text-retro-gray">주식 평가</span>
-          <span className="font-bold">{totalStockValue.toLocaleString()}원</span>
+          <span className="font-bold tabular-nums">{totalStockValue.toLocaleString()}원</span>
         </div>
         <hr className="border-win-shadow" />
-        <div className="flex justify-between">
-          <span className="text-retro-gray">총 자산</span>
-          <span className="font-bold text-retro-darkblue">{totalAssets.toLocaleString()}원</span>
+        <div className="flex justify-between items-baseline">
+          <span className="text-retro-gray font-bold">총 자산</span>
+          <span className="font-bold text-retro-darkblue text-xl tabular-nums">{totalAssets.toLocaleString()}원</span>
         </div>
 
         {/* Cash/Stock ratio bar */}

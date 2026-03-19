@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useGameStore } from './stores/gameStore'
 import { initTickEngine, startTickLoop, destroyTickEngine } from './engines/tickEngine'
 import { validateSkillTree } from './systems/skillSystem'
@@ -18,15 +18,13 @@ import { TradeAnimationSequence } from './components/effects/TradeAnimationSeque
 import { MarketClosedDialog } from './components/effects/MarketClosedDialog'
 import { RetroButton } from './components/ui/RetroButton'
 import { CeremonyOverlay } from './components/ui/CeremonyOverlay'
-import { OfficeToast } from './components/ui/OfficeToast'
-import { RegimeToast } from './components/ui/RegimeToast'
-import { DailyRecordToast } from './components/ui/DailyRecordToast'
-import { EmployeeMilestoneToast } from './components/effects/EmployeeMilestoneToast'
-import { RivalTradeToast } from './components/ui/RivalTradeToast'
+import { ToastContainer, showToast } from './components/ui/ToastContainer'
 import { RankCelebration } from './components/ui/RankCelebration'
 import { CelebrationManager } from './components/ui/CelebrationManager'
 import { ChapterModal } from './components/tutorial/ChapterModal'
+import { TutorialSpotlight, isTutorialCompleted } from './components/tutorial/TutorialSpotlight'
 import { FastForwardOverlay } from './components/ui/FastForwardOverlay'
+import { useScreenShake, registerShakeHandler, triggerScreenShake } from './hooks/useScreenShake'
 import { hasSaveData } from './systems/saveSystem'
 import { migrateIndexedDBToSQLite } from './systems/sqlite/migration'
 import { getFeatureFlag, setFeatureFlag } from './systems/featureFlags'
@@ -39,7 +37,90 @@ export default function App() {
   const checkEnding = useGameStore((s) => s.checkEnding)
   const [hasSave, setHasSave] = useState(false)
   const [showMigrationBanner, setShowMigrationBanner] = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false)
   const rankChange = useRankChangeNotification()
+  const desktopRef = useRef<HTMLDivElement>(null)
+  const shake = useScreenShake(desktopRef)
+
+  // Register global shake handler so engines can trigger shakes
+  useEffect(() => {
+    return registerShakeHandler(shake)
+  }, [shake])
+
+  // Bridge existing CustomEvent toasts → unified ToastContainer
+  useEffect(() => {
+    const handleRegimeChange = (e: Event) => {
+      const { regime, message } = (e as CustomEvent).detail
+      const typeMap: Record<string, 'info' | 'warning' | 'critical'> = {
+        CALM: 'info', VOLATILE: 'warning', CRISIS: 'critical',
+      }
+      showToast({ type: typeMap[regime] ?? 'info', title: '시장 레짐 변경', message, icon: regime === 'CRISIS' ? '🔴' : regime === 'VOLATILE' ? '🟡' : '🟢' })
+      if (regime === 'CRISIS') triggerScreenShake('heavy')
+      else if (regime === 'VOLATILE') triggerScreenShake('medium')
+    }
+    const handleDailyRecord = (e: Event) => {
+      const { type, changePercent } = (e as CustomEvent).detail
+      const isBest = type === 'best'
+      showToast({
+        type: isBest ? 'success' : 'critical',
+        title: isBest ? '최고의 날!' : '최악의 날...',
+        message: `${isBest ? '+' : ''}${changePercent.toFixed(1)}%`,
+        icon: isBest ? '📈' : '📉',
+      })
+    }
+    const handleCircuitBreaker = (e: Event) => {
+      const { level } = (e as CustomEvent).detail
+      showToast({ type: 'critical', title: `서킷브레이커 Level ${level}`, message: '시장 전체 거래가 일시 중단됩니다', icon: '🚨', duration: 8000 })
+      triggerScreenShake('heavy')
+    }
+    window.addEventListener('regimeChange', handleRegimeChange)
+    window.addEventListener('dailyRecord', handleDailyRecord)
+    window.addEventListener('circuitBreaker', handleCircuitBreaker)
+    return () => {
+      window.removeEventListener('regimeChange', handleRegimeChange)
+      window.removeEventListener('dailyRecord', handleDailyRecord)
+      window.removeEventListener('circuitBreaker', handleCircuitBreaker)
+    }
+  }, [])
+
+  // Bridge store-based toasts → unified ToastContainer
+  useEffect(() => {
+    const lastOffice = { count: 0 }
+    const lastTaunts = { count: 0 }
+    const lastMilestones = { count: 0 }
+    const unsub = useGameStore.subscribe((s) => {
+      // Office events
+      if (s.officeEvents.length > lastOffice.count) {
+        const newEvents = s.officeEvents.slice(lastOffice.count)
+        const importantTypes = ['level_up', 'hire', 'resignation', 'trade_executed', 'counseling', 'collaboration']
+        for (const evt of newEvents) {
+          if (importantTypes.includes(evt.type)) {
+            showToast({ type: 'info', title: evt.emoji + ' 사무실', message: evt.message, duration: 4000 })
+          }
+        }
+        lastOffice.count = s.officeEvents.length
+      }
+      // Rival taunts (big_trade)
+      if (s.taunts.length > lastTaunts.count) {
+        const newTaunts = s.taunts.slice(lastTaunts.count)
+        for (const t of newTaunts) {
+          if (t.type === 'big_trade') {
+            showToast({ type: 'warning', title: '📢 ' + t.competitorName, message: t.message, duration: 5000 })
+          }
+        }
+        lastTaunts.count = s.taunts.length
+      }
+      // Employee milestones
+      if (s.milestoneNotifications.length > lastMilestones.count) {
+        const newMilestones = s.milestoneNotifications.slice(lastMilestones.count)
+        for (const m of newMilestones) {
+          showToast({ type: 'success', title: m.icon + ' ' + m.title, message: `${m.employeeName}: ${m.description}`, duration: 4000 })
+        }
+        lastMilestones.count = s.milestoneNotifications.length
+      }
+    })
+    return unsub
+  }, [])
 
   // Check for existing save on mount + show migration prompt if needed
   useEffect(() => {
@@ -106,6 +187,12 @@ export default function App() {
       destroyTickEngine()
       initTickEngine()
       startTickLoop()
+      // Show tutorial on first game start
+      if (!isTutorialCompleted()) {
+        // Delay to let UI render first
+        const timer = setTimeout(() => setShowTutorial(true), 1000)
+        return () => clearTimeout(timer)
+      }
     }
   }, [isGameStarted])
 
@@ -149,7 +236,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="w-screen h-screen bg-win-bg overflow-hidden">
+      <div ref={desktopRef} className="w-screen h-screen bg-win-bg overflow-hidden">
         {/* Migration banner */}
         {showMigrationBanner && (
           <div className="absolute top-0 left-0 right-0 z-[9999] bg-retro-yellow text-retro-black win-outset p-3 flex items-center justify-between">
@@ -186,21 +273,24 @@ export default function App() {
 
         <Taskbar />
 
+        {/* Unified toast system */}
+        <ToastContainer />
+
         {/* Visual effects */}
         <StockParticles />
         <FloatingTextContainer />
         <LevelUpOverlay />
-        <OfficeToast />
-        <RegimeToast />
-        <DailyRecordToast />
-        <EmployeeMilestoneToast />
-        <RivalTradeToast />
         <RankCelebration />
         <CelebrationManager />
         <CeremonyOverlay />
         <TradeAnimationSequence />
         <ChapterModal />
         <FastForwardOverlay />
+
+        {/* Tutorial spotlight overlay */}
+        {showTutorial && (
+          <TutorialSpotlight onComplete={() => setShowTutorial(false)} />
+        )}
 
         {isGameOver && <EndingScreen />}
 
