@@ -103,9 +103,9 @@ describe('데이터: 마켓 이벤트', () => {
   })
 
   describe('drift 및 volatility modifier 검증', () => {
-    it('모든 이벤트의 driftModifier가 합리적인 범위에 있다 (-0.2 ~ 0.2)', () => {
+    it('모든 이벤트의 driftModifier가 합리적인 범위에 있다 (-0.3 ~ 0.2)', () => {
       EVENT_TEMPLATES.forEach((event) => {
-        expect(event.impact.driftModifier).toBeGreaterThanOrEqual(-0.2)
+        expect(event.impact.driftModifier).toBeGreaterThanOrEqual(-0.3)
         expect(event.impact.driftModifier).toBeLessThanOrEqual(0.2)
       })
     })

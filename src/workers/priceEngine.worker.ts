@@ -289,14 +289,36 @@ self.onmessage = (e: MessageEvent<TickMessage>) => {
       }
     }
 
+    // ── Crisis drift amplification ──
+    // When event-driven sentiment is strongly negative, amplify the downward
+    // pressure and dampen random noise so crises produce visible price drops.
+    // "sentimentDrift" here means the cumulative drift contribution from events
+    // (event modifiers + sentiment modifiers), excluding the company's own
+    // base drift and fundamental adjustments.
+    const eventDrift = mu - adjustedDrift // isolate event/sentiment contribution
+    if (eventDrift < -0.05) {
+      // Scale negative event drift by 1.5x–2x depending on severity
+      // -0.05 → 1.5x, -0.15+ → 2.0x (linear interpolation)
+      const severity = Math.min(1, (Math.abs(eventDrift) - 0.05) / 0.10)
+      const amplification = 1.5 + severity * 0.5 // 1.5x to 2.0x
+      const amplifiedEventDrift = eventDrift * amplification
+      mu = adjustedDrift + amplifiedEventDrift
+
+      // Reduce random noise during crisis so the downward trend is visible
+      // Dampen volatility by 0.7x–0.85x (stronger dampening for stronger crises)
+      const noiseDampen = 0.85 - severity * 0.15 // 0.85 to 0.70
+      sigma *= noiseDampen
+    }
+
     // Clamp parameters to prevent extreme price movements
-    // Drift: limit to ±10% annualized (reduced from ±20% for stability)
-    const MAX_DRIFT = 0.1 // ±10% annualized
-    mu = Math.max(-MAX_DRIFT, Math.min(MAX_DRIFT, mu))
+    // Drift: asymmetric limits — allow stronger downside during crises
+    const MAX_POSITIVE_DRIFT = 0.15 // +15% annualized
+    const MAX_NEGATIVE_DRIFT = 0.30 // -30% annualized (allow crisis impact)
+    mu = Math.max(-MAX_NEGATIVE_DRIFT, Math.min(MAX_POSITIVE_DRIFT, mu))
 
     // Volatility: prevent both negative and explosive volatility
-    // Cap at 1.5x base volatility (reduced from 3x for stability)
-    const MAX_VOLATILITY_MULTIPLIER = 1.5
+    // Cap at 2.5x base volatility (raised from 1.5x to let crises feel volatile)
+    const MAX_VOLATILITY_MULTIPLIER = 2.5
     sigma = Math.max(0.01, Math.min(baseSigma * MAX_VOLATILITY_MULTIPLIER, sigma))
 
     // Compute raw GBM price
