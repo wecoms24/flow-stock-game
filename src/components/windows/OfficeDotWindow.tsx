@@ -263,8 +263,8 @@ export function OfficeDotWindow() {
     // 레벨별 사무실 테마 배경
     const level = player.officeLevel
     const themes: Record<number, { bg: string; floor: string; wall: string; accent: string }> = {
-      1: { bg: '#3a3a3a', floor: '#4a4a4a', wall: '#2a2a2a', accent: '#555' },       // 지하 창고
-      2: { bg: '#4a4a4a', floor: '#5a5a5a', wall: '#3d3d3d', accent: '#666' },       // 작은 사무실
+      1: { bg: '#c8b8a0', floor: '#b8a888', wall: '#d8c8b0', accent: '#a09070' },    // 창고 (밝은 베이지)
+      2: { bg: '#d0c0a8', floor: '#c0b098', wall: '#ddd0b8', accent: '#a89878' },    // 작은 사무실
       3: { bg: '#e8dcc8', floor: '#d4ccb8', wall: '#f0ece4', accent: '#c4b090' },    // 개선된 사무실
       4: { bg: '#e0e8f0', floor: '#c8d4e0', wall: '#eef2f7', accent: '#a0b0c4' },    // 깔끔한 오피스
       5: { bg: '#f0f4f8', floor: '#dce4ec', wall: '#ffffff', accent: '#94a8c0' },     // 모던 오피스
@@ -284,17 +284,24 @@ export function OfficeDotWindow() {
     ctx.fillStyle = bgGrad
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT)
 
-    // 바닥 패턴 (체크무늬)
-    ctx.globalAlpha = 0.08
-    for (let gx = 0; gx < CANVAS_WIDTH; gx += 40) {
-      for (let gy = Math.floor(CANVAS_HEIGHT * 0.5); gy < CANVAS_HEIGHT; gy += 40) {
-        if ((gx / 40 + gy / 40) % 2 === 0) {
-          ctx.fillStyle = theme.accent
-          ctx.fillRect(gx, gy, 40, 40)
-        }
+    // 바닥 타일 패턴
+    const tileSize = 40
+    const floorStart = Math.floor(CANVAS_HEIGHT * 0.45)
+    for (let gx = 0; gx < CANVAS_WIDTH; gx += tileSize) {
+      for (let gy = floorStart; gy < CANVAS_HEIGHT; gy += tileSize) {
+        const isLight = (gx / tileSize + gy / tileSize) % 2 === 0
+        ctx.fillStyle = isLight ? theme.floor : theme.bg
+        ctx.globalAlpha = 0.3
+        ctx.fillRect(gx, gy, tileSize, tileSize)
+        ctx.globalAlpha = 1.0
+        // 타일 경계선
+        ctx.strokeStyle = theme.accent
+        ctx.lineWidth = 0.5
+        ctx.globalAlpha = 0.15
+        ctx.strokeRect(gx, gy, tileSize, tileSize)
+        ctx.globalAlpha = 1.0
       }
     }
-    ctx.globalAlpha = 1.0
 
     // 벽-바닥 경계선
     const floorY = Math.floor(CANVAS_HEIGHT * 0.45)
