@@ -22,8 +22,8 @@ export function StockTicker() {
   )
 
   return (
-    <div className="fixed top-0 left-0 right-0 h-5 bg-retro-black z-[10000] overflow-hidden flex items-center">
-      <div className="ticker-scroll whitespace-nowrap flex gap-6 text-[11px]">
+    <div className="fixed top-0 left-0 right-0 h-7 bg-retro-black z-[10000] overflow-hidden flex items-center">
+      <div className="ticker-scroll whitespace-nowrap flex gap-6 text-[13px]">
         {/* Render twice for seamless CSS animation loop */}
         {[0, 1].map((pass) =>
           tickerItems.map((item) => (

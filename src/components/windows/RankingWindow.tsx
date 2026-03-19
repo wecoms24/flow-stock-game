@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
+import { CompetitorPortrait } from '../ui/CompetitorPortrait'
 import type { Company, TradingStyle, PlayerTauntResponse } from '../../types'
 import { PLAYER_RESPONSE_LABELS } from '../../data/taunts'
 
@@ -293,13 +294,21 @@ export function RankingWindow() {
                           </span>
                         </td>
                         <td className="p-1">
-                          {entry.style && (
-                            <span className="mr-0.5">{STYLE_EMOJI[entry.style]}</span>
-                          )}
-                          {entry.name}
-                          {entry.isPlayer && (
-                            <span className="ml-1 text-[9px] text-win-highlight-text">(나)</span>
-                          )}
+                          <div className="flex items-center gap-1">
+                            {entry.style && (
+                              <CompetitorPortrait
+                                style={entry.style}
+                                mood={entry.roi > 0 ? 'winning' : entry.roi < -10 ? 'panic' : 'normal'}
+                                size={20}
+                              />
+                            )}
+                            <span>
+                              {entry.name}
+                              {entry.isPlayer && (
+                                <span className="ml-1 text-[9px] text-win-highlight-text">(나)</span>
+                              )}
+                            </span>
+                          </div>
                         </td>
                         <td className="p-1 text-right font-mono">
                           {formatCurrency(entry.totalAssets)}

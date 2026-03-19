@@ -1,12 +1,7 @@
 import { useMemo, useRef, useEffect } from 'react'
 import { useGameStore } from '../../stores/gameStore'
-
-const STYLE_ICONS: Record<string, string> = {
-  aggressive: '🦈',
-  conservative: '🐢',
-  'trend-follower': '🏄',
-  contrarian: '🐻',
-}
+import { CompetitorPortrait } from '../ui/CompetitorPortrait'
+import type { TradingStyle } from '../../types'
 
 function formatGap(amount: number): string {
   const abs = Math.abs(amount)
@@ -73,7 +68,11 @@ export function CompetitorWidget() {
             className="flex items-center gap-0.5 text-[9px] tabular-nums"
             title={`${comp.name} (${comp.style})\nROI: ${comp.roi >= 0 ? '+' : ''}${comp.roi.toFixed(1)}%\n대결: ${record || '기록 없음'}`}
           >
-            <span>{STYLE_ICONS[comp.style] ?? '💼'}</span>
+            <CompetitorPortrait
+              style={comp.style as TradingStyle}
+              mood={isAhead ? 'winning' : 'losing'}
+              size={16}
+            />
             <span
               className={isAhead ? 'text-stock-down font-bold' : 'text-stock-up'}
             >

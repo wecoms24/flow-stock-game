@@ -260,14 +260,14 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
 
   // ── Ready Phase (difficulty select) ──
   return (
-    <div className="fixed inset-0 bg-retro-darkblue flex items-center justify-center overflow-y-auto py-4">
-      <RetroPanel className="p-1 max-w-md w-full">
+    <div className="fixed inset-0 bg-retro-darkblue flex items-center justify-center overflow-y-auto py-2">
+      <RetroPanel className="p-1 max-w-3xl w-full mx-2">
         <div className="bg-win-title-active text-win-title-text px-2 py-1 text-sm font-bold mb-1">
           Retro Stock-OS 95 - 게임 설정
         </div>
 
-        <div className="p-4 space-y-3">
-          <div className="text-center space-y-1">
+        <div className="p-3">
+          <div className="text-center space-y-1 mb-3">
             <div className="text-2xl font-bold text-retro-darkblue">Retro Stock-OS 95</div>
             <div className="text-xs text-retro-gray">
               1995년부터 2025년까지, 30년간의 주식 투자 시뮬레이션
@@ -287,7 +287,7 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
 
           {/* Save Slot Display + Continue */}
           {hasSave && (
-            <RetroPanel variant="inset" className="p-3">
+            <RetroPanel variant="inset" className="p-3 mb-3">
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-bold mb-1">💾 저장된 게임</div>
@@ -308,6 +308,11 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
               </div>
             </RetroPanel>
           )}
+
+          {/* ── 2단 가로 배열 ── */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* 왼쪽 컬럼: 게임 모드 + 경쟁 모드 + 목표 + 초기자본 */}
+            <div className="space-y-3">
 
           {/* Game Mode Selection */}
           <RetroPanel variant="inset" className="p-3 space-y-2">
@@ -522,6 +527,10 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
             </div>
           </RetroPanel>
 
+            </div>
+            {/* 오른쪽 컬럼: 회사 프로필 + 난이도 선택 */}
+            <div className="space-y-3">
+
           {/* Company Profile */}
           <RetroPanel variant="inset" className="p-3 space-y-2">
             <div className="text-sm font-bold">🏢 회사 프로필:</div>
@@ -626,7 +635,11 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
             })}
           </div>
 
-          <div className="text-[10px] text-retro-gray text-center space-y-0.5">
+            </div>
+          </div>
+          {/* ── /2단 가로 배열 ── */}
+
+          <div className="text-[10px] text-retro-gray text-center space-y-0.5 mt-3">
             <div>(c) 2026 Wecoms.co.ltd - Retro Stock-OS 95</div>
             <div className="flex justify-center gap-2">
               <button

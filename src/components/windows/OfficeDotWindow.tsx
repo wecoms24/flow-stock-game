@@ -9,7 +9,7 @@ import type { EmployeeRole } from '../../types'
 import { EMPLOYEE_ROLE_CONFIG } from '../../types'
 import { TRAIT_DEFINITIONS } from '../../data/traits'
 import { TITLE_LABELS, BADGE_COLORS, badgeForLevel, titleForLevel } from '../../systems/growthSystem'
-import { ROLE_EMOJI, getMoodFace, BEHAVIOR_EMOJI } from '../../data/employeeEmoji'
+import { ROLE_EMOJI, getMoodFace } from '../../data/employeeEmoji'
 import { soundManager } from '../../systems/soundManager'
 import { selectChatter, selectContextualDialogue, consumeTriggeredChatter, triggerChatter } from '../../data/chatter'
 import { SpeechBubbleContainer } from '../office/SpeechBubble'
@@ -18,6 +18,7 @@ import { emitParticles } from '../../systems/particleSystem'
 import { AIProposalWindow } from './AIProposalWindow'
 import { generateDotLayoutProposal, type DotEmployeeMove } from '../../systems/aiArchitectDot'
 import type { LayoutProposal } from '../../systems/aiArchitect'
+import { pixelArtCache } from '../../systems/pixelArtSprites'
 
 const CANVAS_WIDTH = 580
 const CANVAS_HEIGHT = 360
@@ -335,7 +336,6 @@ export function OfficeDotWindow() {
     }
 
     layout.decorations.forEach((decoration) => {
-      const catalog = DECORATION_CATALOG[decoration.type]
       const isDragging = draggingItem?.type === 'decoration' && draggingItem.id === decoration.id
       const isSelected = selectedItem?.type === 'decoration' && selectedItem.id === decoration.id
 
@@ -348,13 +348,11 @@ export function OfficeDotWindow() {
         ctx.fill()
       }
 
-      ctx.font = '24px sans-serif'
-      ctx.fillStyle = '#333'
-      ctx.fillText(catalog.sprite, decoration.position.x - 12, decoration.position.y + 8)
+      const spriteCanvas = pixelArtCache.getFurnitureSprite(decoration.type)
+      ctx.drawImage(spriteCanvas as HTMLCanvasElement, decoration.position.x - 16, decoration.position.y - 16, 32, 32)
     })
 
     layout.desks.forEach((desk) => {
-      const catalog = DESK_CATALOG[desk.type]
       const isDragging = draggingItem?.type === 'desk' && draggingItem.id === desk.id
       const isSelected = selectedItem?.type === 'desk' && selectedItem.id === desk.id
 
@@ -367,29 +365,33 @@ export function OfficeDotWindow() {
         ctx.fill()
       }
 
-      ctx.font = '32px sans-serif'
-      ctx.fillStyle = '#333'
-      ctx.fillText(catalog.sprite, desk.position.x - 16, desk.position.y + 10)
+      // 픽셀아트 책상 렌더링
+      const deskSprite = pixelArtCache.getFurnitureSprite(desk.type)
+      ctx.drawImage(deskSprite as HTMLCanvasElement, desk.position.x - 16, desk.position.y - 16, 32, 32)
 
       if (desk.employeeId) {
         const employee = player.employees.find((e) => e.id === desk.employeeId)
         if (employee) {
-          // 행동 이모지 표시
-          const behavior = employeeBehaviors[employee.id]
-          if (behavior && BEHAVIOR_EMOJI[behavior as keyof typeof BEHAVIOR_EMOJI]) {
-            ctx.font = '12px sans-serif'
-            ctx.fillText(BEHAVIOR_EMOJI[behavior as keyof typeof BEHAVIOR_EMOJI], desk.position.x + 14, desk.position.y - 8)
-          }
+          // 픽셀아트 직원 아바타 렌더링
+          const behavior = (employeeBehaviors[employee.id] ?? 'WORKING') as 'WORKING' | 'IDLE' | 'BREAK' | 'SOCIALIZING' | 'COFFEE' | 'MEETING' | 'STRESSED_OUT' | 'COUNSELING' | 'PANIC'
+          const badge = badgeForLevel(employee.level ?? 1)
+          const hairStyle = employee.id.charCodeAt(0) % 3
+          const empSprite = pixelArtCache.getEmployeeSprite(employee.role, badge, behavior, hairStyle)
+          ctx.drawImage(empSprite as HTMLCanvasElement, desk.position.x - 16, desk.position.y - 36, 32, 40)
 
-          ctx.font = 'bold 10px sans-serif'
+          // 이름 표시
+          ctx.font = 'bold 9px sans-serif'
           ctx.fillStyle = '#333'
-          ctx.fillText(employee.name.substring(0, 4), desk.position.x - 12, desk.position.y + 30)
+          ctx.textAlign = 'center'
+          ctx.fillText(employee.name.substring(0, 4), desk.position.x, desk.position.y + 24)
+          ctx.textAlign = 'start'
 
+          // 스트레스 바
           const stress = employee.stress ?? 0
           const barWidth = 24
           const barHeight = 3
           const barX = desk.position.x - barWidth / 2
-          const barY = desk.position.y + 35
+          const barY = desk.position.y + 27
 
           ctx.fillStyle = '#ddd'
           ctx.fillRect(barX, barY, barWidth, barHeight)
@@ -452,30 +454,26 @@ export function OfficeDotWindow() {
       if (draggingItem.type === 'desk') {
         const desk = layout.desks.find((d) => d.id === draggingItem.id)
         if (desk) {
-          const catalog = DESK_CATALOG[desk.type]
           if (hasCollision) {
             ctx.beginPath()
             ctx.arc(snapped.x, snapped.y, 20, 0, Math.PI * 2)
             ctx.fillStyle = 'rgba(255, 0, 0, 0.3)'
             ctx.fill()
           }
-          ctx.font = '32px sans-serif'
-          ctx.fillStyle = hasCollision ? '#f44' : '#333'
-          ctx.fillText(catalog.sprite, snapped.x - 16, snapped.y + 10)
+          const sprite = pixelArtCache.getFurnitureSprite(desk.type)
+          ctx.drawImage(sprite as HTMLCanvasElement, snapped.x - 16, snapped.y - 16, 32, 32)
         }
       } else {
         const decoration = layout.decorations.find((d) => d.id === draggingItem.id)
         if (decoration) {
-          const catalog = DECORATION_CATALOG[decoration.type]
           if (hasCollision) {
             ctx.beginPath()
             ctx.arc(snapped.x, snapped.y, 20, 0, Math.PI * 2)
             ctx.fillStyle = 'rgba(255, 0, 0, 0.3)'
             ctx.fill()
           }
-          ctx.font = '24px sans-serif'
-          ctx.fillStyle = hasCollision ? '#f44' : '#333'
-          ctx.fillText(catalog.sprite, snapped.x - 12, snapped.y + 8)
+          const sprite = pixelArtCache.getFurnitureSprite(decoration.type)
+          ctx.drawImage(sprite as HTMLCanvasElement, snapped.x - 16, snapped.y - 16, 32, 32)
         }
       }
 

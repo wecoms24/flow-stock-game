@@ -267,7 +267,7 @@ export default function App() {
 
         <StockTicker />
 
-        <div className="absolute top-5 left-0 right-0 bottom-9">
+        <div className="absolute top-7 left-0 right-0 bottom-9">
           <WindowManager />
         </div>
 
