@@ -8,12 +8,15 @@ import {
   LineElement,
   Tooltip,
   Filler,
+  ScatterController,
 } from 'chart.js'
 import type { Plugin } from 'chart.js'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { EmptyState } from '../ui/EmptyState'
 import { getFearGreedIndex, isSentimentActive } from '../../engines/sentimentEngine'
+import { getAbsoluteTimestamp } from '../../config/timeConfig'
+import type { TradeProposal } from '../../types/trade'
 
 /* ── Event Marker + Band Plugin ── */
 interface EventMarkerOptions {
@@ -208,6 +211,80 @@ const eventMarkerPlugin: Plugin<'line', EventMarkerOptions> = {
   },
 }
 
+/* ── Trade Annotation Plugin: employee names near trade markers ── */
+interface TradeAnnotationOptions {
+  employeeMap: Map<string, string>
+}
+
+const tradeAnnotationPlugin: Plugin<'line', TradeAnnotationOptions> = {
+  id: 'tradeAnnotations',
+  afterDatasetsDraw(chart, _args, options) {
+    const empMap = options.employeeMap
+    if (!empMap || empMap.size === 0) return
+
+    // Find the scatter dataset with _tradeMarkerData
+    for (let dsIdx = 0; dsIdx < chart.data.datasets.length; dsIdx++) {
+      const ds = chart.data.datasets[dsIdx] as any
+      const markerData = ds._tradeMarkerData as
+        | Array<{
+            x: number
+            y: number
+            trade: TradeProposal & { executedAt: number; executedPrice: number }
+          }>
+        | undefined
+      if (!markerData?.length) continue
+
+      const ctx = chart.ctx
+      const meta = chart.getDatasetMeta(dsIdx)
+
+      ctx.save()
+      ctx.font = '9px DungGeunMo, monospace'
+      ctx.textAlign = 'center'
+
+      // Track label positions to avoid overlap
+      const placedLabels: Array<{ x: number; y: number }> = []
+
+      markerData.forEach((d, i) => {
+        const element = meta.data[i]
+        if (!element) return
+
+        const px = element.x
+        const py = element.y
+        const isBuy = d.trade.direction === 'buy'
+        const empName = empMap.get(d.trade.createdByEmployeeId) ?? '?'
+        const reactionText = isBuy ? '매수 신호!' : '매도 신호!'
+        const label = `${empName}: ${reactionText}`
+
+        // Position label above for buys, below for sells
+        const labelOffsetY = isBuy ? -16 : 20
+
+        // Check overlap with already placed labels
+        let finalY = py + labelOffsetY
+        for (const placed of placedLabels) {
+          if (Math.abs(px - placed.x) < 60 && Math.abs(finalY - placed.y) < 12) {
+            finalY += isBuy ? -12 : 12
+          }
+        }
+        placedLabels.push({ x: px, y: finalY })
+
+        // Background box
+        const textWidth = ctx.measureText(label).width + 6
+        const boxX = px - textWidth / 2
+        const boxY = finalY - 9
+
+        ctx.fillStyle = isBuy ? 'rgba(34, 197, 94, 0.85)' : 'rgba(239, 68, 68, 0.85)'
+        ctx.fillRect(boxX, boxY, textWidth, 12)
+
+        // Text
+        ctx.fillStyle = '#FFFFFF'
+        ctx.fillText(label, px, finalY)
+      })
+
+      ctx.restore()
+    }
+  },
+}
+
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -215,7 +292,9 @@ ChartJS.register(
   LineElement,
   Tooltip,
   Filler,
+  ScatterController,
   eventMarkerPlugin,
+  tradeAnnotationPlugin,
 )
 
 const PERIOD_OPTIONS = [
@@ -241,6 +320,8 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   const events = useGameStore((s) => s.events)
   const currentTime = useGameStore((s) => s.time)
   const updateWindowProps = useGameStore((s) => s.updateWindowProps)
+  const proposals = useGameStore((s) => s.proposals)
+  const employees = useGameStore((s) => s.player.employees)
   const [selectedId, setSelectedIdLocal] = useState(companyId ?? companies[0]?.id ?? '')
 
   // 매매 창에서 기업 변경 시 동기화 (외부 prop 변경만 추적)
@@ -260,6 +341,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   }
   const [periodTicks, setPeriodTicks] = useState(300) // default 30 days
   const [showEventMarkers, setShowEventMarkers] = useState(true)
+  const [showTradeMarkers, setShowTradeMarkers] = useState(true)
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
   const isFlashing = useGameStore((s) => s.isFlashing)
 
@@ -358,10 +440,34 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
     })
   }, [selected, events])
 
+  // Employee lookup map for trade marker annotations
+  const employeeMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const emp of employees) {
+      map.set(emp.id, emp.name)
+    }
+    return map
+  }, [employees])
+
+  // Executed trades for the selected company
+  const executedTrades = useMemo(() => {
+    if (!selected || !showTradeMarkers || !proposals?.length) return []
+    return proposals.filter(
+      (p): p is TradeProposal & { executedAt: number; executedPrice: number } =>
+        p.companyId === selected.id &&
+        p.status === 'EXECUTED' &&
+        p.executedAt !== null &&
+        p.executedPrice !== null,
+    )
+  }, [selected, showTradeMarkers, proposals])
+
   const chartData = useMemo(() => {
     if (!selected) return null
     const history =
       periodTicks > 0 ? selected.priceHistory.slice(-periodTicks) : selected.priceHistory
+
+    const historyLength = history.length
+    const currentAbsTick = getAbsoluteTimestamp(currentTime)
 
     // Generate date labels based on period
     const labels = history.map((_, i) => {
@@ -391,23 +497,72 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
       }
     })
 
+    // Map executed trades to chart x-axis indices
+    const tradeMarkerData: Array<{
+      x: number
+      y: number
+      trade: TradeProposal & { executedAt: number; executedPrice: number }
+    }> = []
+
+    for (const trade of executedTrades) {
+      // executedAt is absolute tick; map to chart index
+      const tickOffset = currentAbsTick - trade.executedAt
+      const chartIndex = historyLength - 1 - tickOffset
+      if (chartIndex >= 0 && chartIndex < historyLength) {
+        tradeMarkerData.push({
+          x: chartIndex,
+          y: trade.executedPrice,
+          trade,
+        })
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const datasets: Array<any> = [
+      {
+        data: history,
+        borderColor: selected.price >= selected.previousPrice ? '#FF4444' : '#4488FF',
+        backgroundColor:
+          selected.price >= selected.previousPrice ? 'rgba(255,68,68,0.15)' : 'rgba(68,136,255,0.15)',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        stepped: 'middle' as const,
+        fill: true,
+        tension: 0,
+      },
+    ]
+
+    // Add trade marker scatter dataset if there are executed trades in visible range
+    if (tradeMarkerData.length > 0) {
+      datasets.push({
+        type: 'scatter' as const,
+        label: '매매 내역',
+        data: tradeMarkerData.map((d) => ({ x: d.x, y: d.y })),
+        pointStyle: tradeMarkerData.map((d) =>
+          d.trade.direction === 'buy' ? 'triangle' : 'triangle',
+        ),
+        rotation: tradeMarkerData.map((d) => (d.trade.direction === 'sell' ? 180 : 0)),
+        pointBackgroundColor: tradeMarkerData.map((d) =>
+          d.trade.direction === 'buy' ? '#22c55e' : '#ef4444',
+        ),
+        pointBorderColor: tradeMarkerData.map((d) =>
+          d.trade.direction === 'buy' ? '#166534' : '#991b1b',
+        ),
+        pointBorderWidth: 1,
+        pointRadius: 8,
+        pointHoverRadius: 11,
+        fill: false,
+        showLine: false,
+        // Store trade data for tooltip + annotation plugin
+        _tradeMarkerData: tradeMarkerData,
+      })
+    }
+
     return {
       labels,
-      datasets: [
-        {
-          data: history,
-          borderColor: selected.price >= selected.previousPrice ? '#FF4444' : '#4488FF',
-          backgroundColor:
-            selected.price >= selected.previousPrice ? 'rgba(255,68,68,0.15)' : 'rgba(68,136,255,0.15)',
-          borderWidth: 1.5,
-          pointRadius: 0,
-          stepped: 'middle' as const,
-          fill: true,
-          tension: 0,
-        },
-      ],
+      datasets,
     }
-  }, [selected, periodTicks, currentTime])
+  }, [selected, periodTicks, currentTime, executedTrades])
 
   // Calculate event markers for the chart (with band end positions)
   const eventMarkers = useMemo(() => {
@@ -512,15 +667,55 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
           bodyColor: '#C0C0C0',
           borderColor: '#C0C0C0',
           borderWidth: 1,
+          callbacks: {
+            title: (items: Array<{ datasetIndex: number; raw: unknown }>) => {
+              const item = items[0]
+              if (!item) return ''
+              const ds = chartData?.datasets[item.datasetIndex] as any | undefined
+              if (ds?._tradeMarkerData) {
+                return '매매 체결'
+              }
+              return ''
+            },
+            label: (context: { datasetIndex: number; dataIndex: number; raw: unknown; formattedValue: string }) => {
+              const ds = chartData?.datasets[context.datasetIndex] as any | undefined
+              const markerData = ds?._tradeMarkerData as
+                | Array<{
+                    x: number
+                    y: number
+                    trade: TradeProposal & { executedAt: number; executedPrice: number }
+                  }>
+                | undefined
+              if (markerData) {
+                const d = markerData[context.dataIndex]
+                if (!d) return ''
+                const trade = d.trade
+                const empName = employeeMap.get(trade.createdByEmployeeId) ?? '?'
+                const dir = trade.direction === 'buy' ? '매수' : '매도'
+                const slipStr = trade.slippage !== null ? ` (슬리피지: ${(trade.slippage * 100).toFixed(1)}%)` : ''
+                return [
+                  `${dir} ${trade.quantity}주 @ ${trade.executedPrice.toLocaleString()}원${slipStr}`,
+                  `분석가: ${empName} | 확신도: ${trade.confidence}%`,
+                  trade.isMistake ? '실수 거래' : '',
+                ].filter(Boolean)
+              }
+              // Default: price tooltip
+              const val = typeof context.raw === 'number' ? context.raw : 0
+              return `${val.toLocaleString()}원`
+            },
+          },
         },
         eventMarkers: {
           markers: eventMarkers,
           onMarkerClick: (eventId: string) => setSelectedEventId(eventId),
           fearGreedIndex: fearGreedIdx,
         },
+        tradeAnnotations: {
+          employeeMap,
+        },
       },
     }),
-    [eventMarkers, fearGreedIdx, periodTicks],
+    [eventMarkers, fearGreedIdx, periodTicks, chartData, employeeMap],
   )
 
   if (!selected || !chartData) {
@@ -565,11 +760,11 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
             <option value="change">등락률순</option>
             <option value="sector">섹터순</option>
           </select>
-          <RetroButton size="sm" onClick={() => setShowFilters(!showFilters)} className="text-[10px]">
+          <RetroButton size="sm" onClick={() => setShowFilters(!showFilters)} className="text-[11px] !bg-[#1a1a3e] !text-retro-silver !border-retro-silver/30">
             {showFilters ? '▾ 필터' : '▸ 필터'}
           </RetroButton>
           {hasActiveFilters && (
-            <RetroButton size="sm" onClick={resetFilters} className="text-[10px]">
+            <RetroButton size="sm" onClick={resetFilters} className="text-[11px] !bg-[#1a1a3e] !text-retro-silver !border-retro-silver/30">
               초기화
             </RetroButton>
           )}
@@ -585,7 +780,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
                   size="sm"
                   variant={sectorFilter === sector.value ? 'primary' : 'default'}
                   onClick={() => setSectorFilter(sector.value)}
-                  className="text-[10px] px-1 py-0.5"
+                  className="text-[11px] px-1.5 py-0.5"
                 >
                   {sector.emoji} {sector.label}
                 </RetroButton>
@@ -602,7 +797,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
                   size="sm"
                   variant={sectorFilter === sector.value ? 'primary' : 'default'}
                   onClick={() => setSectorFilter(sector.value)}
-                  className="text-[10px] px-1 py-0.5"
+                  className="text-[11px] px-1.5 py-0.5"
                 >
                   {sector.label}
                 </RetroButton>
@@ -692,9 +887,18 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
 
         <RetroButton
           size="sm"
+          variant={showTradeMarkers ? 'primary' : 'default'}
+          onClick={() => setShowTradeMarkers(!showTradeMarkers)}
+          className="text-[10px]"
+        >
+          매매 {showTradeMarkers ? 'ON' : 'OFF'}
+        </RetroButton>
+
+        <RetroButton
+          size="sm"
           onClick={() => useGameStore.getState().openWindow('trading', { companyId: selectedId })}
         >
-          매매
+          매매창
         </RetroButton>
       </div>
 

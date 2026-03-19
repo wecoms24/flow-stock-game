@@ -5,6 +5,20 @@ import { isPriceLimitHit } from '../../config/priceLimit'
 import { isVIHalted, getVIRemainingTicks } from '../../engines/viEngine'
 import { triggerScreenShake } from '../../hooks/useScreenShake'
 import { emitFloatingText } from '../../utils/floatingTextEmitter'
+import type { Sector } from '../../types'
+
+const SECTOR_LABELS: Record<Sector, string> = {
+  tech: '기술',
+  finance: '금융',
+  energy: '에너지',
+  healthcare: '헬스케어',
+  consumer: '소비재',
+  industrial: '산업재',
+  telecom: '통신',
+  materials: '소재',
+  utilities: '유틸리티',
+  realestate: '부동산',
+}
 
 interface TradingWindowProps {
   companyId?: string
@@ -49,6 +63,93 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
 
   const company = companies.find((c) => c.id === selectedId)
   const position = player.portfolio[selectedId]
+
+  // Mini chart canvas ref
+  const chartCanvasRef = useRef<HTMLCanvasElement>(null)
+
+  const showFeedback = useCallback((type: 'success-buy' | 'success-sell' | 'error') => {
+    if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current)
+    setTradeFeedback(type)
+    feedbackTimeoutRef.current = setTimeout(() => setTradeFeedback(null), 600)
+  }, [])
+
+  // Mini chart drawing effect
+  useEffect(() => {
+    const canvas = chartCanvasRef.current
+    if (!canvas || !company) return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const history = company.priceHistory
+    if (!history || history.length < 2) {
+      // No data: draw empty state
+      ctx.fillStyle = '#0c0c1e'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.fillStyle = '#6b7280'
+      ctx.font = '11px monospace'
+      ctx.textAlign = 'center'
+      ctx.fillText('데이터 없음', canvas.width / 2, canvas.height / 2)
+      return
+    }
+
+    const w = canvas.width
+    const h = canvas.height
+    const padding = { top: 16, bottom: 16, left: 4, right: 45 }
+
+    const drawW = w - padding.left - padding.right
+    const drawH = h - padding.top - padding.bottom
+
+    const minPrice = Math.min(...history)
+    const maxPrice = Math.max(...history)
+    const priceRange = maxPrice - minPrice || 1
+
+    const isUpTrend = history[history.length - 1] >= history[0]
+    const lineColor = isUpTrend ? '#22c55e' : '#ef4444'
+
+    // Background
+    ctx.fillStyle = '#0c0c1e'
+    ctx.fillRect(0, 0, w, h)
+
+    // Price line
+    ctx.beginPath()
+    ctx.strokeStyle = lineColor
+    ctx.lineWidth = 1.5
+    ctx.lineJoin = 'round'
+
+    for (let i = 0; i < history.length; i++) {
+      const x = padding.left + (i / (history.length - 1)) * drawW
+      const y = padding.top + drawH - ((history[i] - minPrice) / priceRange) * drawH
+      if (i === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+
+    // Fill area under the line
+    ctx.lineTo(padding.left + drawW, padding.top + drawH)
+    ctx.lineTo(padding.left, padding.top + drawH)
+    ctx.closePath()
+    ctx.fillStyle = isUpTrend ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)'
+    ctx.fill()
+
+    // Y-axis labels
+    ctx.fillStyle = '#9ca3af'
+    ctx.font = '9px monospace'
+    ctx.textAlign = 'right'
+    ctx.fillText(maxPrice.toLocaleString(), w - 2, padding.top + 3)
+    ctx.fillText(minPrice.toLocaleString(), w - 2, padding.top + drawH + 1)
+  }, [company])
+
+  // 52주 최고/최저 계산
+  const priceStats = useMemo(() => {
+    if (!company || !company.priceHistory || company.priceHistory.length === 0) {
+      return { high52: company?.price ?? 0, low52: company?.price ?? 0 }
+    }
+    return {
+      high52: Math.max(...company.priceHistory),
+      low52: Math.min(...company.priceHistory),
+    }
+  }, [company])
 
   // 보유 종목 리스트 (손익 계산 포함)
   const holdings = useMemo(() => {
@@ -107,12 +208,6 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
   const totalCost = company.price * shares
   const maxBuyable = Math.floor(player.cash / company.price)
   const maxSellable = position?.shares ?? 0
-
-  const showFeedback = useCallback((type: 'success-buy' | 'success-sell' | 'error') => {
-    if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current)
-    setTradeFeedback(type)
-    feedbackTimeoutRef.current = setTimeout(() => setTradeFeedback(null), 600)
-  }, [])
 
   const handleTrade = () => {
     const cashBefore = useGameStore.getState().player.cash
@@ -176,7 +271,9 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
   const isUp = change >= 0
 
   return (
-    <div className="flex flex-col h-full text-xs">
+    <div className="flex h-full text-xs gap-1">
+      {/* Left column: trading controls */}
+      <div className="flex flex-col flex-1 min-w-0">
       {/* 상단 자산 요약 */}
       <div className="win-inset bg-white p-1.5 mb-1">
         <div className="flex justify-between items-center">
@@ -664,6 +761,89 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
           </div>
         </div>
       )}
+      </div>
+
+      {/* Right column: mini chart + company info */}
+      <div className="flex flex-col w-[280px] shrink-0 min-h-0 overflow-hidden">
+        {/* Company name and price */}
+        <div className="win-inset bg-white p-1.5 mb-1">
+          <div className="font-bold truncate">{company.ticker} - {company.name}</div>
+          <div className="flex items-baseline gap-1 mt-0.5">
+            <span className="text-base font-bold tabular-nums">{company.price.toLocaleString()}원</span>
+            <span className={`text-[10px] ${isUp ? 'text-stock-up' : 'text-stock-down'}`}>
+              {isUp ? '▲' : '▼'}{Math.abs(changePercent).toFixed(1)}%
+            </span>
+          </div>
+        </div>
+
+        {/* Mini price chart */}
+        <div className="win-inset mb-1">
+          <canvas
+            ref={chartCanvasRef}
+            width={280}
+            height={160}
+            className="w-full block"
+            style={{ imageRendering: 'pixelated' }}
+          />
+        </div>
+
+        {/* Key stats */}
+        <div className="win-inset bg-white p-1.5 mb-1 space-y-1">
+          <div className="font-bold text-retro-gray mb-1">종목 정보</div>
+          <div className="flex justify-between">
+            <span className="text-retro-gray">52주 최고</span>
+            <span className="font-bold text-stock-up">{priceStats.high52.toLocaleString()}원</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-retro-gray">52주 최저</span>
+            <span className="font-bold text-stock-down">{priceStats.low52.toLocaleString()}원</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-retro-gray">시가총액</span>
+            <span className="font-bold">
+              {company.marketCap >= 1_0000_0000
+                ? `${(company.marketCap / 1_0000_0000).toFixed(1)}억`
+                : `${(company.marketCap / 10000).toFixed(0)}만`}원
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-retro-gray">섹터</span>
+            <span className="font-bold">{SECTOR_LABELS[company.sector]}</span>
+          </div>
+        </div>
+
+        {/* Position info (if holding) */}
+        {position && position.shares > 0 && (() => {
+          const posValue = company.price * position.shares
+          const investedValue = position.avgBuyPrice * position.shares
+          const posPnl = posValue - investedValue
+          const posPnlPct = investedValue > 0 ? (posPnl / investedValue) * 100 : 0
+          return (
+            <div className="win-inset bg-white p-1.5 space-y-1">
+              <div className="font-bold text-retro-gray mb-1">내 포지션</div>
+              <div className="flex justify-between">
+                <span className="text-retro-gray">보유 수량</span>
+                <span className="font-bold">{position.shares}주</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-retro-gray">평균 단가</span>
+                <span className="font-bold">{position.avgBuyPrice.toLocaleString()}원</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-retro-gray">평가 금액</span>
+                <span className="font-bold">{posValue.toLocaleString()}원</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-retro-gray">평가 손익</span>
+                <span className={`font-bold ${posPnl >= 0 ? 'text-stock-up' : 'text-stock-down'}`}>
+                  {posPnl >= 0 ? '+' : ''}{posPnl.toLocaleString()}원
+                  ({posPnl >= 0 ? '+' : ''}{posPnlPct.toFixed(1)}%)
+                </span>
+              </div>
+            </div>
+          )
+        })()}
+      </div>
     </div>
   )
 }
