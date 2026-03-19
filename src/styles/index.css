@@ -58,6 +58,21 @@
   --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Typography scale */
+  --font-size-xs: 10px;
+  --font-size-sm: 11px;
+  --font-size-base: 12px;
+  --font-size-md: 14px;
+  --font-size-lg: 18px;
+  --font-size-xl: 24px;
+  --font-size-2xl: 32px;
+
+  /* Z-index layers */
+  --z-window: 100;
+  --z-toast: 9000;
+  --z-overlay: 9500;
+  --z-crt: 9999;
 }
 
 /* Pixel font */
@@ -128,7 +143,7 @@ body {
   pointer-events: none;
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: var(--z-crt);
 }
 
 .crt-overlay::before {
@@ -171,7 +186,7 @@ body {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 9998;
+  z-index: calc(var(--z-crt) - 1);
 }
 
 /* Regime toast bounce animation */

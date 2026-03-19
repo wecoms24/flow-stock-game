@@ -35,21 +35,15 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     position: 'top',
   },
   {
-    targetSelector: '[data-tutorial="quick-launch-portfolio"]',
-    title: '포트폴리오',
-    description: '보유 현금, 주식 평가액, 총 자산을 확인할 수 있습니다.',
-    position: 'top',
-  },
-  {
     targetSelector: '[data-tutorial="quick-launch-office"]',
     title: '오피스',
     description: '직원을 고용하고 자동 매매 시스템을 구축하세요.',
     position: 'top',
   },
   {
-    targetSelector: '[data-tutorial="quick-launch-news"]',
-    title: '뉴스',
-    description: '시장 뉴스와 이벤트를 확인하세요. 뉴스가 주가에 영향을 줍니다.',
+    targetSelector: '[data-tutorial="quick-launch-portfolio"]',
+    title: '포트폴리오',
+    description: '시작 메뉴에서 포트폴리오를 열어 총 자산을 확인하세요.',
     position: 'top',
   },
 ]

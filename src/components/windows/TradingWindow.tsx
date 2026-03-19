@@ -4,6 +4,7 @@ import { RetroButton } from '../ui/RetroButton'
 import { isPriceLimitHit } from '../../config/priceLimit'
 import { isVIHalted, getVIRemainingTicks } from '../../engines/viEngine'
 import { triggerScreenShake } from '../../hooks/useScreenShake'
+import { emitFloatingText } from '../../utils/floatingTextEmitter'
 
 interface TradingWindowProps {
   companyId?: string
@@ -132,6 +133,15 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
 
     if (tradeExecuted) {
       showFeedback(mode === 'buy' ? 'success-buy' : 'success-sell')
+      // Floating text feedback
+      const sharesTraded = Math.abs(portfolioAfter - portfolioBefore)
+      const color = mode === 'buy' ? '#FF0000' : '#0000FF'
+      emitFloatingText(
+        mode === 'buy' ? `+${sharesTraded}주 매수` : `-${sharesTraded}주 매도`,
+        window.innerWidth / 2,
+        window.innerHeight / 2,
+        color,
+      )
       // Proportional shake: bigger trade = bigger shake
       const tradeValue = Math.abs(cashAfter - cashBefore)
       const totalAssets = cashAfter + Object.values(useGameStore.getState().player.portfolio)
@@ -414,7 +424,7 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
         <div className="flex items-baseline justify-between">
           <span className="font-bold">[{company.ticker}] {company.name}</span>
           <div className="text-right">
-            <span className="font-bold text-sm">{company.price.toLocaleString()}</span>
+            <span className="font-bold text-lg tabular-nums">{company.price.toLocaleString()}</span>
             <span className={`ml-1 ${isUp ? 'text-stock-up' : 'text-stock-down'}`}>
               {isUp ? '▲' : '▼'}{Math.abs(changePercent).toFixed(1)}%
             </span>

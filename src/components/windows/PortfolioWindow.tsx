@@ -258,7 +258,7 @@ function OverviewTab() {
         <hr className="border-win-shadow" />
         <div className="flex justify-between items-baseline">
           <span className="text-retro-gray font-bold">총 자산</span>
-          <span className="font-bold text-retro-darkblue text-sm tabular-nums">{totalAssets.toLocaleString()}원</span>
+          <span className="font-bold text-retro-darkblue text-xl tabular-nums">{totalAssets.toLocaleString()}원</span>
         </div>
 
         {/* Cash/Stock ratio bar */}

@@ -2,6 +2,7 @@ import { useRef, useCallback, useState, type ReactNode } from 'react'
 import { motion } from 'motion/react'
 import { useGameStore } from '../../stores/gameStore'
 import { windowVariants } from '../../utils/motionVariants'
+import { useReducedMotion } from '../../hooks/useReducedMotion'
 import type { WindowState, WindowType } from '../../types'
 
 /* ── Snap Zone Config ── */
@@ -58,6 +59,7 @@ interface WindowFrameProps {
 export function WindowFrame({ window: win, children }: WindowFrameProps) {
   const { closeWindow, minimizeWindow, toggleMaximizeWindow, focusWindow, moveWindow, resizeWindow } =
     useGameStore()
+  const reducedMotion = useReducedMotion()
   const [snapZone, setSnapZone] = useState<SnapZone>(null)
   const dragRef = useRef<{ startX: number; startY: number; winX: number; winY: number } | null>(
     null,
@@ -207,7 +209,7 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
 
   return (
     <motion.div
-      className="absolute win-outset bg-win-face flex flex-col"
+      className="absolute win-outset bg-win-face flex flex-col group/window"
       style={{
         left: win.x,
         top: win.y,
@@ -215,10 +217,10 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
         height: win.height,
         zIndex: win.zIndex,
       }}
-      variants={windowVariants}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
+      variants={reducedMotion ? undefined : windowVariants}
+      initial={reducedMotion ? undefined : "hidden"}
+      animate={reducedMotion ? undefined : "visible"}
+      exit={reducedMotion ? undefined : "minimized"}
       onMouseDown={() => focusWindow(win.id)}
     >
       {/* Title Bar */}
@@ -260,47 +262,47 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
       {/* Content Area */}
       <div className="flex-1 overflow-auto m-0.5 win-inset p-1">{children}</div>
 
-      {/* Resize Handles - 8 directions (hidden when maximized) */}
+      {/* Resize Handles - 8 directions (hidden when maximized, visible on window hover) */}
       {!win.isMaximized && <>
       {/* Top */}
       <div
-        className="absolute top-0 left-2 right-2 h-1 cursor-ns-resize"
+        className="absolute top-0 left-2 right-2 h-1 opacity-0 group-hover/window:opacity-100 transition-opacity border-t border-dotted border-win-shadow/40"
         style={{ cursor: RESIZE_CURSORS.n }}
         onMouseDown={(e) => handleResizeMouseDown(e, 'n')}
       />
       {/* Bottom */}
       <div
-        className="absolute bottom-0 left-2 right-2 h-1 cursor-ns-resize"
+        className="absolute bottom-0 left-2 right-2 h-1 opacity-0 group-hover/window:opacity-100 transition-opacity border-b border-dotted border-win-shadow/40"
         style={{ cursor: RESIZE_CURSORS.s }}
         onMouseDown={(e) => handleResizeMouseDown(e, 's')}
       />
       {/* Left */}
       <div
-        className="absolute left-0 top-2 bottom-2 w-1 cursor-ew-resize"
+        className="absolute left-0 top-2 bottom-2 w-1 opacity-0 group-hover/window:opacity-100 transition-opacity border-l border-dotted border-win-shadow/40"
         style={{ cursor: RESIZE_CURSORS.w }}
         onMouseDown={(e) => handleResizeMouseDown(e, 'w')}
       />
       {/* Right */}
       <div
-        className="absolute right-0 top-2 bottom-2 w-1 cursor-ew-resize"
+        className="absolute right-0 top-2 bottom-2 w-1 opacity-0 group-hover/window:opacity-100 transition-opacity border-r border-dotted border-win-shadow/40"
         style={{ cursor: RESIZE_CURSORS.e }}
         onMouseDown={(e) => handleResizeMouseDown(e, 'e')}
       />
       {/* Top-Left */}
       <div
-        className="absolute top-0 left-0 w-2 h-2 cursor-nwse-resize"
+        className="absolute top-0 left-0 w-2 h-2"
         style={{ cursor: RESIZE_CURSORS.nw }}
         onMouseDown={(e) => handleResizeMouseDown(e, 'nw')}
       />
       {/* Top-Right */}
       <div
-        className="absolute top-0 right-0 w-2 h-2 cursor-nesw-resize"
+        className="absolute top-0 right-0 w-2 h-2"
         style={{ cursor: RESIZE_CURSORS.ne }}
         onMouseDown={(e) => handleResizeMouseDown(e, 'ne')}
       />
       {/* Bottom-Left */}
       <div
-        className="absolute bottom-0 left-0 w-2 h-2 cursor-nesw-resize"
+        className="absolute bottom-0 left-0 w-2 h-2"
         style={{ cursor: RESIZE_CURSORS.sw }}
         onMouseDown={(e) => handleResizeMouseDown(e, 'sw')}
       />

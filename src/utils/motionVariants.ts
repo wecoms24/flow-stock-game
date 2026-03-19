@@ -94,6 +94,27 @@ export const fadeInVariants: Variants = {
 
 /* ── Slide Animations ── */
 
+export const slideInRightVariants: Variants = {
+  hidden: {
+    x: '100%',
+    opacity: 0,
+  },
+  visible: {
+    x: 0,
+    opacity: 1,
+    transition: {
+      type: 'spring',
+      stiffness: 400,
+      damping: 30,
+    },
+  },
+  exit: {
+    x: '100%',
+    opacity: 0,
+    transition: { duration: 0.2 },
+  },
+}
+
 export const slideInUpVariants: Variants = {
   hidden: {
     y: 20,
@@ -156,6 +177,16 @@ export const cardFlipVariants: Variants = {
       stiffness: 300,
       damping: 25,
     },
+  },
+}
+
+/* ── Shake X ── */
+
+export const shakeXVariants: Variants = {
+  idle: { x: 0 },
+  shake: {
+    x: [0, -4, 4, -3, 3, -2, 2, 0],
+    transition: { duration: 0.4, ease: 'easeOut' },
   },
 }
 

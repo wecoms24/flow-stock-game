@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { toastVariants } from '../../utils/motionVariants'
+import { useReducedMotion } from '../../hooks/useReducedMotion'
 
 /* ── Toast Types ── */
 
@@ -39,6 +40,7 @@ let toastIdCounter = 0
 /* ── ToastContainer Component ── */
 
 export function ToastContainer() {
+  const reducedMotion = useReducedMotion()
   const [toasts, setToasts] = useState<(ToastConfig & { addedAt: number })[]>([])
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
@@ -107,10 +109,10 @@ export function ToastContainer() {
           return (
             <motion.div
               key={toast.id}
-              variants={toastVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
+              variants={reducedMotion ? undefined : toastVariants}
+              initial={reducedMotion ? undefined : "hidden"}
+              animate={reducedMotion ? undefined : "visible"}
+              exit={reducedMotion ? undefined : "exit"}
               layout
               className="win-outset bg-win-face shadow-xl max-w-72 pointer-events-auto cursor-pointer"
               style={{ borderLeft: `3px solid ${style.borderColor}` }}

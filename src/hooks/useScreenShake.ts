@@ -26,8 +26,9 @@ export function useScreenShake(targetRef: React.RefObject<HTMLElement | null>) {
       const el = targetRef.current
       if (!el) return
 
-      // Respect reduced motion preference
+      // Respect reduced motion preference (OS + user setting)
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+      if (localStorage.getItem('reduce_motion') === 'true') return
 
       // Clear any ongoing shake
       if (timeoutRef.current) {

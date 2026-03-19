@@ -47,24 +47,41 @@ const eventMarkerPlugin: Plugin<'line', EventMarkerOptions> = {
     const fgi = options.fearGreedIndex
     if (fgi !== undefined && fgi !== null) {
       ctx.save()
-      const barWidth = chart.width - 40
-      const barX = 20
-      const barY = yAxis.top - 3
+      const barHeight = 8
+      const barWidth = chart.width - 80
+      const barX = 40
+      const barY = yAxis.top - barHeight - 4
 
       // 배경
       const grad = ctx.createLinearGradient(barX, 0, barX + barWidth, 0)
-      grad.addColorStop(0, 'rgba(0,0,255,0.3)')
-      grad.addColorStop(0.5, 'rgba(128,128,128,0.2)')
-      grad.addColorStop(1, 'rgba(255,0,0,0.3)')
+      grad.addColorStop(0, 'rgba(68,68,255,0.4)')
+      grad.addColorStop(0.5, 'rgba(128,128,128,0.25)')
+      grad.addColorStop(1, 'rgba(255,68,68,0.4)')
       ctx.fillStyle = grad
-      ctx.fillRect(barX, barY, barWidth, 3)
+      ctx.fillRect(barX, barY, barWidth, barHeight)
+
+      // 텍스트 라벨
+      ctx.font = '9px DungGeunMo, monospace'
+      ctx.fillStyle = '#4488FF'
+      ctx.textAlign = 'right'
+      ctx.fillText('공포', barX - 4, barY + barHeight - 1)
+      ctx.fillStyle = '#FF4444'
+      ctx.textAlign = 'left'
+      ctx.fillText('탐욕', barX + barWidth + 4, barY + barHeight - 1)
 
       // 인디케이터
       const indicatorX = barX + (fgi / 100) * barWidth
-      ctx.fillStyle = fgi > 60 ? '#FF4444' : fgi < 40 ? '#4444FF' : '#888888'
+      ctx.fillStyle = fgi > 60 ? '#FF4444' : fgi < 40 ? '#4488FF' : '#C0C0C0'
       ctx.beginPath()
-      ctx.arc(indicatorX, barY + 1.5, 3, 0, Math.PI * 2)
+      ctx.arc(indicatorX, barY + barHeight / 2, 5, 0, Math.PI * 2)
       ctx.fill()
+
+      // 수치 라벨
+      ctx.fillStyle = '#C0C0C0'
+      ctx.textAlign = 'center'
+      ctx.font = '8px DungGeunMo, monospace'
+      ctx.fillText(String(Math.round(fgi)), indicatorX, barY - 2)
+
       ctx.restore()
     }
 
@@ -129,9 +146,15 @@ const eventMarkerPlugin: Plugin<'line', EventMarkerOptions> = {
         : isPositive ? '💡'
         : '📰'
 
-      ctx.font = '10px serif'
+      ctx.font = '14px serif'
       ctx.textAlign = 'center'
-      ctx.fillText(icon, x, topY - 2)
+      // Glow effect for critical/high severity
+      if (severity === 'critical' || severity === 'high') {
+        ctx.shadowColor = severity === 'critical' ? 'rgba(255,0,0,0.8)' : 'rgba(255,165,0,0.6)'
+        ctx.shadowBlur = 8
+      }
+      ctx.fillText(icon, x, topY - 4)
+      ctx.shadowBlur = 0
 
       ctx.restore()
     })
@@ -535,7 +558,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as SortOption)}
-            className="win-inset bg-white px-1 py-0.5 text-xs"
+            className="win-inset bg-[#0c0c1e] text-retro-silver px-1 py-0.5 text-xs"
           >
             <option value="name">이름순</option>
             <option value="price">가격순</option>

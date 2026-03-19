@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import { motion } from 'motion/react'
 import type { NewsCard as NewsCardType } from '../../types/newsCard'
+import { soundManager } from '../../systems/soundManager'
 
 const RARITY_COLORS: Record<string, { border: string; bg: string; text: string; glow: string }> = {
   common: { border: 'border-gray-500', bg: 'bg-gray-700', text: 'text-gray-300', glow: '' },
@@ -37,10 +38,12 @@ export function NewsCardComponent({ card, isSelected, isDisabled, onSelect, inde
   const handleClick = () => {
     if (!isFlipped) {
       setIsFlipped(true)
+      soundManager.playClick()
       return
     }
     if (!isDisabled) {
       onSelect(card.id)
+      soundManager.playClick()
     }
   }
 
