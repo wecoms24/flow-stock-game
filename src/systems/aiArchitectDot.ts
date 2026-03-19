@@ -5,6 +5,7 @@
  * - 유클리디안 거리 기반 시너지 계산
  * - 직원 배치 최적화 (미배치 + 재배치)
  * - 장식 가구 구매 제안
+ * - AI 경영 컨설턴트 추천 (채용/가구/경고/업그레이드)
  */
 
 import type { Employee } from '../types'
@@ -395,4 +396,261 @@ export function generateDotLayoutProposal(
     estimatedCost: limitedPurchases.reduce((sum, p) => sum + p.cost, 0),
     estimatedBenefit: limitedPurchases.reduce((sum, p) => sum + p.roi * p.cost, 0),
   }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   AI 경영 컨설턴트 — 스마트 추천 시스템
+   ══════════════════════════════════════════════════════════════ */
+
+export interface AIAdvisorRecommendation {
+  type: 'hire' | 'furniture' | 'fire' | 'upgrade' | 'warning'
+  priority: 'high' | 'medium' | 'low'
+  title: string
+  description: string
+  cost?: number
+  expectedBenefit: string
+}
+
+const PRIORITY_ORDER: Record<AIAdvisorRecommendation['priority'], number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+}
+
+/**
+ * AI 경영 컨설턴트 추천 생성
+ *
+ * 현재 팀 구성, 사무실 상태, 재무 상황을 종합 분석하여
+ * 채용/가구/경고/업그레이드 추천을 우선순위별로 반환한다.
+ *
+ * @param employees 전체 직원 목록
+ * @param officeLayout 현재 사무실 레이아웃 (null이면 미초기화)
+ * @param officeLevel 사무실 레벨 (1-8+)
+ * @param cash 현재 보유 현금
+ * @param totalAssets 총 자산 (현금 + 포트폴리오)
+ * @returns 최대 5개의 우선순위 정렬된 추천 목록
+ */
+export function generateAIRecommendations(
+  employees: Employee[],
+  officeLayout: OfficeLayout | null,
+  officeLevel: number,
+  cash: number,
+  _totalAssets: number,
+): AIAdvisorRecommendation[] {
+  const recommendations: AIAdvisorRecommendation[] = []
+
+  // ── 역할 분류 ──
+  const analysts = employees.filter((e) => e.role === 'analyst')
+  const traders = employees.filter((e) => e.role === 'trader')
+  const managers = employees.filter((e) => e.role === 'manager')
+  const totalCount = employees.length
+
+  // ── 스트레스/만족도 통계 ──
+  const stressValues = employees.map((e) => e.stress ?? 0)
+  const avgStress = stressValues.length > 0
+    ? stressValues.reduce((a, b) => a + b, 0) / stressValues.length
+    : 0
+
+  // ── 월급 합계 ──
+  const monthlySalary = employees.reduce((sum, e) => sum + e.salary, 0)
+
+  // ── 장식 가구 타입 집합 (현재 보유) ──
+  const ownedDecoTypes = new Set(
+    officeLayout?.decorations.map((d) => d.type) ?? [],
+  )
+
+  /* ────────────────────────────────
+     1. 채용 추천 (Hire)
+  ──────────────────────────────── */
+
+  if (analysts.length === 0) {
+    recommendations.push({
+      type: 'hire',
+      priority: 'high',
+      title: '분석가 채용 필수!',
+      description: '분석가 채용 필수! 매매 신호 생성이 안 됩니다',
+      expectedBenefit: '자동 매매 신호 생성 활성화',
+    })
+  }
+
+  if (traders.length === 0) {
+    recommendations.push({
+      type: 'hire',
+      priority: 'high',
+      title: '트레이더 채용 추천',
+      description: '트레이더 채용 추천. 자동 매매 실행 불가',
+      expectedBenefit: '승인된 거래 자동 체결',
+    })
+  }
+
+  if (managers.length === 0 && (analysts.length > 0 || traders.length > 0)) {
+    recommendations.push({
+      type: 'hire',
+      priority: 'medium',
+      title: '매니저 부재 — 실수율 30%',
+      description: '매니저 없이는 30% 실수율',
+      expectedBenefit: '거래 실수율 0%로 감소',
+    })
+  }
+
+  if (totalCount === 1) {
+    recommendations.push({
+      type: 'hire',
+      priority: 'high',
+      title: '최소 인원 미달',
+      description: '최소 3명 (분석가+매니저+트레이더) 구성 권장',
+      expectedBenefit: '완전한 자동 매매 파이프라인 구축',
+    })
+  }
+
+  if (cash > 50_000_000 && totalCount < 3) {
+    recommendations.push({
+      type: 'hire',
+      priority: 'medium',
+      title: '인력 확충 시기',
+      description: '자금 여유 있음. 인력 확충 시기',
+      expectedBenefit: '매매 파이프라인 효율 극대화',
+    })
+  }
+
+  /* ────────────────────────────────
+     2. 가구 추천 (Furniture)
+  ──────────────────────────────── */
+
+  // 미배치 직원 체크 (책상 없음)
+  if (officeLayout) {
+    const unassignedCount = employees.filter((e) => !e.deskId).length
+    if (unassignedCount > 0) {
+      recommendations.push({
+        type: 'furniture',
+        priority: 'high',
+        title: '미배치 직원 발견',
+        description: `배치 안 된 직원 ${unassignedCount}명 있음! 책상 구매 필요`,
+        cost: DESK_CATALOG.basic.cost * unassignedCount,
+        expectedBenefit: `${unassignedCount}명 업무 투입 가능`,
+      })
+    }
+  }
+
+  // 높은 평균 스트레스 → 화분/소파 추천
+  if (avgStress > 60 && totalCount > 0) {
+    const stressItems: string[] = []
+    if (!ownedDecoTypes.has('plant')) stressItems.push('화분')
+    if (!ownedDecoTypes.has('lounge_chair')) stressItems.push('소파')
+    if (!ownedDecoTypes.has('air_purifier')) stressItems.push('공기청정기')
+
+    if (stressItems.length > 0) {
+      recommendations.push({
+        type: 'furniture',
+        priority: 'high',
+        title: '직원 스트레스 높음',
+        description: `직원 스트레스 높음 (평균 ${Math.round(avgStress)}). ${stressItems.join('/')} 추천`,
+        cost: stressItems.reduce((sum, item) => {
+          if (item === '화분') return sum + DECORATION_CATALOG.plant.cost
+          if (item === '소파') return sum + DECORATION_CATALOG.lounge_chair.cost
+          if (item === '공기청정기') return sum + DECORATION_CATALOG.air_purifier.cost
+          return sum
+        }, 0),
+        expectedBenefit: '스트레스 20~30% 감소',
+      })
+    }
+  }
+
+  // 커피머신 추천
+  if (!ownedDecoTypes.has('coffee_machine') && totalCount > 3) {
+    recommendations.push({
+      type: 'furniture',
+      priority: 'medium',
+      title: '커피머신 추천',
+      description: '커피머신 추천. 스태미너 회복↑',
+      cost: DECORATION_CATALOG.coffee_machine.cost,
+      expectedBenefit: '주변 직원 스태미너 회복 30% 증가',
+    })
+  }
+
+  // 수족관 추천 (레벨 4+)
+  if (officeLevel >= 4 && !ownedDecoTypes.has('aquarium')) {
+    recommendations.push({
+      type: 'furniture',
+      priority: 'low',
+      title: '수족관 추천',
+      description: '수족관 추천. 전직원 스트레스↓',
+      cost: DECORATION_CATALOG.aquarium.cost,
+      expectedBenefit: '전 직원 스트레스 25% 감소 + 만족도 증가',
+    })
+  }
+
+  /* ────────────────────────────────
+     3. 경고 (Warning)
+  ──────────────────────────────── */
+
+  // 개별 직원 위험 스트레스
+  for (const emp of employees) {
+    if ((emp.stress ?? 0) > 80) {
+      recommendations.push({
+        type: 'warning',
+        priority: 'high',
+        title: `${emp.name} 스트레스 위험`,
+        description: `${emp.name} 스트레스 위험! 즉시 휴식/상담 필요`,
+        expectedBenefit: '퇴사/업무 마비 방지',
+      })
+    }
+  }
+
+  // 개별 직원 불만족
+  for (const emp of employees) {
+    if ((emp.satisfaction ?? 50) < 30) {
+      recommendations.push({
+        type: 'warning',
+        priority: 'high',
+        title: `${emp.name} 불만족`,
+        description: `${emp.name} 불만족. 칭찬/보너스 고려`,
+        expectedBenefit: '만족도 회복, 퇴사 방지',
+      })
+    }
+  }
+
+  // 자금 위기 경고
+  if (monthlySalary > 0 && cash < monthlySalary * 3) {
+    recommendations.push({
+      type: 'warning',
+      priority: 'high',
+      title: '자금 위기',
+      description: '자금 위기! 3개월 월급도 안 남음',
+      expectedBenefit: '인력 구조조정 또는 매도로 현금 확보',
+    })
+  }
+
+  /* ────────────────────────────────
+     4. 업그레이드 추천 (Upgrade)
+  ──────────────────────────────── */
+
+  // 모든 책상 슬롯이 찬 경우
+  if (officeLayout && officeLayout.desks.length >= officeLayout.maxDesks) {
+    recommendations.push({
+      type: 'upgrade',
+      priority: 'medium',
+      title: '사무실 레벨업 고려',
+      description: '사무실 레벨업 고려. 더 많은 직원 배치 가능',
+      expectedBenefit: '추가 직원 고용 및 배치 가능',
+    })
+  }
+
+  // 자금 충분 + 낮은 레벨
+  if (cash > 1_000_000 && officeLevel < 3) {
+    recommendations.push({
+      type: 'upgrade',
+      priority: 'low',
+      title: '사무실 업그레이드 추천',
+      description: '사무실 업그레이드 추천',
+      expectedBenefit: '더 넓은 공간, 고급 가구 해금',
+    })
+  }
+
+  /* ────────────────────────────────
+     정렬 + 상위 5개 반환
+  ──────────────────────────────── */
+
+  recommendations.sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority])
+  return recommendations.slice(0, 5)
 }
