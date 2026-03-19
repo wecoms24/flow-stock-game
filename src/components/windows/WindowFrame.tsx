@@ -1,6 +1,12 @@
-import { useRef, useCallback, type ReactNode } from 'react'
+import { useRef, useCallback, useState, type ReactNode } from 'react'
+import { motion } from 'motion/react'
 import { useGameStore } from '../../stores/gameStore'
+import { windowVariants } from '../../utils/motionVariants'
 import type { WindowState, WindowType } from '../../types'
+
+/* ── Snap Zone Config ── */
+const SNAP_THRESHOLD = 20 // px from edge to trigger snap
+type SnapZone = 'left' | 'right' | 'top' | null
 
 /* ── Window Size Constraints ── */
 const WINDOW_SIZE_CONSTRAINTS: Record<
@@ -52,6 +58,7 @@ interface WindowFrameProps {
 export function WindowFrame({ window: win, children }: WindowFrameProps) {
   const { closeWindow, minimizeWindow, toggleMaximizeWindow, focusWindow, moveWindow, resizeWindow } =
     useGameStore()
+  const [snapZone, setSnapZone] = useState<SnapZone>(null)
   const dragRef = useRef<{ startX: number; startY: number; winX: number; winY: number } | null>(
     null,
   )
@@ -76,14 +83,35 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
         winY: win.y,
       }
 
+      const detectSnapZone = (clientX: number, clientY: number): SnapZone => {
+        if (clientX <= SNAP_THRESHOLD) return 'left'
+        if (clientX >= window.innerWidth - SNAP_THRESHOLD) return 'right'
+        if (clientY <= SNAP_THRESHOLD) return 'top'
+        return null
+      }
+
       const handleMouseMove = (ev: MouseEvent) => {
         if (!dragRef.current) return
         const dx = ev.clientX - dragRef.current.startX
         const dy = ev.clientY - dragRef.current.startY
         moveWindow(win.id, dragRef.current.winX + dx, dragRef.current.winY + dy)
+        setSnapZone(detectSnapZone(ev.clientX, ev.clientY))
       }
 
-      const handleMouseUp = () => {
+      const handleMouseUp = (ev: MouseEvent) => {
+        const zone = detectSnapZone(ev.clientX, ev.clientY)
+        if (zone === 'top') {
+          toggleMaximizeWindow(win.id)
+        } else if (zone === 'left') {
+          const h = window.innerHeight - 45 // taskbar + ticker height
+          moveWindow(win.id, 0, 20)
+          resizeWindow(win.id, Math.floor(window.innerWidth / 2), h)
+        } else if (zone === 'right') {
+          const h = window.innerHeight - 45
+          moveWindow(win.id, Math.floor(window.innerWidth / 2), 20)
+          resizeWindow(win.id, Math.floor(window.innerWidth / 2), h)
+        }
+        setSnapZone(null)
         dragRef.current = null
         document.removeEventListener('mousemove', handleMouseMove)
         document.removeEventListener('mouseup', handleMouseUp)
@@ -92,7 +120,7 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
       document.addEventListener('mousemove', handleMouseMove)
       document.addEventListener('mouseup', handleMouseUp)
     },
-    [win.id, win.x, win.y, win.isMaximized, focusWindow, moveWindow],
+    [win.id, win.x, win.y, win.isMaximized, focusWindow, moveWindow, resizeWindow, toggleMaximizeWindow],
   )
 
   const handleResizeMouseDown = useCallback(
@@ -178,7 +206,7 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
   if (win.isMinimized) return null
 
   return (
-    <div
+    <motion.div
       className="absolute win-outset bg-win-face flex flex-col"
       style={{
         left: win.x,
@@ -187,6 +215,10 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
         height: win.height,
         zIndex: win.zIndex,
       }}
+      variants={windowVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
       onMouseDown={() => focusWindow(win.id)}
     >
       {/* Title Bar */}
@@ -202,21 +234,24 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
           {win.title}
         </div>
         <button
-          className="win-outset bg-win-face w-4 h-4 flex items-center justify-center text-[10px] leading-none cursor-pointer"
+          className="win-outset bg-win-face w-4 h-4 flex items-center justify-center text-[10px] leading-none cursor-pointer hover:brightness-110 active:win-pressed active:translate-y-[1px] transition-transform duration-[50ms]"
           onClick={() => minimizeWindow(win.id)}
+          aria-label="최소화"
         >
           _
         </button>
         <button
-          className="win-outset bg-win-face w-4 h-4 flex items-center justify-center text-[10px] leading-none cursor-pointer"
+          className="win-outset bg-win-face w-4 h-4 flex items-center justify-center text-[10px] leading-none cursor-pointer hover:brightness-110 active:win-pressed active:translate-y-[1px] transition-transform duration-[50ms]"
           onClick={() => toggleMaximizeWindow(win.id)}
           title={win.isMaximized ? '이전 크기로' : '최대화'}
+          aria-label={win.isMaximized ? '이전 크기로' : '최대화'}
         >
           {win.isMaximized ? '❐' : '□'}
         </button>
         <button
-          className="win-outset bg-win-face w-4 h-4 flex items-center justify-center text-[10px] leading-none cursor-pointer"
+          className="win-outset bg-win-face w-4 h-4 flex items-center justify-center text-[10px] leading-none cursor-pointer hover:brightness-110 active:win-pressed active:translate-y-[1px] transition-transform duration-[50ms]"
           onClick={() => closeWindow(win.id)}
+          aria-label="닫기"
         >
           X
         </button>
@@ -269,13 +304,39 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
         style={{ cursor: RESIZE_CURSORS.sw }}
         onMouseDown={(e) => handleResizeMouseDown(e, 'sw')}
       />
-      {/* Bottom-Right */}
+      {/* Bottom-Right — visible resize grip */}
       <div
-        className="absolute bottom-0 right-0 w-2 h-2 cursor-nwse-resize"
+        className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize group"
         style={{ cursor: RESIZE_CURSORS.se }}
         onMouseDown={(e) => handleResizeMouseDown(e, 'se')}
-      />
+      >
+        <svg
+          className="w-full h-full opacity-40 group-hover:opacity-80 transition-opacity"
+          viewBox="0 0 12 12"
+        >
+          <line x1="10" y1="2" x2="2" y2="10" stroke="#808080" strokeWidth="1" />
+          <line x1="10" y1="5" x2="5" y2="10" stroke="#808080" strokeWidth="1" />
+          <line x1="10" y1="8" x2="8" y2="10" stroke="#808080" strokeWidth="1" />
+          <line x1="11" y1="2" x2="2" y2="11" stroke="#fff" strokeWidth="1" />
+          <line x1="11" y1="5" x2="5" y2="11" stroke="#fff" strokeWidth="1" />
+          <line x1="11" y1="8" x2="8" y2="11" stroke="#fff" strokeWidth="1" />
+        </svg>
+      </div>
       </>}
-    </div>
+
+      {/* Snap zone preview overlay */}
+      {snapZone && (
+        <div
+          className="fixed pointer-events-none z-[9990] border-2 border-win-title-active bg-win-title-active/10"
+          style={
+            snapZone === 'left'
+              ? { left: 0, top: 20, width: '50%', bottom: 36 }
+              : snapZone === 'right'
+                ? { right: 0, top: 20, width: '50%', bottom: 36 }
+                : { left: 0, top: 20, right: 0, bottom: 36 }
+          }
+        />
+      )}
+    </motion.div>
   )
 }

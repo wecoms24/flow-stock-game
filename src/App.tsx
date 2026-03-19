@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useGameStore } from './stores/gameStore'
 import { initTickEngine, startTickLoop, destroyTickEngine } from './engines/tickEngine'
 import { validateSkillTree } from './systems/skillSystem'
@@ -23,10 +23,13 @@ import { RegimeToast } from './components/ui/RegimeToast'
 import { DailyRecordToast } from './components/ui/DailyRecordToast'
 import { EmployeeMilestoneToast } from './components/effects/EmployeeMilestoneToast'
 import { RivalTradeToast } from './components/ui/RivalTradeToast'
+import { ToastContainer } from './components/ui/ToastContainer'
 import { RankCelebration } from './components/ui/RankCelebration'
 import { CelebrationManager } from './components/ui/CelebrationManager'
 import { ChapterModal } from './components/tutorial/ChapterModal'
+import { TutorialSpotlight, isTutorialCompleted } from './components/tutorial/TutorialSpotlight'
 import { FastForwardOverlay } from './components/ui/FastForwardOverlay'
+import { useScreenShake, registerShakeHandler } from './hooks/useScreenShake'
 import { hasSaveData } from './systems/saveSystem'
 import { migrateIndexedDBToSQLite } from './systems/sqlite/migration'
 import { getFeatureFlag, setFeatureFlag } from './systems/featureFlags'
@@ -39,7 +42,15 @@ export default function App() {
   const checkEnding = useGameStore((s) => s.checkEnding)
   const [hasSave, setHasSave] = useState(false)
   const [showMigrationBanner, setShowMigrationBanner] = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false)
   const rankChange = useRankChangeNotification()
+  const desktopRef = useRef<HTMLDivElement>(null)
+  const shake = useScreenShake(desktopRef)
+
+  // Register global shake handler so engines can trigger shakes
+  useEffect(() => {
+    return registerShakeHandler(shake)
+  }, [shake])
 
   // Check for existing save on mount + show migration prompt if needed
   useEffect(() => {
@@ -106,6 +117,12 @@ export default function App() {
       destroyTickEngine()
       initTickEngine()
       startTickLoop()
+      // Show tutorial on first game start
+      if (!isTutorialCompleted()) {
+        // Delay to let UI render first
+        const timer = setTimeout(() => setShowTutorial(true), 1000)
+        return () => clearTimeout(timer)
+      }
     }
   }, [isGameStarted])
 
@@ -149,7 +166,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="w-screen h-screen bg-win-bg overflow-hidden">
+      <div ref={desktopRef} className="w-screen h-screen bg-win-bg overflow-hidden">
         {/* Migration banner */}
         {showMigrationBanner && (
           <div className="absolute top-0 left-0 right-0 z-[9999] bg-retro-yellow text-retro-black win-outset p-3 flex items-center justify-between">
@@ -186,6 +203,9 @@ export default function App() {
 
         <Taskbar />
 
+        {/* Unified toast system */}
+        <ToastContainer />
+
         {/* Visual effects */}
         <StockParticles />
         <FloatingTextContainer />
@@ -201,6 +221,11 @@ export default function App() {
         <TradeAnimationSequence />
         <ChapterModal />
         <FastForwardOverlay />
+
+        {/* Tutorial spotlight overlay */}
+        {showTutorial && (
+          <TutorialSpotlight onComplete={() => setShowTutorial(false)} />
+        )}
 
         {isGameOver && <EndingScreen />}
 

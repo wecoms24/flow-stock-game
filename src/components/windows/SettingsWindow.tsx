@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { soundManager } from '../../systems/soundManager'
+import { setReducedMotion, isReducedMotion } from '../../hooks/useReducedMotion'
 import { getFeatureFlag, setFeatureFlag } from '../../systems/featureFlags'
 import { getMigrationStatusPublic, resetMigrationStatus } from '../../systems/sqlite/migration'
 import { kisWebSocket } from '../../services/kisWebSocketService'
@@ -27,6 +28,7 @@ export function SettingsWindow() {
     setAutoHRThreshold,
   } = useGameStore()
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled)
+  const [motionReduced, setMotionReduced] = useState(isReducedMotion)
   const [volume, setVolume] = useState(soundManager.volume)
 
   // SQLite Settings
@@ -124,6 +126,30 @@ export function SettingsWindow() {
               {time.year}년 {time.month}월 {time.day}일
             </span>
           </div>
+        </div>
+      </div>
+
+      {/* Visual effects settings */}
+      <div className="space-y-1">
+        <div className="font-bold">시각 효과</div>
+        <div className="win-inset bg-white p-2 space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-retro-gray">애니메이션 효과:</span>
+            <RetroButton
+              size="sm"
+              onClick={() => {
+                const next = !motionReduced
+                setMotionReduced(next)
+                setReducedMotion(next)
+              }}
+              className={!motionReduced ? 'win-pressed' : ''}
+            >
+              {!motionReduced ? 'ON' : 'OFF'}
+            </RetroButton>
+          </div>
+          <p className="text-[10px] text-retro-gray">
+            화면 흔들림, 윈도우 전환, 카드 뒤집기 등의 효과를 끌 수 있습니다.
+          </p>
         </div>
       </div>
 

@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { isPriceLimitHit } from '../../config/priceLimit'
 import { isVIHalted, getVIRemainingTicks } from '../../engines/viEngine'
+import { triggerScreenShake } from '../../hooks/useScreenShake'
 
 interface TradingWindowProps {
   companyId?: string
@@ -30,6 +31,8 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
   const [mode, setMode] = useState<'buy' | 'sell'>('buy')
   const [tab, setTab] = useState<Tab>('market')
   const [limitPrice, setLimitPrice] = useState<Record<string, string>>({}) // 목표가 입력
+  const [tradeFeedback, setTradeFeedback] = useState<'success-buy' | 'success-sell' | 'error' | null>(null)
+  const feedbackTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
   // 차트 창에서 기업 변경 시 동기화 (외부 prop 변경만 추적)
   // 조건문으로 무한 루프 방지됨 - controlled component 패턴
@@ -104,12 +107,48 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
   const maxBuyable = Math.floor(player.cash / company.price)
   const maxSellable = position?.shares ?? 0
 
+  const showFeedback = useCallback((type: 'success-buy' | 'success-sell' | 'error') => {
+    if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current)
+    setTradeFeedback(type)
+    feedbackTimeoutRef.current = setTimeout(() => setTradeFeedback(null), 600)
+  }, [])
+
   const handleTrade = () => {
+    const cashBefore = useGameStore.getState().player.cash
+    const portfolioBefore = useGameStore.getState().player.portfolio[selectedId]?.shares ?? 0
+
     if (mode === 'buy') {
       buyStock(selectedId, shares)
     } else {
       sellStock(selectedId, shares)
     }
+
+    // Check if trade actually executed by comparing state
+    const cashAfter = useGameStore.getState().player.cash
+    const portfolioAfter = useGameStore.getState().player.portfolio[selectedId]?.shares ?? 0
+    const tradeExecuted = mode === 'buy'
+      ? portfolioAfter > portfolioBefore
+      : portfolioAfter < portfolioBefore
+
+    if (tradeExecuted) {
+      showFeedback(mode === 'buy' ? 'success-buy' : 'success-sell')
+      // Proportional shake: bigger trade = bigger shake
+      const tradeValue = Math.abs(cashAfter - cashBefore)
+      const totalAssets = cashAfter + Object.values(useGameStore.getState().player.portfolio)
+        .reduce((sum, p) => {
+          const c = useGameStore.getState().companies.find(co => co.id === p.companyId)
+          return sum + (c ? c.price * p.shares : 0)
+        }, 0)
+      const tradeRatio = totalAssets > 0 ? tradeValue / totalAssets : 0
+      if (tradeRatio > 0.1) {
+        triggerScreenShake('medium')
+      } else if (tradeRatio > 0.03) {
+        triggerScreenShake('light')
+      }
+    } else {
+      showFeedback('error')
+    }
+
     setShares(1)
   }
 
@@ -521,13 +560,23 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
                 ? totalCost > player.cash || shares <= 0
                 : shares > maxSellable || shares <= 0)
             }
-            className={mode === 'buy' ? 'text-stock-up' : ''}
+            className={`${mode === 'buy' ? 'text-stock-up' : ''} ${
+              tradeFeedback === 'success-buy' ? '!bg-green-200 transition-colors' :
+              tradeFeedback === 'success-sell' ? '!bg-red-200 transition-colors' :
+              tradeFeedback === 'error' ? 'button-shake !border-retro-red' : ''
+            }`}
           >
             {!canTrade(selectedId)
               ? '거래정지'
-              : mode === 'buy'
-                ? `${shares}주 매수`
-                : `${shares}주 매도`
+              : tradeFeedback === 'success-buy'
+                ? '체결!'
+                : tradeFeedback === 'success-sell'
+                  ? '체결!'
+                  : tradeFeedback === 'error'
+                    ? '실패'
+                    : mode === 'buy'
+                      ? `${shares}주 매수`
+                      : `${shares}주 매도`
             }
           </RetroButton>
         </div>

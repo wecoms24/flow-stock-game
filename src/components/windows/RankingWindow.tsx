@@ -715,15 +715,15 @@ export function RankingWindow() {
         </div>
         <div className="flex justify-between">
           <span className="text-retro-gray">초기 자본:</span>
-          <span>{config.initialCash.toLocaleString()}원</span>
+          <span className="tabular-nums">{config.initialCash.toLocaleString()}원</span>
         </div>
-        <div className="flex justify-between">
+        <div className="flex justify-between items-baseline">
           <span className="text-retro-gray">현재 자산:</span>
-          <span className="font-bold">{player.totalAssetValue.toLocaleString()}원</span>
+          <span className="font-bold text-sm tabular-nums">{player.totalAssetValue.toLocaleString()}원</span>
         </div>
         <div className="flex justify-between">
           <span className="text-retro-gray">수익률:</span>
-          <span className={`font-bold ${returnRate >= 0 ? 'text-stock-up' : 'text-stock-down'}`}>
+          <span className={`font-bold tabular-nums ${returnRate >= 0 ? 'text-stock-up' : 'text-stock-down'}`}>
             {returnRate >= 0 ? '+' : ''}
             {returnRate.toFixed(1)}%
           </span>

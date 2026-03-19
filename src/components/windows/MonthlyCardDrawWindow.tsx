@@ -85,7 +85,7 @@ export function MonthlyCardDrawWindow() {
 
       {/* Cards */}
       <div className="flex justify-center gap-3 flex-1 items-center">
-        {availableCards.map((card) => {
+        {availableCards.map((card, i) => {
           const isSelected = selectedCardIds.includes(card.id)
           const isDisabled = !isSelected && selectedCardIds.length >= 2
           return (
@@ -95,6 +95,7 @@ export function MonthlyCardDrawWindow() {
               isSelected={isSelected}
               isDisabled={isDisabled}
               onSelect={handleSelect}
+              index={i}
             />
           )
         })}

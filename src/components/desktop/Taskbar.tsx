@@ -199,7 +199,7 @@ export function Taskbar() {
                       className="text-xs w-full justify-start mb-0.5"
                     >
                       <span className="flex items-center gap-2">
-                        <PixelIcon name={item.icon} size={14} />
+                        <PixelIcon name={item.icon} size="md" />
                         {item.label}
                       </span>
                     </RetroButton>
@@ -220,15 +220,16 @@ export function Taskbar() {
       <div className="w-px h-5 bg-win-shadow mx-0.5" />
 
       {/* Quick launch — 상위 6개만 표시, 나머지 접기 */}
-      {TASKBAR_ITEMS.slice(0, 6).map((item) => (
+      {TASKBAR_ITEMS.slice(0, 4).map((item) => (
         <RetroButton
           key={item.type}
           size="sm"
           onClick={() => handleOpenWindow(item.type)}
           title={item.label}
           className="relative"
+          data-tutorial={`quick-launch-${item.type}`}
         >
-          <PixelIcon name={item.icon} size={14} />
+          <PixelIcon name={item.icon} size="md" />
           {item.type === 'news' && unreadNewsCount > 0 && (
             <span className="absolute -top-1 -right-1 bg-stock-up text-retro-white text-[10px] leading-none px-1 rounded-sm min-w-[12px] text-center">
               {unreadNewsCount > 9 ? '9+' : unreadNewsCount}
@@ -236,7 +237,7 @@ export function Taskbar() {
           )}
         </RetroButton>
       ))}
-      {TASKBAR_ITEMS.length > 6 && (
+      {TASKBAR_ITEMS.length > 4 && (
         <div className="relative shrink-0" ref={moreIconsRef}>
           <RetroButton
             size="sm"
@@ -248,7 +249,7 @@ export function Taskbar() {
           </RetroButton>
           {showMoreIcons && (
             <div className="absolute bottom-full left-0 mb-1 win-outset bg-win-face p-1 space-y-0.5 z-50">
-              {TASKBAR_ITEMS.slice(6).map((item) => (
+              {TASKBAR_ITEMS.slice(4).map((item) => (
                 <RetroButton
                   key={item.type}
                   size="sm"
@@ -259,7 +260,7 @@ export function Taskbar() {
                   className="text-[10px] w-full justify-start"
                 >
                   <span className="flex items-center gap-1">
-                    <PixelIcon name={item.icon} size={14} />
+                    <PixelIcon name={item.icon} size="md" />
                     {item.label}
                   </span>
                 </RetroButton>
@@ -327,7 +328,7 @@ export function Taskbar() {
       </div>
 
       {/* Speed controls */}
-      <div className="flex items-center gap-0.5 shrink-0">
+      <div className="flex items-center gap-0.5 shrink-0" data-tutorial="speed-controls">
         <RetroButton size="sm" onClick={togglePause} title={time.isPaused ? '재생' : '일시정지'}>
           <span className="text-[10px]">{time.isPaused ? '▶' : '⏸'}</span>
         </RetroButton>

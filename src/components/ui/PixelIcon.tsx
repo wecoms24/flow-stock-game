@@ -101,24 +101,52 @@ const ICONS: Record<string, string> = {
     <rect x="5" y="13" width="6" height="2" fill="#C0C0C0" stroke="#000" stroke-width="0.5"/>
     <rect x="12" y="6" width="1" height="5" fill="#808080"/>
     <rect x="11" y="10" width="3" height="2" fill="#FFFF00"/>`,
+
+  warning: `<polygon points="8,1 15,14 1,14" fill="#FFFF00" stroke="#000" stroke-width="1"/>
+    <text x="6" y="12" fill="#000" font-size="10" font-weight="bold">!</text>`,
+
+  success: `<circle cx="8" cy="8" r="6" fill="#00AA00" stroke="#000" stroke-width="1"/>
+    <polyline points="4,8 7,11 12,5" fill="none" stroke="#FFF" stroke-width="2"/>`,
+
+  loading: `<rect x="3" y="1" width="10" height="14" fill="#C0C0C0" stroke="#000" stroke-width="1"/>
+    <rect x="5" y="5" width="6" height="6" fill="#FFFF00" stroke="#000" stroke-width="0.5"/>
+    <line x1="8" y1="5" x2="8" y2="8" stroke="#000" stroke-width="1"/>
+    <line x1="8" y1="8" x2="10" y2="6" stroke="#000" stroke-width="1"/>`,
+
+  empty: `<rect x="1" y="3" width="14" height="11" fill="#FFFF00" stroke="#000" stroke-width="1"/>
+    <rect x="1" y="1" width="7" height="3" fill="#FFFF00" stroke="#000" stroke-width="1"/>
+    <text x="4" y="11" fill="#808080" font-size="8">?</text>`,
 }
 
 export type IconName = keyof typeof ICONS
 
+/* ── Size presets ── */
+const SIZE_PRESETS = {
+  xs: 12,
+  sm: 16,
+  md: 20,
+  lg: 24,
+  xl: 32,
+} as const
+
+type SizePreset = keyof typeof SIZE_PRESETS
+
 interface PixelIconProps {
   name: IconName
-  size?: number
+  size?: number | SizePreset
   className?: string
 }
 
-export function PixelIcon({ name, size = 16, className = '' }: PixelIconProps) {
+export function PixelIcon({ name, size = 'sm', className = '' }: PixelIconProps) {
   const iconSvg = ICONS[name]
   if (!iconSvg) return <span className={className}>?</span>
 
+  const pixelSize = typeof size === 'string' ? SIZE_PRESETS[size] : size
+
   return (
     <svg
-      width={size}
-      height={size}
+      width={pixelSize}
+      height={pixelSize}
       viewBox="0 0 16 16"
       className={className}
       style={{ imageRendering: 'pixelated' }}

@@ -12,6 +12,7 @@ import {
 import type { Plugin } from 'chart.js'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
+import { EmptyState } from '../ui/EmptyState'
 import { getFearGreedIndex, isSentimentActive } from '../../engines/sentimentEngine'
 
 /* ── Event Marker + Band Plugin ── */
@@ -372,9 +373,9 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
       datasets: [
         {
           data: history,
-          borderColor: selected.price >= selected.previousPrice ? '#FF0000' : '#0000FF',
+          borderColor: selected.price >= selected.previousPrice ? '#FF4444' : '#4488FF',
           backgroundColor:
-            selected.price >= selected.previousPrice ? 'rgba(255,0,0,0.1)' : 'rgba(0,0,255,0.1)',
+            selected.price >= selected.previousPrice ? 'rgba(255,68,68,0.15)' : 'rgba(68,136,255,0.15)',
           borderWidth: 1.5,
           pointRadius: 0,
           stepped: 'middle' as const,
@@ -451,6 +452,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
           display: true,
           ticks: {
             font: { family: 'DungGeunMo', size: 9 },
+            color: '#C0C0C0',
             maxRotation: 45,
             minRotation: 45,
             autoSkip: true,
@@ -459,15 +461,22 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
           grid: {
             display: false,
           },
+          border: {
+            color: 'rgba(192, 192, 192, 0.3)',
+          },
         },
         y: {
           ticks: {
             font: { family: 'DungGeunMo', size: 10 },
+            color: '#C0C0C0',
             callback: (value: string | number) =>
               typeof value === 'number' ? value.toLocaleString() : value,
           },
           grid: {
-            color: 'rgba(0,0,0,0.1)',
+            color: 'rgba(192, 192, 192, 0.12)',
+          },
+          border: {
+            color: 'rgba(192, 192, 192, 0.3)',
           },
         },
       },
@@ -475,6 +484,11 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
         tooltip: {
           titleFont: { family: 'DungGeunMo' },
           bodyFont: { family: 'DungGeunMo' },
+          backgroundColor: 'rgba(0, 0, 128, 0.92)',
+          titleColor: '#FFFFFF',
+          bodyColor: '#C0C0C0',
+          borderColor: '#C0C0C0',
+          borderWidth: 1,
         },
         eventMarkers: {
           markers: eventMarkers,
@@ -487,7 +501,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   )
 
   if (!selected || !chartData) {
-    return <div className="text-xs text-retro-gray">종목을 선택하세요</div>
+    return <EmptyState icon="📊" title="종목을 선택하세요" description="왼쪽 목록에서 관심 종목을 클릭하세요" />
   }
 
   const change = selected.price - selected.previousPrice
@@ -508,7 +522,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   return (
     <div className="flex flex-col h-full text-xs">
       {/* 통합 필터 패널 */}
-      <div className="win-inset bg-white p-1 mb-1 space-y-1">
+      <div className="win-inset bg-[#1a1a2e] p-1 mb-1 space-y-1 text-retro-silver">
         {/* 검색창 + 정렬 + 필터 토글 */}
         <div className="flex items-center gap-1">
           <input
@@ -516,7 +530,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
             placeholder="🔍 티커/이름 검색..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 win-inset bg-white px-1.5 py-0.5 text-xs"
+            className="flex-1 win-inset bg-[#0c0c1e] px-1.5 py-0.5 text-xs text-retro-silver"
           />
           <select
             value={sortBy}
@@ -663,7 +677,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
 
       {/* Price info */}
       <div className="flex items-baseline gap-2 mb-1">
-        <span className="text-base font-bold">{selected.price.toLocaleString()}원</span>
+        <span className="text-base font-bold tabular-nums">{selected.price.toLocaleString()}원</span>
         <span className={`font-bold ${isUp ? 'text-stock-up' : 'text-stock-down'}`}>
           {isUp ? '▲' : '▼'} {Math.abs(change).toLocaleString()} ({isUp ? '+' : ''}
           {changePercent.toFixed(2)}%)
@@ -671,14 +685,14 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
       </div>
 
       {/* Chart */}
-      <div className={`flex-1 min-h-0 transition-colors duration-500 ${isFlashing ? 'bg-yellow-100/40' : ''}`}>
+      <div className={`flex-1 min-h-0 transition-colors duration-500 bg-[#1a1a2e] win-inset ${isFlashing ? 'brightness-125' : ''}`}>
         <Line data={chartData} options={chartOptions} />
       </div>
 
       {/* Sentiment Indicator */}
       {fearGreedIdx !== undefined && (
-        <div className="mt-1 win-inset bg-white px-2 py-0.5 text-[10px] flex items-center gap-2">
-          <span className="text-retro-gray">센티먼트:</span>
+        <div className="mt-1 win-inset bg-[#1a1a2e] px-2 py-1 text-[10px] flex items-center gap-2">
+          <span className="text-retro-gray font-bold">공포</span>
           <span
             className={`font-bold ${fearGreedIdx > 60 ? 'text-red-500' : fearGreedIdx < 40 ? 'text-blue-500' : 'text-gray-600'}`}
           >
@@ -692,13 +706,14 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
                     ? '공포'
                     : '중립'}
           </span>
-          <span className="text-retro-gray">({Math.round(fearGreedIdx)})</span>
+          <span className="text-retro-silver tabular-nums">({Math.round(fearGreedIdx)})</span>
+          <span className="text-retro-gray font-bold">탐욕</span>
         </div>
       )}
 
       {/* Event Info Panel */}
       {showEventMarkers && relevantEvents.length > 0 && (
-        <div className="mt-1 win-inset bg-white p-1 text-[10px] overflow-y-auto">
+        <div className="mt-1 win-inset bg-[#1a1a2e] p-1 text-[10px] text-retro-silver overflow-y-auto">
           <div className="font-bold mb-0.5">관련 이벤트 ({relevantEvents.length})</div>
           <div className="space-y-0.5">
             {relevantEvents.slice(0, 5).map((evt) => {

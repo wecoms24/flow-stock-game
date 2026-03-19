@@ -1,17 +1,18 @@
 /**
  * NewsCard
  *
- * CSS rotateY 플립 카드 컴포넌트
+ * Motion-powered flip card with spring physics
  */
 
 import { useState } from 'react'
+import { motion } from 'motion/react'
 import type { NewsCard as NewsCardType } from '../../types/newsCard'
 
-const RARITY_COLORS: Record<string, { border: string; bg: string; text: string }> = {
-  common: { border: 'border-gray-500', bg: 'bg-gray-700', text: 'text-gray-300' },
-  uncommon: { border: 'border-blue-500', bg: 'bg-blue-900/50', text: 'text-blue-300' },
-  rare: { border: 'border-purple-500', bg: 'bg-purple-900/50', text: 'text-purple-300' },
-  legendary: { border: 'border-yellow-500', bg: 'bg-yellow-900/50', text: 'text-yellow-300' },
+const RARITY_COLORS: Record<string, { border: string; bg: string; text: string; glow: string }> = {
+  common: { border: 'border-gray-500', bg: 'bg-gray-700', text: 'text-gray-300', glow: '' },
+  uncommon: { border: 'border-blue-500', bg: 'bg-blue-900/50', text: 'text-blue-300', glow: 'shadow-[0_0_8px_rgba(59,130,246,0.3)]' },
+  rare: { border: 'border-purple-500', bg: 'bg-purple-900/50', text: 'text-purple-300', glow: 'shadow-[0_0_12px_rgba(168,85,247,0.4)]' },
+  legendary: { border: 'border-yellow-500', bg: 'bg-yellow-900/50', text: 'text-yellow-300', glow: 'shadow-[0_0_16px_rgba(234,179,8,0.5)]' },
 }
 
 const RARITY_LABELS: Record<string, string> = {
@@ -26,9 +27,10 @@ interface NewsCardProps {
   isSelected: boolean
   isDisabled: boolean
   onSelect: (cardId: string) => void
+  index?: number
 }
 
-export function NewsCardComponent({ card, isSelected, isDisabled, onSelect }: NewsCardProps) {
+export function NewsCardComponent({ card, isSelected, isDisabled, onSelect, index = 0 }: NewsCardProps) {
   const [isFlipped, setIsFlipped] = useState(false)
   const colors = RARITY_COLORS[card.rarity] ?? RARITY_COLORS.common
 
@@ -57,16 +59,28 @@ export function NewsCardComponent({ card, isSelected, isDisabled, onSelect }: Ne
   })
 
   return (
-    <div
+    <motion.div
       className="relative cursor-pointer select-none"
       style={{ perspective: '600px', width: '150px', height: '210px' }}
       onClick={handleClick}
+      initial={{ y: 40, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{
+        type: 'spring',
+        stiffness: 400,
+        damping: 25,
+        delay: index * 0.15,
+      }}
+      whileHover={!isFlipped ? { y: -4, transition: { duration: 0.15 } } : undefined}
     >
-      <div
-        className="absolute inset-0 transition-transform duration-500"
-        style={{
-          transformStyle: 'preserve-3d',
-          transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+      <motion.div
+        className="absolute inset-0"
+        style={{ transformStyle: 'preserve-3d' }}
+        animate={{ rotateY: isFlipped ? 180 : 0 }}
+        transition={{
+          type: 'spring',
+          stiffness: 300,
+          damping: 25,
         }}
       >
         {/* Front (back of card) */}
@@ -82,7 +96,7 @@ export function NewsCardComponent({ card, isSelected, isDisabled, onSelect }: Ne
 
         {/* Back (card face) */}
         <div
-          className={`absolute inset-0 border-2 ${colors.border} ${colors.bg} p-2 flex flex-col ${isSelected ? 'ring-2 ring-white' : ''}`}
+          className={`absolute inset-0 border-2 ${colors.border} ${colors.bg} ${colors.glow} p-2 flex flex-col ${isSelected ? 'ring-2 ring-white' : ''}`}
           style={{
             backfaceVisibility: 'hidden',
             transform: 'rotateY(180deg)',
@@ -125,12 +139,17 @@ export function NewsCardComponent({ card, isSelected, isDisabled, onSelect }: Ne
 
           {/* Selection indicator */}
           {isSelected && (
-            <div className="absolute inset-0 border-2 border-white bg-white/10 flex items-center justify-center">
+            <motion.div
+              className="absolute inset-0 border-2 border-white bg-white/10 flex items-center justify-center"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+            >
               <span className="text-2xl">✓</span>
-            </div>
+            </motion.div>
           )}
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }
