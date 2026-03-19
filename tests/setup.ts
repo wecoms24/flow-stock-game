@@ -20,13 +20,19 @@ const mockOscillator = {
 
 const mockGain = {
   connect: vi.fn(),
-  gain: { value: 1 },
+  gain: {
+    value: 1,
+    exponentialRampToValueAtTime: vi.fn(),
+    linearRampToValueAtTime: vi.fn(),
+    setValueAtTime: vi.fn(),
+  },
 }
 
 global.AudioContext = vi.fn(() => ({
   createOscillator: vi.fn(() => mockOscillator),
   createGain: vi.fn(() => mockGain),
   destination: {},
+  currentTime: 0,
 })) as any
 
 global.OfflineAudioContext = vi.fn(() => ({
