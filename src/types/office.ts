@@ -13,6 +13,12 @@ export type DecorationType =
   | 'whiteboard' // 화이트보드
   | 'bookshelf' // 책장
   | 'lounge_chair' // 휴게 의자
+  | 'aquarium' // 수족관
+  | 'neon_sign' // 네온 사인
+  | 'mini_bar' // 미니바
+  | 'massage_chair' // 안마의자
+  | 'golf_set' // 골프 연습기
+  | 'art_painting' // 명화
 
 // 모든 가구 타입 (하위 호환성)
 export type FurnitureType = DeskType | DecorationType

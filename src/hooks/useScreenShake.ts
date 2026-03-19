@@ -19,7 +19,7 @@ const SHAKE_DURATIONS: Record<ShakeIntensity, number> = {
  * Respects prefers-reduced-motion media query.
  */
 export function useScreenShake(targetRef: React.RefObject<HTMLElement | null>) {
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>()
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const shake = useCallback(
     (intensity: ShakeIntensity = 'medium') => {

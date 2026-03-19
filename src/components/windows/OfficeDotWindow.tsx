@@ -9,7 +9,7 @@ import type { EmployeeRole } from '../../types'
 import { EMPLOYEE_ROLE_CONFIG } from '../../types'
 import { TRAIT_DEFINITIONS } from '../../data/traits'
 import { TITLE_LABELS, BADGE_COLORS, badgeForLevel, titleForLevel } from '../../systems/growthSystem'
-import { ROLE_EMOJI, getMoodFace } from '../../data/employeeEmoji'
+import { getMoodFace } from '../../data/employeeEmoji'
 import { soundManager } from '../../systems/soundManager'
 import { selectChatter, selectContextualDialogue, consumeTriggeredChatter, triggerChatter } from '../../data/chatter'
 import { SpeechBubbleContainer } from '../office/SpeechBubble'
@@ -1063,8 +1063,16 @@ export function OfficeDotWindow() {
                 const empTitle = emp.title ?? titleForLevel(emp.level ?? 1)
                 const canPraise = (emp.praiseCooldown ?? 0) <= 0
                 const canScold = (emp.scoldCooldown ?? 0) <= 0
-                const roleEmoji = ROLE_EMOJI[emp.role]
                 const moodEmoji = getMoodFace(stress, satisfaction)
+                const roleBadgeConfig: Record<EmployeeRole, { label: string; color: string }> = {
+                  analyst: { label: '분석', color: '#2563eb' },
+                  trader: { label: '거래', color: '#16a34a' },
+                  manager: { label: '관리', color: '#7c3aed' },
+                  intern: { label: '인턴', color: '#6b7280' },
+                  ceo: { label: 'CEO', color: '#d97706' },
+                  hr_manager: { label: 'HR', color: '#db2777' },
+                }
+                const roleBadge = roleBadgeConfig[emp.role]
 
                 return (
                   <div
@@ -1086,7 +1094,12 @@ export function OfficeDotWindow() {
                           >
                             {emp.name}
                           </span>
-                          <span className="text-[11px]">{roleEmoji}</span>
+                          <span
+                            className="px-1 py-0.5 rounded text-[9px] font-bold text-white"
+                            style={{ backgroundColor: roleBadge.color }}
+                          >
+                            {roleBadge.label}
+                          </span>
                           <span className="text-[11px]">{moodEmoji}</span>
                           {emp.traits?.map((trait, traitIndex) => (
                             <span

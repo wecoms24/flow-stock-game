@@ -14,6 +14,7 @@ function formatGap(amount: number): string {
 
 export function CompetitorWidget() {
   const competitors = useGameStore((s) => s.competitors)
+  const openWindow = useGameStore((s) => s.openWindow)
   const playerTotalAssets = useGameStore((s) => s.player.totalAssetValue)
   const playerROI = useGameStore((s) => {
     const totalAssets = s.player.totalAssetValue
@@ -48,7 +49,11 @@ export function CompetitorWidget() {
   if (sorted.length === 0) return null
 
   return (
-    <div className="flex items-center gap-0.5 px-1" title="라이벌 순위 (상위 3)">
+    <div
+      className="flex items-center gap-0.5 px-1 cursor-pointer hover:bg-win-highlight/10 rounded"
+      title="클릭하여 랭킹 창 열기"
+      onClick={() => openWindow('ranking')}
+    >
       <span className="text-[8px] text-win-text opacity-70 mr-0.5">
         #{playerRank}
         {rankDelta > 0 && <span className="text-stock-up ml-px">▲{rankDelta}</span>}

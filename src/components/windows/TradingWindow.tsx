@@ -33,7 +33,7 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
   const [tab, setTab] = useState<Tab>('market')
   const [limitPrice, setLimitPrice] = useState<Record<string, string>>({}) // 목표가 입력
   const [tradeFeedback, setTradeFeedback] = useState<'success-buy' | 'success-sell' | 'error' | null>(null)
-  const feedbackTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
+  const feedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   // 차트 창에서 기업 변경 시 동기화 (외부 prop 변경만 추적)
   // 조건문으로 무한 루프 방지됨 - controlled component 패턴

@@ -103,6 +103,81 @@ export const DECORATION_CATALOG: Record<DecorationType, DecorationCatalogItem> =
     ],
     sprite: '🛋️',
   },
+
+  aquarium: {
+    type: 'aquarium',
+    name: '대형 수족관',
+    description: '전 직원 스트레스 25% 감소 + 만족도 증가',
+    cost: 500000,
+    buffs: [
+      { type: 'stress_reduction', value: 0.75, range: 200 },
+      { type: 'morale', value: 1.15, range: 200 },
+    ],
+    sprite: '🐠',
+    unlockLevel: 4,
+  },
+
+  neon_sign: {
+    type: 'neon_sign',
+    name: '네온 사인',
+    description: '회사 브랜드! 전 직원 사기 20% 증진',
+    cost: 300000,
+    buffs: [{ type: 'morale', value: 1.2, range: 999 }],
+    sprite: '💡',
+    unlockLevel: 5,
+  },
+
+  mini_bar: {
+    type: 'mini_bar',
+    name: '임원 미니바',
+    description: '주변 100px 스태미너 회복 40% + 스트레스 20% 감소',
+    cost: 800000,
+    buffs: [
+      { type: 'stamina_recovery', value: 1.4, range: 100 },
+      { type: 'stress_reduction', value: 0.8, range: 100 },
+    ],
+    sprite: '🍸',
+    unlockLevel: 6,
+  },
+
+  massage_chair: {
+    type: 'massage_chair',
+    name: '안마의자',
+    description: '주변 80px 스트레스 40% 감소 + 스태미너 30% 증가',
+    cost: 600000,
+    buffs: [
+      { type: 'stress_reduction', value: 0.6, range: 80 },
+      { type: 'stamina_recovery', value: 1.3, range: 80 },
+    ],
+    sprite: '💆',
+    unlockLevel: 5,
+  },
+
+  golf_set: {
+    type: 'golf_set',
+    name: '실내 골프 연습기',
+    description: 'CEO 전용. 전 직원 스킬 성장 20% + 사기 15%',
+    cost: 1000000,
+    buffs: [
+      { type: 'skill_growth', value: 1.2, range: 999 },
+      { type: 'morale', value: 1.15, range: 999 },
+    ],
+    sprite: '⛳',
+    unlockLevel: 7,
+  },
+
+  art_painting: {
+    type: 'art_painting',
+    name: '명화 컬렉션',
+    description: '격조 있는 사무실. 전 직원 만족도 + 거래 속도 증가',
+    cost: 2000000,
+    buffs: [
+      { type: 'morale', value: 1.25, range: 999 },
+      { type: 'trading_speed', value: 1.15, range: 999 },
+    ],
+    sprite: '🖼️',
+    unlockLevel: 8,
+  },
 }
 
 /* ── 통합 카탈로그 (하위 호환성) ── */
@@ -148,6 +223,30 @@ export const FURNITURE_CATALOG: Record<FurnitureType, FurnitureCatalogItem> = {
   lounge_chair: {
     ...DECORATION_CATALOG.lounge_chair,
     size: { width: 2, height: 1 },
+  },
+  aquarium: {
+    ...DECORATION_CATALOG.aquarium,
+    size: { width: 2, height: 1 },
+  },
+  neon_sign: {
+    ...DECORATION_CATALOG.neon_sign,
+    size: { width: 2, height: 1 },
+  },
+  mini_bar: {
+    ...DECORATION_CATALOG.mini_bar,
+    size: { width: 2, height: 1 },
+  },
+  massage_chair: {
+    ...DECORATION_CATALOG.massage_chair,
+    size: { width: 1, height: 1 },
+  },
+  golf_set: {
+    ...DECORATION_CATALOG.golf_set,
+    size: { width: 2, height: 2 },
+  },
+  art_painting: {
+    ...DECORATION_CATALOG.art_painting,
+    size: { width: 1, height: 1 },
   },
 }
 

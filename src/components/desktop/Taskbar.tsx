@@ -310,13 +310,13 @@ export function Taskbar() {
 
         {/* Dropdown Menu */}
         {showLayoutMenu && (
-          <div className="absolute bottom-full left-0 mb-1 win-outset bg-win-face p-1 space-y-0.5 min-w-[100px] z-50">
+          <div className="absolute bottom-full left-0 mb-1 win-outset bg-win-face p-1.5 space-y-0.5 min-w-[160px] z-50">
             {LAYOUT_PRESETS.map(({ preset, label, icon }) => (
               <RetroButton
                 key={preset}
                 size="sm"
                 onClick={() => handleApplyLayout(preset)}
-                className="text-[10px] w-full justify-start"
+                className="text-[11px] w-full justify-start py-0.5"
               >
                 <span className="flex items-center gap-1">
                   {icon} {label}

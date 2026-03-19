@@ -1744,6 +1744,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       })
 
+      // Skill usage visual feedback — floating text on trade execution
+      const skillTexts: string[] = []
+      if (result.slippage < 0.008) skillTexts.push('슬리피지 감소')
+      if (result.fee < (result.executedPrice * proposal.quantity * 0.003)) skillTexts.push('수수료 할인')
+      if (proposal.confidence && proposal.confidence > 85) skillTexts.push('높은 신뢰도')
+      if (skillTexts.length > 0) {
+        emitFloatingText(
+          `⚡ ${proposal.ticker} ${proposal.direction === 'buy' ? '매수' : '매도'} · ${skillTexts.join(' · ')}`,
+          400, 300, proposal.direction === 'buy' ? '#2563eb' : '#dc2626',
+        )
+      }
+
       // Record cash flow entries for the trade
       // Note: `s` is the pre-trade snapshot (line 1053), so s.player.portfolio still has the position
       const tradeMeta = { companyId: proposal.companyId, ticker: proposal.ticker, shares: proposal.quantity }

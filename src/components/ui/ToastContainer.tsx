@@ -104,7 +104,6 @@ export function ToastContainer() {
           const style = TYPE_STYLES[toast.type]
           const elapsed = Date.now() - toast.addedAt
           const duration = toast.duration ?? DEFAULT_DURATION
-          const progress = Math.max(0, 1 - elapsed / duration)
 
           return (
             <motion.div
