@@ -248,7 +248,7 @@ export function Taskbar() {
             ▸
           </RetroButton>
           {showMoreIcons && (
-            <div className="absolute bottom-full left-0 mb-1 win-outset bg-win-face p-1 space-y-0.5 z-50">
+            <div className="absolute bottom-full left-0 mb-1 win-outset bg-win-face p-1.5 space-y-0.5 min-w-[140px] z-50">
               {TASKBAR_ITEMS.slice(4).map((item) => (
                 <RetroButton
                   key={item.type}
@@ -257,7 +257,7 @@ export function Taskbar() {
                     handleOpenWindow(item.type)
                     setShowMoreIcons(false)
                   }}
-                  className="text-[10px] w-full justify-start"
+                  className="text-[11px] w-full justify-start py-0.5"
                 >
                   <span className="flex items-center gap-1">
                     <PixelIcon name={item.icon} size="md" />

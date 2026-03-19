@@ -19,6 +19,8 @@ export type DecorationType =
   | 'massage_chair' // 안마의자
   | 'golf_set' // 골프 연습기
   | 'art_painting' // 명화
+  | 'desktop_pc' // 데스크탑 PC
+  | 'dual_monitor' // 듀얼 모니터
 
 // 모든 가구 타입 (하위 호환성)
 export type FurnitureType = DeskType | DecorationType

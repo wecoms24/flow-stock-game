@@ -260,29 +260,147 @@ export function OfficeDotWindow() {
 
     ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT)
 
-    // Phase 2: officeLevel 기반 배경색
-    const bgColors: Record<number, string> = {
-      1: '#e8dcc8',
-      2: '#e2d8c4',
-      3: '#dcd4be',
-      4: '#d4ccb4',
-      5: '#ccc4aa',
+    // 레벨별 사무실 테마 배경
+    const level = player.officeLevel
+    const themes: Record<number, { bg: string; floor: string; wall: string; accent: string }> = {
+      1: { bg: '#3a3a3a', floor: '#4a4a4a', wall: '#2a2a2a', accent: '#555' },       // 지하 창고
+      2: { bg: '#4a4a4a', floor: '#5a5a5a', wall: '#3d3d3d', accent: '#666' },       // 작은 사무실
+      3: { bg: '#e8dcc8', floor: '#d4ccb8', wall: '#f0ece4', accent: '#c4b090' },    // 개선된 사무실
+      4: { bg: '#e0e8f0', floor: '#c8d4e0', wall: '#eef2f7', accent: '#a0b0c4' },    // 깔끔한 오피스
+      5: { bg: '#f0f4f8', floor: '#dce4ec', wall: '#ffffff', accent: '#94a8c0' },     // 모던 오피스
+      6: { bg: '#f5f0e8', floor: '#e8dcc8', wall: '#faf7f2', accent: '#c4a870' },     // 럭셔리 오피스
+      7: { bg: '#1a1a2e', floor: '#16213e', wall: '#0f3460', accent: '#e94560' },     // 금융 타워
+      8: { bg: '#0d1117', floor: '#161b22', wall: '#21262d', accent: '#58a6ff' },     // 하이테크 타워
+      9: { bg: '#1a0a2e', floor: '#2d1b4e', wall: '#1a0a2e', accent: '#a855f7' },     // 네온 타워
+      10: { bg: '#0a0a14', floor: '#14142a', wall: '#0a0a14', accent: '#ffd700' },    // 골든 펜트하우스
     }
-    ctx.fillStyle = bgColors[player.officeLevel] ?? '#e8dcc8'
+    const theme = themes[Math.min(level, 10)] ?? themes[3]
+
+    // 배경 그라데이션
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT)
+    bgGrad.addColorStop(0, theme.wall)
+    bgGrad.addColorStop(0.4, theme.bg)
+    bgGrad.addColorStop(1, theme.floor)
+    ctx.fillStyle = bgGrad
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT)
 
-    ctx.strokeStyle = '#ddd0b8'
-    ctx.lineWidth = 0.5
-    for (let y = 0; y < CANVAS_HEIGHT; y += 20) {
+    // 바닥 패턴 (체크무늬)
+    ctx.globalAlpha = 0.08
+    for (let gx = 0; gx < CANVAS_WIDTH; gx += 40) {
+      for (let gy = Math.floor(CANVAS_HEIGHT * 0.5); gy < CANVAS_HEIGHT; gy += 40) {
+        if ((gx / 40 + gy / 40) % 2 === 0) {
+          ctx.fillStyle = theme.accent
+          ctx.fillRect(gx, gy, 40, 40)
+        }
+      }
+    }
+    ctx.globalAlpha = 1.0
+
+    // 벽-바닥 경계선
+    const floorY = Math.floor(CANVAS_HEIGHT * 0.45)
+    ctx.strokeStyle = theme.accent
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(0, floorY)
+    ctx.lineTo(CANVAS_WIDTH, floorY)
+    ctx.stroke()
+
+    // ── 창문 (레벨에 따라 크기/개수 증가) ──
+    const windowCount = Math.min(level, 4) // 1~4개
+    const windowW = 60 + level * 5 // 레벨 높을수록 넓은 창
+    const windowH = Math.min(floorY - 50, 60 + level * 3)
+    const windowY = 38
+    const windowSpacing = (CANVAS_WIDTH - windowCount * windowW) / (windowCount + 1)
+
+    for (let wi = 0; wi < windowCount; wi++) {
+      const wx = windowSpacing + wi * (windowW + windowSpacing)
+
+      // 창틀
+      ctx.fillStyle = level >= 7 ? '#1a2a4a' : '#a0a0a0'
+      ctx.fillRect(wx - 2, windowY - 2, windowW + 4, windowH + 4)
+
+      // 하늘/배경 (레벨에 따라 변화)
+      const skyGrad = ctx.createLinearGradient(wx, windowY, wx, windowY + windowH)
+      if (level <= 2) {
+        // 지하 — 콘크리트 벽만 보임
+        skyGrad.addColorStop(0, '#555')
+        skyGrad.addColorStop(1, '#444')
+      } else if (level <= 5) {
+        // 저층 — 하늘 + 건물
+        skyGrad.addColorStop(0, '#87CEEB')
+        skyGrad.addColorStop(0.6, '#B0D4E8')
+        skyGrad.addColorStop(1, '#808080')
+      } else if (level <= 8) {
+        // 고층 — 도시 야경
+        skyGrad.addColorStop(0, '#0a1628')
+        skyGrad.addColorStop(0.4, '#1a2a4a')
+        skyGrad.addColorStop(1, '#2a1a3a')
+      } else {
+        // 펜트하우스 — 별이 빛나는 밤
+        skyGrad.addColorStop(0, '#000020')
+        skyGrad.addColorStop(1, '#100030')
+      }
+      ctx.fillStyle = skyGrad
+      ctx.fillRect(wx, windowY, windowW, windowH)
+
+      // 고층 건물 실루엣 (레벨 5+)
+      if (level >= 5) {
+        ctx.fillStyle = 'rgba(0,0,0,0.4)'
+        const buildingCount = 3 + wi
+        for (let bi = 0; bi < buildingCount; bi++) {
+          const bx = wx + (windowW / buildingCount) * bi
+          const bh = 15 + ((bi * 7 + wi * 13) % 25)
+          const bw = windowW / buildingCount - 2
+          ctx.fillRect(bx, windowY + windowH - bh, bw, bh)
+          // 건물 창문 불빛
+          ctx.fillStyle = 'rgba(255,200,50,0.3)'
+          for (let fy = windowY + windowH - bh + 3; fy < windowY + windowH - 3; fy += 6) {
+            for (let fx = bx + 2; fx < bx + bw - 2; fx += 5) {
+              if (Math.random() > 0.4) ctx.fillRect(fx, fy, 2, 3)
+            }
+          }
+          ctx.fillStyle = 'rgba(0,0,0,0.4)'
+        }
+      }
+
+      // 창문 십자 격자
+      ctx.strokeStyle = level >= 7 ? '#2a3a5a' : '#b0b0b0'
+      ctx.lineWidth = 1.5
       ctx.beginPath()
-      ctx.moveTo(0, y)
-      ctx.lineTo(CANVAS_WIDTH, y)
+      ctx.moveTo(wx + windowW / 2, windowY)
+      ctx.lineTo(wx + windowW / 2, windowY + windowH)
+      ctx.moveTo(wx, windowY + windowH / 2)
+      ctx.lineTo(wx + windowW, windowY + windowH / 2)
       ctx.stroke()
     }
 
-    ctx.fillStyle = '#f0ece4'
+    // ── 문 (우측 벽) ──
+    const doorX = CANVAS_WIDTH - 50
+    const doorW = 30
+    const doorH = floorY - 40
+    const doorY = floorY - doorH
+
+    // 문틀
+    ctx.fillStyle = level >= 6 ? '#8B4513' : '#808080'
+    ctx.fillRect(doorX - 2, doorY - 2, doorW + 4, doorH + 4)
+    // 문 패널
+    ctx.fillStyle = level >= 6 ? '#A0522D' : '#B0B0B0'
+    ctx.fillRect(doorX, doorY, doorW, doorH)
+    // 문 손잡이
+    ctx.fillStyle = level >= 8 ? '#FFD700' : '#C0C0C0'
+    ctx.beginPath()
+    ctx.arc(doorX + doorW - 6, doorY + doorH * 0.55, 3, 0, Math.PI * 2)
+    ctx.fill()
+    // 문 패널 디테일
+    ctx.strokeStyle = level >= 6 ? '#6B3410' : '#909090'
+    ctx.lineWidth = 1
+    ctx.strokeRect(doorX + 4, doorY + 4, doorW - 8, doorH * 0.4)
+    ctx.strokeRect(doorX + 4, doorY + doorH * 0.5, doorW - 8, doorH * 0.4)
+
+    // 상단 헤더 바
+    ctx.fillStyle = level >= 7 ? 'rgba(0,0,0,0.3)' : '#f0ece4'
     ctx.fillRect(0, 0, CANVAS_WIDTH, 30)
-    ctx.strokeStyle = '#c4b8a0'
+    ctx.strokeStyle = theme.accent
     ctx.lineWidth = 1
     ctx.beginPath()
     ctx.moveTo(0, 30)

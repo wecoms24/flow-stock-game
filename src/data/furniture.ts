@@ -178,6 +178,29 @@ export const DECORATION_CATALOG: Record<DecorationType, DecorationCatalogItem> =
     sprite: '🖼️',
     unlockLevel: 8,
   },
+
+  desktop_pc: {
+    type: 'desktop_pc',
+    name: '데스크탑 PC',
+    description: '주변 80px 거래 속도 15% 증가',
+    cost: 50000,
+    buffs: [{ type: 'trading_speed', value: 1.15, range: 80 }],
+    sprite: '🖥️',
+    unlockLevel: 2,
+  },
+
+  dual_monitor: {
+    type: 'dual_monitor',
+    name: '듀얼 모니터',
+    description: '주변 80px 스킬 성장 10% + 거래 속도 10% 증가',
+    cost: 120000,
+    buffs: [
+      { type: 'skill_growth', value: 1.1, range: 80 },
+      { type: 'trading_speed', value: 1.1, range: 80 },
+    ],
+    sprite: '🖥️',
+    unlockLevel: 3,
+  },
 }
 
 /* ── 통합 카탈로그 (하위 호환성) ── */
@@ -247,6 +270,14 @@ export const FURNITURE_CATALOG: Record<FurnitureType, FurnitureCatalogItem> = {
   art_painting: {
     ...DECORATION_CATALOG.art_painting,
     size: { width: 1, height: 1 },
+  },
+  desktop_pc: {
+    ...DECORATION_CATALOG.desktop_pc,
+    size: { width: 1, height: 1 },
+  },
+  dual_monitor: {
+    ...DECORATION_CATALOG.dual_monitor,
+    size: { width: 2, height: 1 },
   },
 }
 

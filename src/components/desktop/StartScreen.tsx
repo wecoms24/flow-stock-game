@@ -218,7 +218,11 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
       ? { appKey: kisAppKey.trim(), appSecret: kisAppSecret.trim(), isDemo: kisIsDemo }
       : undefined
     const profile: CompanyProfile = { name: companyName.trim() || '레트로 투자운용', style: investStyle, logo: companyLogo }
-    startGame(difficulty, VICTORY_GOALS[selectedGoalIdx].targetAsset, parsedCustomCash, gameMode, kisCreds, profile)
+    // 커스텀 초기 자본이면 목표 금액을 초기 자본의 10배로 동적 조정
+    const targetAsset = parsedCustomCash
+      ? parsedCustomCash * 10
+      : VICTORY_GOALS[selectedGoalIdx].targetAsset
+    startGame(difficulty, targetAsset, parsedCustomCash, gameMode, kisCreds, profile)
   }
 
   const competitorNames = [
@@ -615,7 +619,9 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
                         </span>
                         {' · '}목표:{' '}
                         <span className="text-stock-up font-bold">
-                          {VICTORY_GOALS[selectedGoalIdx].description}
+                          {customInitialCash.trim()
+                            ? `${formatAssetShort(effectiveCash * 10)} 달성`
+                            : VICTORY_GOALS[selectedGoalIdx].description}
                         </span>
                       </div>
                     </div>

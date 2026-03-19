@@ -55,8 +55,6 @@ export default function App() {
         CALM: 'info', VOLATILE: 'warning', CRISIS: 'critical',
       }
       showToast({ type: typeMap[regime] ?? 'info', title: '시장 레짐 변경', message, icon: regime === 'CRISIS' ? '🔴' : regime === 'VOLATILE' ? '🟡' : '🟢' })
-      if (regime === 'CRISIS') triggerScreenShake('heavy')
-      else if (regime === 'VOLATILE') triggerScreenShake('medium')
     }
     const handleDailyRecord = (e: Event) => {
       const { type, changePercent } = (e as CustomEvent).detail
