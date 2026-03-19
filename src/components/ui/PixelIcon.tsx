@@ -150,7 +150,8 @@ export function PixelIcon({ name, size = 'sm', className = '' }: PixelIconProps)
       viewBox="0 0 16 16"
       className={className}
       style={{ imageRendering: 'pixelated' }}
-      dangerouslySetInnerHTML={{ __html: iconSvg }}
-    />
+    >
+      <g dangerouslySetInnerHTML={{ __html: iconSvg }} />
+    </svg>
   )
 }

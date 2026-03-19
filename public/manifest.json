@@ -1,0 +1,20 @@
+{
+  "name": "Retro Stock-OS 95",
+  "short_name": "Stock-OS 95",
+  "description": "Windows 95 감성의 레트로 주식 트레이딩 시뮬레이션 게임",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#008080",
+  "theme_color": "#000080",
+  "orientation": "landscape",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["games", "finance", "education"],
+  "lang": "ko"
+}

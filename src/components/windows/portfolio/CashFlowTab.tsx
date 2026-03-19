@@ -1,13 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useGameStore } from '../../../stores/gameStore'
 import { computeCashFlowSummary } from '../../../engines/cashFlowTracker'
-
-const formatMoney = (v: number) => {
-  // 1억원 (100_000_000) 기준으로 통일
-  if (Math.abs(v) >= 100_000_000) return `${(v / 100_000_000).toFixed(1)}억`
-  if (Math.abs(v) >= 10_000) return `${(v / 10_000).toFixed(0)}만`
-  return v.toLocaleString()
-}
+import { formatMoney } from '../../../utils/formatMoney'
 
 export function CashFlowTab() {
   const time = useGameStore((s) => s.time)

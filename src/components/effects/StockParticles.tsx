@@ -1,8 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 
 /* ── [Design Track] Stock up/down arrow dot particle effects ── */
-/* Lightweight CSS-only particle system for stock price changes */
+/* Lightweight React-rendered particle system for stock price changes */
 
 interface Particle {
   id: number
@@ -16,12 +16,12 @@ let particleId = 0
 
 export function StockParticles() {
   const companies = useGameStore((s) => s.companies)
-  const containerRef = useRef<HTMLDivElement>(null)
   const particlesRef = useRef<Particle[]>([])
   const animRef = useRef<number>(0)
+  const [renderParticles, setRenderParticles] = useState<Particle[]>([])
 
   useEffect(() => {
-    // Sample top 5 most volatile changes each tick
+    // Sample top 3 most volatile changes each tick
     const topChanges = companies
       .filter((c) => c.previousPrice > 0)
       .map((c) => ({
@@ -52,9 +52,6 @@ export function StockParticles() {
 
   useEffect(() => {
     const animate = () => {
-      const container = containerRef.current
-      if (!container) return
-
       // Update particles
       particlesRef.current = particlesRef.current
         .map((p) => ({
@@ -64,15 +61,7 @@ export function StockParticles() {
         }))
         .filter((p) => p.opacity > 0)
 
-      // Render
-      const html = particlesRef.current
-        .map(
-          (p) =>
-            `<div style="position:absolute;left:${p.x}%;top:${p.y}%;opacity:${p.opacity};color:${p.isUp ? '#FF0000' : '#0000FF'};font-size:10px;pointer-events:none;text-shadow:0 0 2px currentColor">${p.isUp ? '▲' : '▼'}</div>`,
-        )
-        .join('')
-
-      container.innerHTML = html
+      setRenderParticles([...particlesRef.current])
       animRef.current = requestAnimationFrame(animate)
     }
 
@@ -82,9 +71,26 @@ export function StockParticles() {
 
   return (
     <div
-      ref={containerRef}
       className="fixed inset-0 pointer-events-none z-[9997]"
       aria-hidden="true"
-    />
+    >
+      {renderParticles.map((p) => (
+        <div
+          key={p.id}
+          style={{
+            position: 'absolute',
+            left: `${p.x}%`,
+            top: `${p.y}%`,
+            opacity: p.opacity,
+            color: p.isUp ? '#FF0000' : '#0000FF',
+            fontSize: '10px',
+            pointerEvents: 'none',
+            textShadow: '0 0 2px currentColor',
+          }}
+        >
+          {p.isUp ? '▲' : '▼'}
+        </div>
+      ))}
+    </div>
   )
 }

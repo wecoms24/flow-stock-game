@@ -130,24 +130,25 @@ describe('주식 매매 현금 흐름', () => {
     it('매수 시 현금 흐름이 기록된다', () => {
       const store = useGameStore.getState()
       const company = store.companies[0]
+      const initialCash = store.player.cash
 
       store.buyStock(company.id, 100)
 
-      // cashFlow 기록 확인 (recordCashFlow가 있다고 가정)
-      // 실제 구현에서는 cashFlowLog를 확인
-      expect(useGameStore.getState().player.cash).toBeLessThan(100_000_000)
+      // 매수 후 현금이 감소해야 함 (초기 cash 기준)
+      expect(useGameStore.getState().player.cash).toBeLessThan(initialCash)
     })
 
     it('매도 시 현금 흐름이 기록된다', () => {
       const store = useGameStore.getState()
       const company = store.companies[0]
+      const initialCash = store.player.cash
 
-      // 매수 후 매도
+      // 매수 후 매도 (동일 가격이면 원금 복원)
       store.buyStock(company.id, 100)
       store.sellStock(company.id, 100)
 
-      // 손익이 기록되어야 함
-      expect(useGameStore.getState().player.cash).toBeLessThanOrEqual(100_000_000)
+      // 동일 가격 매수/매도이므로 원금 복원
+      expect(useGameStore.getState().player.cash).toBe(initialCash)
     })
   })
 

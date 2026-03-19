@@ -346,17 +346,12 @@ export function OfficeWindow() {
           <RetroButton
             size="sm"
             onClick={() => {
-              console.log('🤖 AI 버튼 클릭됨')
-              console.log('Office grid:', !!player.officeGrid)
-              console.log('Employee count:', player.employees.length)
-
               // 오피스 그리드 확인
               if (!player.officeGrid) {
                 setDialog({
                   type: 'alert',
                   message: '⚠️ 오피스가 초기화되지 않았습니다.\n\n게임을 시작하면 자동으로 오피스가 생성됩니다.',
                 })
-                console.error('❌ Office grid가 없습니다.')
                 return
               }
 
@@ -366,17 +361,8 @@ export function OfficeWindow() {
                 const maxMoves = hasEmployees ? 5 : 0  // 직원 없으면 이동 제안 안 함
                 const maxPurchases = 3  // 가구는 항상 제안
 
-                console.log('AI 제안 생성 시작:', {
-                  maxMoves,
-                  maxPurchases,
-                  employeeCount: player.employees.length,
-                  mode: hasEmployees ? '직원 배치 + 가구' : '가구만'
-                })
-
                 generateAIProposal(maxMoves, maxPurchases)
                 soundManager.playAIProposalOpen()
-
-                console.log('✅ AI 제안 생성 완료')
               } catch (error) {
                 console.error('❌ AI 제안 생성 중 오류:', error)
                 setDialog({

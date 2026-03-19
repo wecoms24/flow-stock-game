@@ -7,6 +7,8 @@ import { getFeatureFlag, setFeatureFlag } from '../../systems/featureFlags'
 import { getMigrationStatusPublic, resetMigrationStatus } from '../../systems/sqlite/migration'
 import { kisWebSocket } from '../../services/kisWebSocketService'
 import { getStorageStats, cleanupOldData } from '../../services/kisPriceRepository'
+import { exportSaveAsFile, importSaveFromFile } from '../../utils/saveExport'
+import { loadGame, saveGame } from '../../systems/saveSystem'
 
 export function SettingsWindow() {
   const {
@@ -353,6 +355,41 @@ export function SettingsWindow() {
               </RetroButton>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Save Export/Import */}
+      <div className="space-y-1">
+        <div className="font-bold">💾 세이브 관리</div>
+        <div className="flex gap-1">
+          <RetroButton
+            size="sm"
+            className="flex-1"
+            onClick={async () => {
+              const data = await loadGame()
+              if (data) {
+                exportSaveAsFile(data)
+              }
+            }}
+          >
+            내보내기
+          </RetroButton>
+          <RetroButton
+            size="sm"
+            className="flex-1"
+            onClick={async () => {
+              const data = await importSaveFromFile()
+              if (data) {
+                await saveGame(data)
+                window.location.reload()
+              }
+            }}
+          >
+            가져오기
+          </RetroButton>
+        </div>
+        <div className="text-[10px] text-retro-gray">
+          세이브 파일을 JSON으로 백업하거나 복원합니다
         </div>
       </div>
 

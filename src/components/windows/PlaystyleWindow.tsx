@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useGameStore } from '../../stores/gameStore'
+import { formatMoney } from '../../utils/formatMoney'
 
 /* ── Archetype Classification ── */
 function getArchetype(
@@ -109,13 +110,6 @@ export function PlaystyleWindow() {
     realestate: '#808000',
   }
 
-  function formatMoney(amount: number): string {
-    const abs = Math.abs(amount)
-    const sign = amount < 0 ? '-' : '+'
-    if (abs >= 100_000_000) return `${sign}${(abs / 100_000_000).toFixed(1)}억`
-    if (abs >= 10_000) return `${sign}${(abs / 10_000).toFixed(0)}만`
-    return `${sign}${abs.toLocaleString()}원`
-  }
 
   return (
     <div className="p-3 text-xs overflow-y-auto h-full" style={{ maxHeight: 460 }}>

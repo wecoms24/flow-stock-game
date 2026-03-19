@@ -246,7 +246,7 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
           className="win-outset bg-win-face w-4 h-4 flex items-center justify-center text-[10px] leading-none cursor-pointer hover:brightness-110 active:win-pressed active:translate-y-[1px] transition-transform duration-[50ms]"
           onClick={() => toggleMaximizeWindow(win.id)}
           title={win.isMaximized ? '이전 크기로' : '최대화'}
-          aria-label={win.isMaximized ? '이전 크기로' : '최대화'}
+          aria-label={win.isMaximized ? '이전 크기로 복원' : '최대화'}
         >
           {win.isMaximized ? '❐' : '□'}
         </button>

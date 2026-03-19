@@ -329,7 +329,7 @@ export function Taskbar() {
 
       {/* Speed controls */}
       <div className="flex items-center gap-0.5 shrink-0" data-tutorial="speed-controls">
-        <RetroButton size="sm" onClick={togglePause} title={time.isPaused ? '재생' : '일시정지'}>
+        <RetroButton size="sm" onClick={togglePause} title={time.isPaused ? '재생' : '일시정지'} aria-label={time.isPaused ? '재생' : '일시정지'}>
           <span className="text-[10px]">{time.isPaused ? '▶' : '⏸'}</span>
         </RetroButton>
         {([1, 2, 4, 8, 16] as const).map((spd) => (
@@ -338,6 +338,8 @@ export function Taskbar() {
             size="sm"
             onClick={() => setSpeed(spd)}
             className={`text-[10px] ${time.speed === spd ? 'win-pressed font-bold !bg-win-title-active !text-white' : ''}`}
+            aria-label={`속도 ${spd}배`}
+            aria-pressed={time.speed === spd}
           >
             {spd}x
           </RetroButton>
@@ -346,6 +348,7 @@ export function Taskbar() {
           size="sm"
           onClick={() => useGameStore.getState().fastForward()}
           title="다음 이벤트까지 빨리감기 (최대 3개월)"
+          aria-label="빨리감기"
           className="text-[10px]"
         >
           &gt;&gt;

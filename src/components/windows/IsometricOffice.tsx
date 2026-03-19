@@ -108,8 +108,9 @@ function FurnitureItem({ col, row, svg }: { col: number; row: number; svg: strin
       height="32"
       viewBox="0 0 32 32"
       style={{ imageRendering: 'pixelated' }}
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
+    >
+      <g dangerouslySetInnerHTML={{ __html: svg }} />
+    </svg>
   )
 }
 

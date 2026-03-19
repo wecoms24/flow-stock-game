@@ -91,6 +91,7 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
   const [kisValidating, setKisValidating] = useState(false)
   const [kisValid, setKisValid] = useState<boolean | null>(null)
   const [kisError, setKisError] = useState<string | null>(null)
+  const [legalModal, setLegalModal] = useState<'privacy' | 'terms' | null>(null)
 
   // Boot animation: reveal lines one by one
   useEffect(() => {
@@ -625,8 +626,23 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
             })}
           </div>
 
-          <div className="text-[10px] text-retro-gray text-center">
-            (c) 2026 Wecoms.co.ltd - Retro Stock-OS 95
+          <div className="text-[10px] text-retro-gray text-center space-y-0.5">
+            <div>(c) 2026 Wecoms.co.ltd - Retro Stock-OS 95</div>
+            <div className="flex justify-center gap-2">
+              <button
+                className="hover:underline cursor-pointer"
+                onClick={() => setLegalModal('privacy')}
+              >
+                개인정보처리방침
+              </button>
+              <span>|</span>
+              <button
+                className="hover:underline cursor-pointer"
+                onClick={() => setLegalModal('terms')}
+              >
+                이용약관
+              </button>
+            </div>
           </div>
         </div>
       </RetroPanel>
@@ -726,6 +742,60 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
                 onClick={() => setShowBattleConfig(false)}
               >
                 설정 완료
+              </RetroButton>
+            </div>
+          </RetroPanel>
+        </div>
+      )}
+      {/* Legal Modal */}
+      {legalModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
+          <RetroPanel className="p-1 max-w-lg w-full mx-4">
+            <div className="bg-win-title-active text-win-title-text px-2 py-1 text-sm font-bold mb-1 flex justify-between items-center">
+              <span>{legalModal === 'privacy' ? '개인정보처리방침' : '이용약관'}</span>
+              <button
+                className="win-outset bg-win-face w-4 h-4 flex items-center justify-center text-[10px] leading-none cursor-pointer text-black"
+                onClick={() => setLegalModal(null)}
+                aria-label="닫기"
+              >
+                X
+              </button>
+            </div>
+            <div className="win-inset bg-white p-3 text-[11px] leading-relaxed max-h-[60vh] overflow-y-auto space-y-2">
+              {legalModal === 'privacy' ? (
+                <>
+                  <h3 className="font-bold text-xs">개인정보처리방침</h3>
+                  <p>Retro Stock-OS 95(이하 &quot;본 게임&quot;)는 사용자의 개인정보를 소중히 보호합니다.</p>
+                  <h4 className="font-bold mt-2">1. 수집하는 개인정보</h4>
+                  <p>본 게임은 서버에 개인정보를 수집하지 않습니다. 모든 게임 데이터는 사용자의 브라우저(IndexedDB/SQLite WASM)에 로컬 저장됩니다.</p>
+                  <h4 className="font-bold mt-2">2. 데이터 저장</h4>
+                  <p>게임 진행 상황, 설정 등은 브라우저 로컬 스토리지에만 보관되며 외부 서버로 전송되지 않습니다.</p>
+                  <h4 className="font-bold mt-2">3. 쿠키 사용</h4>
+                  <p>본 게임은 필수 기능 쿠키만 사용하며, 광고나 추적 목적의 쿠키를 사용하지 않습니다.</p>
+                  <h4 className="font-bold mt-2">4. 한국투자증권 API 연동</h4>
+                  <p>실시간 모드 사용 시 입력하는 API 키는 브라우저에만 저장되며, 한국투자증권 서버와의 직접 통신에만 사용됩니다.</p>
+                  <h4 className="font-bold mt-2">5. 문의</h4>
+                  <p>개인정보 관련 문의: support@wecoms.co.ltd</p>
+                </>
+              ) : (
+                <>
+                  <h3 className="font-bold text-xs">이용약관</h3>
+                  <h4 className="font-bold mt-2">1. 서비스 개요</h4>
+                  <p>본 게임은 교육 및 엔터테인먼트 목적의 주식 시장 시뮬레이션 게임입니다. 실제 투자 조언을 제공하지 않습니다.</p>
+                  <h4 className="font-bold mt-2">2. 면책 조항</h4>
+                  <p>본 게임의 주가, 시장 이벤트, 기업 정보는 모두 가상이며 실제 시장을 반영하지 않습니다. 본 게임을 근거로 한 실제 투자 결정에 대해 책임지지 않습니다.</p>
+                  <h4 className="font-bold mt-2">3. 지적재산권</h4>
+                  <p>본 게임의 모든 콘텐츠(코드, 디자인, 데이터)는 Wecoms.co.ltd의 지적재산입니다.</p>
+                  <h4 className="font-bold mt-2">4. 이용 제한</h4>
+                  <p>본 게임의 무단 복제, 역공학, 상업적 재배포를 금지합니다.</p>
+                  <h4 className="font-bold mt-2">5. 서비스 변경</h4>
+                  <p>본 약관은 사전 고지 후 변경될 수 있으며, 변경된 약관은 게시 후 효력이 발생합니다.</p>
+                </>
+              )}
+            </div>
+            <div className="flex justify-end p-1">
+              <RetroButton size="sm" onClick={() => setLegalModal(null)}>
+                확인
               </RetroButton>
             </div>
           </RetroPanel>

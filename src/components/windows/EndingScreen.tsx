@@ -3,6 +3,7 @@ import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { RetroPanel } from '../ui/RetroPanel'
 import { generateEndgameRecap } from '../../engines/endgameRecapEngine'
+import { formatMoney } from '../../utils/formatMoney'
 import type { EndgameRecap, SectorAnalysis } from '../../types/endgame'
 import { checkMetaAchievements, loadMetaProgression } from '../../systems/metaProgressionSystem'
 import { META_ACHIEVEMENTS } from '../../data/metaAchievements'
@@ -39,18 +40,7 @@ const SECTOR_LABELS: Record<string, string> = {
   realestate: '부동산',
 }
 
-function formatMoney(amount: number): string {
-  if (Math.abs(amount) >= 1_000_000_000_000) {
-    return `${(amount / 1_000_000_000_000).toFixed(1)}조원`
-  }
-  if (Math.abs(amount) >= 100_000_000) {
-    return `${(amount / 100_000_000).toFixed(1)}억원`
-  }
-  if (Math.abs(amount) >= 10_000) {
-    return `${(amount / 10_000).toFixed(0)}만원`
-  }
-  return `${amount.toLocaleString()}원`
-}
+const formatMoneyWon = (amount: number) => formatMoney(amount, { suffix: true, trillion: true })
 
 export function EndingScreen() {
   const { endingResult, player, time, config, startGame, competitors, employeeBios, realizedTrades, monthlyCashFlowSummaries, companies, companyProfile, corporateSkills } = useGameStore()
@@ -113,7 +103,7 @@ export function EndingScreen() {
       ``,
       `📊 ${endingResult.title}`,
       recap.oneLineStory,
-      `최종 자산: ${formatMoney(recap.finalAssets)}`,
+      `최종 자산: ${formatMoneyWon(recap.finalAssets)}`,
       `총 수익률: ${returnRate >= 0 ? '+' : ''}${returnRate.toFixed(1)}%`,
       `투자 스타일: ${STYLE_LABELS[recap.investmentStyle] ?? recap.investmentStyle}`,
       `순위: ${recap.playerRank}등 / ${recap.competitorResults.length + 1}명`,
@@ -284,7 +274,7 @@ function SummaryTab({ recap, endingResult }: { recap: EndgameRecap; endingResult
       {/* Stats grid */}
       <div className="win-inset bg-white p-3 text-xs space-y-1.5">
         <StatRow label="플레이 기간" value={`${recap.startYear} ~ ${recap.endYear}년 (${recap.playYears}년)`} />
-        <StatRow label="최종 자산" value={formatMoney(recap.finalAssets)} bold />
+        <StatRow label="최종 자산" value={formatMoneyWon(recap.finalAssets)} bold />
         <StatRow
           label="총 수익률"
           value={`${recap.totalROI >= 0 ? '+' : ''}${recap.totalROI.toFixed(1)}%`}
@@ -350,7 +340,7 @@ function TimelineTab({ recap }: { recap: EndgameRecap }) {
                     {'█'.repeat(barLen)}
                   </span>
                   {isTurningPoint && <span className="text-yellow-500">★</span>}
-                  <span className="text-retro-gray text-[9px]">{formatMoney(assets)}</span>
+                  <span className="text-retro-gray text-[9px]">{formatMoneyWon(assets)}</span>
                 </div>
               )
             })}
@@ -367,7 +357,7 @@ function TimelineTab({ recap }: { recap: EndgameRecap }) {
               <span className="text-yellow-500">★</span>
               <span>
                 {tp.year > 0 ? `${tp.year}.${String(tp.month).padStart(2, '0')}` : ''} {tp.label}
-                {tp.value != null ? ` (${formatMoney(tp.value)})` : ''}
+                {tp.value != null ? ` (${formatMoneyWon(tp.value)})` : ''}
               </span>
             </div>
           ))}
@@ -438,13 +428,13 @@ function EmployeesTab({ recap }: { recap: EndgameRecap }) {
             <div className="flex justify-between">
               <span className="text-retro-gray">수익 기여:</span>
               <span className={emp.totalPnlContribution >= 0 ? 'text-stock-up font-bold' : 'text-stock-down font-bold'}>
-                {emp.totalPnlContribution >= 0 ? '+' : ''}{formatMoney(emp.totalPnlContribution)}
+                {emp.totalPnlContribution >= 0 ? '+' : ''}{formatMoneyWon(emp.totalPnlContribution)}
               </span>
             </div>
             {emp.bestTradeTicker && (
               <div className="flex justify-between">
                 <span className="text-retro-gray">최고 거래:</span>
-                <span className="text-stock-up">{emp.bestTradeTicker} (+{formatMoney(emp.bestTradeProfit)})</span>
+                <span className="text-stock-up">{emp.bestTradeTicker} (+{formatMoneyWon(emp.bestTradeProfit)})</span>
               </div>
             )}
             <div className="flex justify-between">
@@ -564,7 +554,7 @@ function DecisionAnalysisTab({ recap }: { recap: EndgameRecap }) {
                 </div>
                 <span className="w-8 text-right">{(s.concentration * 100).toFixed(0)}%</span>
                 <span className={`w-14 text-right font-bold ${s.totalPnl >= 0 ? 'text-stock-up' : 'text-stock-down'}`}>
-                  {s.totalPnl >= 0 ? '+' : ''}{formatMoney(s.totalPnl)}
+                  {s.totalPnl >= 0 ? '+' : ''}{formatMoneyWon(s.totalPnl)}
                 </span>
                 <span className="w-10 text-right text-retro-gray">
                   승률 {(s.winRate * 100).toFixed(0)}%

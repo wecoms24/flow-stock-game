@@ -46,6 +46,10 @@ function sqlWasmInlinePlugin(): Plugin {
 
 export default defineConfig({
   plugins: [sqlWasmInlinePlugin(), wasm(), topLevelAwait(), react(), tailwindcss()],
+  esbuild: {
+    // 프로덕션 빌드에서 console/debugger 문 제거
+    drop: ['console', 'debugger'],
+  },
   server: {
     headers: COOP_COEP,
     watch: {
@@ -53,10 +57,13 @@ export default defineConfig({
       ignored: ['**/scripts/venv/**', '**/scripts/__pycache__/**'],
     },
     proxy: {
+      // NOTE: 개발 전용 프록시 — 프로덕션에서는 별도 백엔드 프록시 사용
       '/kis-api': {
         target: 'https://openapi.koreainvestment.com:9443',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/kis-api/, ''),
+        // secure: false — 개발 환경 전용 (self-signed cert 허용).
+        // 프로덕션 백엔드 프록시에서는 반드시 SSL 검증 활성화할 것.
         secure: false,
       },
     },
