@@ -323,6 +323,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   const proposals = useGameStore((s) => s.proposals)
   const employees = useGameStore((s) => s.player.employees)
   const [selectedId, setSelectedIdLocal] = useState(companyId ?? companies[0]?.id ?? '')
+  const orderFlowByCompany = useGameStore((s) => s.orderFlowByCompany)
 
   // 매매 창에서 기업 변경 시 동기화 (외부 prop 변경만 추적)
   // 조건문으로 무한 루프 방지됨 - controlled component 패턴
@@ -935,6 +936,38 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
           </span>
           <span className="text-retro-silver tabular-nums">({Math.round(fearGreedIdx)})</span>
           <span className="text-retro-gray font-bold">탐욕</span>
+        </div>
+      )}
+
+      {/* Institutional Order Flow */}
+      {orderFlowByCompany[selectedId] && (
+        <div className="mt-0.5 win-inset bg-[#1a1a2e] px-2 py-1 text-[10px]">
+          <div className="flex items-center gap-2">
+            <span className="text-retro-gray font-bold shrink-0">기관 수급</span>
+            {/* Net flow bar */}
+            <div className="flex-1 h-3 bg-[#0c0c1e] relative overflow-hidden rounded-sm">
+              {/* Center line */}
+              <div className="absolute left-1/2 top-0 bottom-0 w-px bg-retro-gray/30" />
+              {/* Flow bar */}
+              <div
+                className="absolute top-0 bottom-0 transition-all duration-300"
+                style={{
+                  left: orderFlowByCompany[selectedId].netNotional >= 0 ? '50%' : undefined,
+                  right: orderFlowByCompany[selectedId].netNotional < 0 ? '50%' : undefined,
+                  width: `${Math.min(50, Math.abs(orderFlowByCompany[selectedId].netNotional) / (selected?.marketCap ?? 1) * 5000)}%`,
+                  backgroundColor: orderFlowByCompany[selectedId].netNotional >= 0 ? '#22c55e' : '#ef4444',
+                }}
+              />
+            </div>
+            {/* Numeric value */}
+            <span className={`font-bold tabular-nums shrink-0 ${orderFlowByCompany[selectedId].netNotional >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {orderFlowByCompany[selectedId].netNotional >= 0 ? '+' : ''}{(orderFlowByCompany[selectedId].netNotional / 1_000_000).toFixed(1)}M
+            </span>
+            {/* Trade count */}
+            <span className="text-retro-gray shrink-0">
+              {orderFlowByCompany[selectedId].tradeCount}건
+            </span>
+          </div>
         </div>
       )}
 
