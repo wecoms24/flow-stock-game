@@ -106,9 +106,9 @@ export function NotificationCenter() {
                 <button
                   key={key}
                   onClick={() => setFilter(key)}
-                  className={`px-1.5 py-0.5 text-[10px] ${
+                  className={`px-2 py-0.5 text-[11px] ${
                     filter === key
-                      ? 'win-pressed font-bold bg-win-highlight text-white'
+                      ? 'win-pressed font-bold !bg-win-title-active !text-white'
                       : 'win-outset bg-win-face hover:bg-win-highlight/20'
                   }`}
                 >
