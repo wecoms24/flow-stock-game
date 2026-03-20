@@ -177,25 +177,6 @@ function toGridCoord(px: number, py: number): { x: number; y: number } {
    파이프라인 클러스터 배치 시스템
    ══════════════════════════════════════════════════════════════ */
 
-/** 파이프라인 역할을 클러스터로 그룹화 (분석가→매니저→트레이더) */
-function buildPipelineClusters(
-  employees: Employee[],
-): { analyst: Employee[]; manager: Employee[]; trader: Employee[]; other: Employee[] } {
-  const analyst: Employee[] = []
-  const manager: Employee[] = []
-  const trader: Employee[] = []
-  const other: Employee[] = []
-
-  for (const emp of employees) {
-    if (emp.role === 'analyst') analyst.push(emp)
-    else if (emp.role === 'manager') manager.push(emp)
-    else if (emp.role === 'trader') trader.push(emp)
-    else other.push(emp)
-  }
-
-  return { analyst, manager, trader, other }
-}
-
 /**
  * 파이프라인 클러스터 좌표 생성
  *
@@ -471,8 +452,6 @@ export function generateDotLayoutProposal(
   const simDecorations = layout.decorations.map((d) => ({ ...d }))
   const simEmps = employees.map((e) => ({ ...e }))
 
-  // ── 파이프라인 클러스터 분석 ──
-  const clusters = buildPipelineClusters(simEmps)
   const cw = layout.canvasSize.width
   const ch = layout.canvasSize.height
 

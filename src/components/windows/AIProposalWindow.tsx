@@ -2,14 +2,17 @@
  * AI Proposal Window
  *
  * AI 아키텍트의 배치 제안을 표시하고 승인/거부할 수 있는 창
+ * - 파이프라인 클러스터 배치 분석 표시
+ * - 시너지/스트레스 커버리지 인사이트
  */
 
 import { RetroButton } from '../ui/RetroButton'
 import { evaluateProposal, type LayoutProposal } from '../../systems/aiArchitect'
 import type { Employee } from '../../types'
+import type { ProposalInsights } from '../../systems/aiArchitectDot'
 
 interface AIProposalWindowProps {
-  proposal: LayoutProposal | null
+  proposal: (LayoutProposal & { insights?: ProposalInsights }) | null
   employees: Employee[]
   currentCash: number
   onApprove: () => void
@@ -30,6 +33,7 @@ export function AIProposalWindow({
   const totalCost = proposal.purchases.reduce((sum, p) => sum + p.cost, 0)
   const canAfford = currentCash >= totalCost
   const evaluation = evaluateProposal(proposal)
+  const insights = (proposal as LayoutProposal & { insights?: ProposalInsights }).insights
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
@@ -96,6 +100,41 @@ export function AIProposalWindow({
           <p className="mt-2 text-xs text-gray-300 italic">{evaluation.summary}</p>
         </div>
 
+        {/* 배치 분석 인사이트 */}
+        {insights && insights.highlights.length > 0 && (
+          <div className="bg-green-900/20 border border-green-700/40 p-3 rounded">
+            <h4 className="text-sm font-bold text-green-300 mb-2">🎯 배치 분석</h4>
+            <div className="space-y-1.5">
+              {insights.highlights.map((highlight, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  <span className="text-green-400">✓</span>
+                  <span className="text-green-200">{highlight}</span>
+                </div>
+              ))}
+            </div>
+            {insights.synergyPairsActivated > 0 && (
+              <div className="mt-2 flex items-center gap-3 text-xs">
+                <div className="flex items-center gap-1">
+                  <span className="text-yellow-400">⚡</span>
+                  <span className="text-gray-300">시너지 {insights.synergyPairsActivated}쌍</span>
+                </div>
+                {insights.stressCoveragePercent > 0 && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-cyan-400">🛡</span>
+                    <span className="text-gray-300">스트레스 보호 {insights.stressCoveragePercent}%</span>
+                  </div>
+                )}
+                {insights.pipelineAdjacent && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-purple-400">🔗</span>
+                    <span className="text-gray-300">파이프라인 연결</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* 직원 이동 목록 */}
         {proposal.moves.length > 0 && (
           <div className="border border-gray-700 p-3 rounded">
@@ -107,19 +146,27 @@ export function AIProposalWindow({
                 const emp = employees.find((e) => e.id === move.employeeId)
                 if (!emp) return null
 
+                const isNew = move.fromCoord.x === -1
                 return (
                   <div
                     key={move.employeeId}
                     className="flex items-center gap-2 bg-gray-800/50 p-2 rounded text-sm"
                   >
-                    <span className="text-gray-400 font-mono text-xs">
-                      {move.fromCoord.x},{move.fromCoord.y}
-                    </span>
-                    <span className="text-gray-500">→</span>
+                    {isNew ? (
+                      <span className="text-yellow-400 font-mono text-xs w-16 text-center">신규</span>
+                    ) : (
+                      <>
+                        <span className="text-gray-400 font-mono text-xs">
+                          {move.fromCoord.x},{move.fromCoord.y}
+                        </span>
+                        <span className="text-gray-500">→</span>
+                      </>
+                    )}
                     <span className="text-blue-400 font-mono text-xs">
                       {move.toCoord.x},{move.toCoord.y}
                     </span>
                     <span className="text-white flex-1">{emp.name}</span>
+                    <span className="text-gray-500 text-xs">{getRoleLabel(emp.role)}</span>
                     <span
                       className={`text-xs font-bold ${move.scoreImprovement > 0 ? 'text-green-400' : 'text-gray-400'}`}
                     >
@@ -131,7 +178,7 @@ export function AIProposalWindow({
               })}
             </div>
             <p className="text-xs text-gray-400 mt-2 italic">
-              💡 시너지 점수가 높은 위치로 이동합니다
+              💡 파이프라인 시너지 기반 최적 위치로 배치합니다
             </p>
           </div>
         )}
@@ -212,6 +259,18 @@ export function AIProposalWindow({
 }
 
 // Helper functions
+function getRoleLabel(role: string): string {
+  const labels: Record<string, string> = {
+    analyst: '분석가',
+    manager: '매니저',
+    trader: '트레이더',
+    intern: '인턴',
+    ceo: 'CEO',
+    hr_manager: 'HR',
+  }
+  return labels[role] || role
+}
+
 function getFurnitureEmoji(type: string): string {
   const emojiMap: Record<string, string> = {
     basic: '🪑',
@@ -226,6 +285,14 @@ function getFurnitureEmoji(type: string): string {
     whiteboard: '📋',
     bookshelf: '📚',
     lounge_chair: '🛋️',
+    aquarium: '🐠',
+    neon_sign: '💡',
+    mini_bar: '🍸',
+    massage_chair: '💆',
+    golf_set: '⛳',
+    art_painting: '🖼️',
+    desktop_pc: '🖥️',
+    dual_monitor: '🖥️',
   }
   return emojiMap[type] || '🪑'
 }
@@ -244,6 +311,14 @@ function formatFurnitureName(type: string): string {
     whiteboard: '화이트보드',
     bookshelf: '서가',
     lounge_chair: '휴게 소파',
+    aquarium: '대형 수족관',
+    neon_sign: '네온 사인',
+    mini_bar: '임원 미니바',
+    massage_chair: '안마의자',
+    golf_set: '실내 골프 연습기',
+    art_painting: '명화 컬렉션',
+    desktop_pc: '데스크탑 PC',
+    dual_monitor: '듀얼 모니터',
   }
   return nameMap[type] || type
 }

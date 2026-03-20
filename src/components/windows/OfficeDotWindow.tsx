@@ -16,7 +16,7 @@ import { SpeechBubbleContainer } from '../office/SpeechBubble'
 import { emitFloatingText } from '../../utils/floatingTextEmitter'
 import { emitParticles } from '../../systems/particleSystem'
 import { AIProposalWindow } from './AIProposalWindow'
-import { generateDotLayoutProposal, type DotEmployeeMove } from '../../systems/aiArchitectDot'
+import { generateDotLayoutProposal, type DotEmployeeMove, type ProposalInsights } from '../../systems/aiArchitectDot'
 import type { LayoutProposal } from '../../systems/aiArchitect'
 import { pixelArtCache } from '../../systems/pixelArtSprites'
 
@@ -130,7 +130,7 @@ export function OfficeDotWindow() {
   const clickStartPosRef = useRef<{ x: number; y: number } | null>(null)
   const [autoPlaceMsg, setAutoPlaceMsg] = useState<string | null>(null)
   const autoPlaceMsgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [aiProposal, setAiProposal] = useState<(LayoutProposal & { moves: DotEmployeeMove[] }) | null>(null)
+  const [aiProposal, setAiProposal] = useState<(LayoutProposal & { moves: DotEmployeeMove[]; insights: ProposalInsights }) | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null)
 
   useEffect(() => {
@@ -1635,7 +1635,24 @@ export function OfficeDotWindow() {
               }
             }
 
-            // 4. 피드백
+            // 4. 피드백 — 실행 결과 요약 토스트
+            const totalMoved = movedEmpIds.length
+            const totalPurchased = aiProposal.purchases.filter(
+              (p) => p.type !== 'basic' && p.type !== 'premium',
+            ).length
+            const desksBought = aiProposal.purchases.filter(
+              (p) => p.type === 'basic' || p.type === 'premium',
+            ).length
+            const parts: string[] = []
+            if (totalMoved > 0) parts.push(`${totalMoved}명 배치`)
+            if (desksBought > 0) parts.push(`책상 ${desksBought}개 구매`)
+            if (totalPurchased > 0) parts.push(`가구 ${totalPurchased}개 구매`)
+            const resultMsg = parts.length > 0 ? `AI 배치 완료: ${parts.join(', ')}` : 'AI 배치 완료'
+
+            if (autoPlaceMsgTimerRef.current) clearTimeout(autoPlaceMsgTimerRef.current)
+            setAutoPlaceMsg(resultMsg)
+            autoPlaceMsgTimerRef.current = setTimeout(() => setAutoPlaceMsg(null), 4000)
+
             soundManager.playClick()
             emitParticles('star', 300, 200, 12)
             setAiProposal(null)
