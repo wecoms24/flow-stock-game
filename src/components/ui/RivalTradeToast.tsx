@@ -58,7 +58,7 @@ export function RivalTradeToast() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed top-12 right-2 z-50 flex flex-col gap-1 pointer-events-none">
+    <div className="fixed top-9 right-2 z-[10001] flex flex-col gap-1 pointer-events-none">
       {toasts.map((toast) => (
         <div
           key={toast.id}

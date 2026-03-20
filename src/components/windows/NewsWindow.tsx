@@ -31,6 +31,9 @@ export function NewsWindow() {
       {news.length === 0 ? (
         <EmptyState icon="📰" title="뉴스가 없습니다" description="게임이 진행되면 시장 뉴스가 여기에 표시됩니다">
           <SkeletonLoader lines={3} className="mt-2 w-48" />
+          <div className="mt-2 text-[10px] text-retro-gray">
+            게임 속도를 높이면 더 빨리 뉴스를 볼 수 있습니다
+          </div>
         </EmptyState>
       ) : (
         <>

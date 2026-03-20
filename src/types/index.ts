@@ -237,12 +237,29 @@ export interface TraitEffect {
   salaryMultiplier?: number // 월급 배율
 }
 
+export interface GrowthModifier {
+  /** 전체 스킬 성장 배율 (기본 1.0) */
+  allSkills?: number
+  /** 분석 스킬 성장 배율 */
+  analysis?: number
+  /** 트레이딩 스킬 성장 배율 */
+  trading?: number
+  /** 리서치 스킬 성장 배율 */
+  research?: number
+  /** 만족도 감소 속도 배율 (낮을수록 천천히 감소) */
+  satisfactionDecay?: number
+  /** 추가 스트레스 생성 배율 (growthModifier에 의한 부가 스트레스) */
+  stressBonus?: number
+}
+
 export interface TraitConfig {
   name: string
   description: string
   icon: string
   effects: TraitEffect
   rarity: 'common' | 'uncommon' | 'rare'
+  /** 성격 특성에 따른 스킬 성장 속도 세부 조정 */
+  growthModifier?: GrowthModifier
 }
 
 export interface EmployeeBonus {

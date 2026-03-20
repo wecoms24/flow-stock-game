@@ -999,6 +999,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       orderFlowByCompany: {},
       marketRegime: data.marketRegime ?? initializeRegimeState(),
       marketIndexHistory: data.marketIndexHistory ?? [],
+      circuitBreaker: data.circuitBreaker ?? { level: 0, isActive: false, remainingTicks: 0, triggeredAt: null, kospiSessionOpen: 100, kospiCurrent: 100, triggeredLevels: [] },
+      playerProfile: data.playerProfile ?? defaultProfile(),
       autoSellEnabled: data.autoSellEnabled ?? false,
       autoSellPercent: data.autoSellPercent ?? 10,
       autoHREnabled: data.autoHREnabled ?? false,
@@ -1094,6 +1096,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       institutions: s.institutions,
       marketRegime: s.marketRegime,
       marketIndexHistory: s.marketIndexHistory,
+      circuitBreaker: s.circuitBreaker,
+      playerProfile: s.playerProfile,
       autoSellEnabled: s.autoSellEnabled,
       autoSellPercent: s.autoSellPercent,
       autoHREnabled: s.autoHREnabled,
@@ -5970,6 +5974,38 @@ export const useGameStore = create<GameStore>((set, get) => ({
         processedMap.set(emp.id, { ...emp, badges: newBadges })
       }
     })
+
+    // ✨ 랜덤 사무실 생활 이벤트 (5% 확률)
+    const lifeEventTimestamp = getAbsoluteTimestamp(state.time, state.config.startYear)
+    const assignedForLifeEvents = hrResult.updatedEmployees.filter(
+      (e) => !resignedIds.includes(e.id),
+    )
+    for (const emp of assignedForLifeEvents) {
+      if (Math.random() > 0.05) continue // 5% chance
+
+      const stress = emp.stress ?? 0
+      const lifeEvents = [
+        { condition: stress > 60, emoji: '😰', msg: `${emp.name}: 스트레스가 높아 실수가 잦아지고 있습니다` },
+        { condition: (emp.satisfaction ?? 50) > 80, emoji: '😊', msg: `${emp.name}: 최근 직무 만족도가 높아 생산성이 향상되고 있습니다` },
+        { condition: (emp.level ?? 1) >= 5 && Math.random() < 0.3, emoji: '⭐', msg: `${emp.name}: 새로운 업무 노하우를 터득했습니다!` },
+        { condition: emp.stamina < 20, emoji: '😴', msg: `${emp.name}: 체력이 바닥나 휴식이 필요합니다` },
+        { condition: (emp.skills?.analysis ?? 0) > 80, emoji: '🧠', msg: `${emp.name}: 분석 능력이 뛰어나 동료들의 존경을 받고 있습니다` },
+        { condition: (emp.skills?.trading ?? 0) > 80, emoji: '💹', msg: `${emp.name}: 트레이딩 감각이 날카로워지고 있습니다` },
+      ]
+
+      const applicable = lifeEvents.filter((e) => e.condition)
+      if (applicable.length > 0) {
+        const event = applicable[Math.floor(Math.random() * applicable.length)]
+        officeEvents.push({
+          timestamp: lifeEventTimestamp,
+          type: 'interaction' as const,
+          emoji: event.emoji,
+          message: event.msg,
+          employeeIds: [emp.id],
+          hour: state.time.hour,
+        })
+      }
+    }
 
     // 병합 전략: 틱 처리 결과(stress/stamina/skills/badges)만 적용,
     // 유저 액션 필드(deskId, seatIndex 등)는 현재 상태에서 보존

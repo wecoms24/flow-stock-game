@@ -98,7 +98,7 @@ export function ToastContainer() {
   }, [])
 
   return (
-    <div className="fixed top-12 right-3 z-[9000] flex flex-col gap-1.5 pointer-events-none">
+    <div className="fixed top-9 right-3 z-[10001] flex flex-col gap-1.5 pointer-events-none">
       <AnimatePresence mode="popLayout">
         {toasts.map((toast) => {
           const style = TYPE_STYLES[toast.type]

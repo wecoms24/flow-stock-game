@@ -143,6 +143,7 @@ function OverviewTab() {
   const companies = useGameStore((s) => s.companies)
   const config = useGameStore((s) => s.config)
   const time = useGameStore((s) => s.time)
+  const openWindow = useGameStore((s) => s.openWindow)
 
   const positions = Object.values(player.portfolio)
 
@@ -427,7 +428,17 @@ function OverviewTab() {
 
       {/* ── Positions Table ── */}
       {sortedPositions.length === 0 ? (
-        <div className="text-center text-retro-gray py-4">보유 종목이 없습니다</div>
+        <div className="text-center text-retro-gray py-4">
+          보유 종목이 없습니다
+          <div className="mt-1">
+            <button
+              className="text-[10px] text-blue-600 hover:underline cursor-pointer"
+              onClick={() => openWindow('trading')}
+            >
+              매매 창 열기 →
+            </button>
+          </div>
+        </div>
       ) : (
         <table className="w-full">
           <thead>

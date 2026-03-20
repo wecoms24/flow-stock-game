@@ -8,7 +8,7 @@ import wasmUrl from '@subframe7536/sqlite-wasm/wasm-async?url'
 let dbInstance: SQLiteDB | null = null
 
 /** Current schema version -- bump this when adding migrations */
-const SCHEMA_VERSION = 10
+const SCHEMA_VERSION = 11
 
 /**
  * Initialize SQLite database with IndexedDB persistence
@@ -661,6 +661,48 @@ async function runMigrations(db: SQLiteDB): Promise<void> {
       } catch {
         // Recovery failed, original error is more important
       }
+      throw error
+    }
+  }
+
+  // Migration v11: Add JSON columns for complex game state (monthly cards, event chains, etc.)
+  if (currentVersion < 11) {
+    try {
+      const v11Columns = [
+        'monthly_cards_json TEXT',
+        'event_chains_json TEXT',
+        'employee_bios_json TEXT',
+        'employee_skill_paths_json TEXT',
+        'corporate_skills_json TEXT',
+        'training_json TEXT',
+        'milestones_json TEXT',
+        'economic_pressure_json TEXT',
+        'chapter_progress_json TEXT',
+        'company_profile_json TEXT',
+        'player_profile_json TEXT',
+        'auto_hr_enabled INTEGER DEFAULT 0',
+        'auto_hr_threshold INTEGER DEFAULT 80',
+      ]
+
+      for (const col of v11Columns) {
+        try {
+          await db.run(`ALTER TABLE saves ADD COLUMN ${col};`)
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e)
+          if (!msg.includes('duplicate column')) {
+            throw e
+          }
+          // Column already exists — idempotent
+        }
+      }
+
+      await db.run('INSERT OR REPLACE INTO schema_versions (version, applied_at) VALUES (?, ?);', [
+        11,
+        Date.now(),
+      ])
+      console.log('[SQLite] Migration v11 applied: complex game state JSON columns')
+    } catch (error) {
+      console.error('[SQLite] Migration v11 failed:', error)
       throw error
     }
   }

@@ -39,7 +39,7 @@ export interface SaveRow {
   month: number
   day: number
   hour: number
-  speed: 1 | 2 | 4
+  speed: 1 | 2 | 4 | 8 | 16
   is_paused: 0 | 1
 
   // Player state
@@ -70,6 +70,21 @@ export interface SaveRow {
   cash_flow_log: string | null // JSON: CashFlowEntry[]
   realized_trades: string | null // JSON: RealizedTrade[]
   monthly_summaries: string | null // JSON: MonthlySummary[]
+
+  // v11: Complex game state JSON columns
+  monthly_cards_json?: string | null // JSON: MonthlyCardDrawState
+  event_chains_json?: string | null // JSON: ActiveEventChainState
+  employee_bios_json?: string | null // JSON: Record<string, EmployeeBio>
+  employee_skill_paths_json?: string | null // JSON: Record<string, EmployeeSkillPathState>
+  corporate_skills_json?: string | null // JSON: CorporateSkillState
+  training_json?: string | null // JSON: TrainingState
+  milestones_json?: string | null // JSON: MilestoneProgress
+  economic_pressure_json?: string | null // JSON: EconomicPressure
+  chapter_progress_json?: string | null // JSON: ChapterProgress
+  company_profile_json?: string | null // JSON: CompanyProfile
+  player_profile_json?: string | null // JSON: PlayerProfile
+  auto_hr_enabled?: number // 0 | 1
+  auto_hr_threshold?: number
 }
 
 /* ── Relation Tables (1:N) ── */

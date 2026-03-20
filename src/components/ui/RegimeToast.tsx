@@ -91,7 +91,7 @@ export function RegimeToast() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed top-10 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
+    <div className="fixed top-9 right-4 z-[10001] flex flex-col gap-2 pointer-events-none">
       {toasts.map((toast) => {
         const info = REGIME_INFO[toast.regime]
         const regimeIcon = toast.regime === 'CALM' ? '🟢' : toast.regime === 'VOLATILE' ? '🟡' : '🔴'

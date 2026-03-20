@@ -351,22 +351,36 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
 
       {/* Actions */}
       <div className="flex gap-1">
-        <RetroButton
-          size="sm"
-          onClick={() => praiseEmployee(emp.id)}
-          disabled={!canPraise}
-          className="flex-1 text-[10px]"
-        >
-          {canPraise ? '칭찬하기 (+5 XP)' : '칭찬 쿨다운'}
-        </RetroButton>
-        <RetroButton
-          size="sm"
-          onClick={() => scoldEmployee(emp.id)}
-          disabled={!canScold}
-          className="flex-1 text-[10px]"
-        >
-          {canScold ? '꾸짖기 (업무 복귀)' : '꾸짖기 쿨다운'}
-        </RetroButton>
+        <div className="flex-1 flex flex-col items-stretch">
+          <RetroButton
+            size="sm"
+            onClick={() => praiseEmployee(emp.id)}
+            disabled={!canPraise}
+            className="w-full text-[10px]"
+          >
+            {canPraise ? '칭찬하기 (+5 XP)' : '칭찬 쿨다운'}
+          </RetroButton>
+          {!canPraise && (
+            <span className="text-[9px] text-retro-gray text-center mt-0.5">
+              쿨다운 중 ({emp.praiseCooldown ?? 0}일 남음)
+            </span>
+          )}
+        </div>
+        <div className="flex-1 flex flex-col items-stretch">
+          <RetroButton
+            size="sm"
+            onClick={() => scoldEmployee(emp.id)}
+            disabled={!canScold}
+            className="w-full text-[10px]"
+          >
+            {canScold ? '꾸짖기 (업무 복귀)' : '꾸짖기 쿨다운'}
+          </RetroButton>
+          {!canScold && (
+            <span className="text-[9px] text-retro-gray text-center mt-0.5">
+              쿨다운 중 ({emp.scoldCooldown ?? 0}일 남음)
+            </span>
+          )}
+        </div>
         <RetroButton
           size="sm"
           variant="danger"

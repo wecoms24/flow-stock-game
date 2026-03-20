@@ -51,6 +51,21 @@ export async function saveDataToSQLite(
     const now = Date.now()
 
     // 1. Insert/Replace main save record
+    // Serialize v11 complex state fields
+    const monthlyCardsJson = data.monthlyCards ? JSON.stringify(data.monthlyCards) : null
+    const eventChainsJson = data.eventChains ? JSON.stringify(data.eventChains) : null
+    const employeeBiosJson = data.employeeBios ? JSON.stringify(data.employeeBios) : null
+    const employeeSkillPathsJson = data.employeeSkillPaths ? JSON.stringify(data.employeeSkillPaths) : null
+    const corporateSkillsJson = data.corporateSkills ? JSON.stringify(data.corporateSkills) : null
+    const trainingJson = data.training ? JSON.stringify(data.training) : null
+    const milestonesJson = data.milestones ? JSON.stringify(data.milestones) : null
+    const economicPressureJson = data.economicPressure ? JSON.stringify(data.economicPressure) : null
+    const chapterProgressJson = (data as any).chapterProgress ? JSON.stringify((data as any).chapterProgress) : null
+    const companyProfileJson = (data as any).companyProfile ? JSON.stringify((data as any).companyProfile) : null
+    const playerProfileJson = data.playerProfile ? JSON.stringify(data.playerProfile) : null
+    const autoHREnabledVal = data.autoHREnabled ? 1 : 0
+    const autoHRThresholdVal = data.autoHRThreshold ?? 80
+
     const saveResult = await db.run(`
       INSERT INTO saves (
         slot_name, schema_version, created_at, updated_at,
@@ -64,8 +79,12 @@ export async function saveDataToSQLite(
         last_processed_month, last_mna_quarter, auto_sell_enabled, auto_sell_percent,
         market_regime, market_index_history, circuit_breaker,
         cash_flow_log, realized_trades, monthly_summaries,
-        game_mode
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        game_mode,
+        monthly_cards_json, event_chains_json, employee_bios_json, employee_skill_paths_json,
+        corporate_skills_json, training_json, milestones_json, economic_pressure_json,
+        chapter_progress_json, company_profile_json, player_profile_json,
+        auto_hr_enabled, auto_hr_threshold
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(slot_name) DO UPDATE SET
         updated_at = ?,
         current_tick = ?,
@@ -80,7 +99,11 @@ export async function saveDataToSQLite(
         auto_sell_enabled = ?, auto_sell_percent = ?,
         market_regime = ?, market_index_history = ?, circuit_breaker = ?,
         cash_flow_log = ?, realized_trades = ?, monthly_summaries = ?,
-        game_mode = ?
+        game_mode = ?,
+        monthly_cards_json = ?, event_chains_json = ?, employee_bios_json = ?, employee_skill_paths_json = ?,
+        corporate_skills_json = ?, training_json = ?, milestones_json = ?, economic_pressure_json = ?,
+        chapter_progress_json = ?, company_profile_json = ?, player_profile_json = ?,
+        auto_hr_enabled = ?, auto_hr_threshold = ?
       RETURNING id;
     `, [
       slotName,
@@ -122,6 +145,20 @@ export async function saveDataToSQLite(
       data.realizedTrades ? JSON.stringify(data.realizedTrades) : null,
       data.monthlyCashFlowSummaries ? JSON.stringify(data.monthlyCashFlowSummaries) : null,
       (data.config as any).gameMode ?? 'virtual',
+      // v11: complex state JSON fields
+      monthlyCardsJson,
+      eventChainsJson,
+      employeeBiosJson,
+      employeeSkillPathsJson,
+      corporateSkillsJson,
+      trainingJson,
+      milestonesJson,
+      economicPressureJson,
+      chapterProgressJson,
+      companyProfileJson,
+      playerProfileJson,
+      autoHREnabledVal,
+      autoHRThresholdVal,
       // ON CONFLICT UPDATE parameters
       now,
       data.currentTick ?? 0,
@@ -155,6 +192,20 @@ export async function saveDataToSQLite(
       data.realizedTrades ? JSON.stringify(data.realizedTrades) : null,
       data.monthlyCashFlowSummaries ? JSON.stringify(data.monthlyCashFlowSummaries) : null,
       (data.config as any).gameMode ?? 'virtual',
+      // v11: complex state JSON fields (ON CONFLICT UPDATE)
+      monthlyCardsJson,
+      eventChainsJson,
+      employeeBiosJson,
+      employeeSkillPathsJson,
+      corporateSkillsJson,
+      trainingJson,
+      milestonesJson,
+      economicPressureJson,
+      chapterProgressJson,
+      companyProfileJson,
+      playerProfileJson,
+      autoHREnabledVal,
+      autoHRThresholdVal,
     ])
 
     const saveId = (saveResult[0] as SaveRow).id
@@ -799,6 +850,20 @@ export async function sqliteToSaveData(
       cashFlowLog: safeParseJSONOptional(save.cash_flow_log),
       realizedTrades: safeParseJSONOptional(save.realized_trades),
       monthlyCashFlowSummaries: safeParseJSONOptional(save.monthly_summaries),
+      // v11: Complex game state
+      monthlyCards: safeParseJSONOptional(save.monthly_cards_json),
+      eventChains: safeParseJSONOptional(save.event_chains_json),
+      employeeBios: safeParseJSONOptional(save.employee_bios_json),
+      employeeSkillPaths: safeParseJSONOptional(save.employee_skill_paths_json),
+      corporateSkills: safeParseJSONOptional(save.corporate_skills_json),
+      training: safeParseJSONOptional(save.training_json),
+      milestones: safeParseJSONOptional(save.milestones_json),
+      economicPressure: safeParseJSONOptional(save.economic_pressure_json),
+      chapterProgress: safeParseJSONOptional(save.chapter_progress_json),
+      companyProfile: safeParseJSONOptional(save.company_profile_json),
+      playerProfile: safeParseJSONOptional(save.player_profile_json),
+      autoHREnabled: save.auto_hr_enabled === 1,
+      autoHRThreshold: save.auto_hr_threshold ?? 80,
     }
 
     console.log(`[SQLite] Loaded game from slot '${slotName}' (save_id: ${saveId})`)

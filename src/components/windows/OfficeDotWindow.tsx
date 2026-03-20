@@ -8,7 +8,7 @@ import type { DeskType, DecorationType, DeskItem, DecorationItem } from '../../t
 import type { EmployeeRole } from '../../types'
 import { EMPLOYEE_ROLE_CONFIG } from '../../types'
 import { TRAIT_DEFINITIONS } from '../../data/traits'
-import { TITLE_LABELS, BADGE_COLORS, badgeForLevel, titleForLevel } from '../../systems/growthSystem'
+import { TITLE_LABELS, BADGE_COLORS, SKILL_UNLOCKS, badgeForLevel, titleForLevel } from '../../systems/growthSystem'
 import { getMoodFace } from '../../data/employeeEmoji'
 import { soundManager } from '../../systems/soundManager'
 import { selectChatter, selectContextualDialogue, consumeTriggeredChatter, triggerChatter } from '../../data/chatter'
@@ -100,8 +100,12 @@ export function OfficeDotWindow() {
     openWindow,
   } = useGameStore()
   const employeeBehaviors = useGameStore((s) => s.employeeBehaviors)
+  const monthlyCards = useGameStore((s) => s.monthlyCards)
   const news = useGameStore((s) => s.news)
   const circuitBreaker = useGameStore((s) => s.circuitBreaker)
+  const companyProfile = useGameStore((s) => s.companyProfile)
+  const config = useGameStore((s) => s.config)
+  const competitors = useGameStore((s) => s.competitors)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -414,6 +418,28 @@ export function OfficeDotWindow() {
     ctx.lineTo(CANVAS_WIDTH, 30)
     ctx.stroke()
 
+    // ── 회사 이름 + 랭킹 + 목표 ──
+    const isDark = level >= 7
+    ctx.font = 'bold 13px sans-serif'
+    ctx.fillStyle = isDark ? '#fff' : '#333'
+    ctx.textAlign = 'left'
+    ctx.fillText(`${companyProfile?.logo ?? '🏢'} ${companyProfile?.name ?? '레트로 투자운용'}`, 6, 20)
+    ctx.textAlign = 'right'
+    if (competitors.length > 0) {
+      const pROI = config.initialCash > 0 ? ((player.totalAssetValue - config.initialCash) / config.initialCash) * 100 : 0
+      const rnk = competitors.filter(c => c.roi > pROI).length + 1
+      ctx.font = 'bold 11px sans-serif'
+      ctx.fillStyle = rnk === 1 ? '#FFD700' : isDark ? '#aaa' : '#666'
+      ctx.fillText(`🏆 ${rnk}위/${competitors.length + 1}명`, CANVAS_WIDTH - 8, 13)
+    }
+    const tgt = config.targetAsset ?? 1_000_000_000
+    const rem = Math.max(0, tgt - player.totalAssetValue)
+    const pct = Math.min(100, (player.totalAssetValue / tgt) * 100)
+    ctx.fillStyle = isDark ? '#8cf' : '#2563eb'
+    ctx.font = '10px sans-serif'
+    ctx.fillText(rem > 0 ? `목표까지 ${rem >= 1e8 ? `${(rem/1e8).toFixed(1)}억` : `${Math.floor(rem/1e4).toLocaleString()}만`}원 (${pct.toFixed(0)}%)` : '🎉 목표 달성!', CANVAS_WIDTH - 8, 26)
+    ctx.textAlign = 'start'
+
     if (layout.desks.length === 0 && layout.decorations.length === 0) {
       ctx.fillStyle = 'rgba(0,0,0,0.25)'
       ctx.font = '14px sans-serif'
@@ -655,6 +681,95 @@ export function OfficeDotWindow() {
       }
 
       ctx.globalAlpha = 1.0
+    }
+
+    // ── 하단 상태 오버레이 (반투명) ──
+    const assignedEmps = player.employees.filter(e => e.deskId)
+    if (assignedEmps.length > 0) {
+      const overlayH = 50
+      const overlayY = CANVAS_HEIGHT - overlayH
+
+      // 반투명 배경
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.65)'
+      ctx.fillRect(0, overlayY, CANVAS_WIDTH, overlayH)
+
+      // 상단 경계선
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(0, overlayY)
+      ctx.lineTo(CANVAS_WIDTH, overlayY)
+      ctx.stroke()
+
+      ctx.font = 'bold 10px sans-serif'
+      ctx.textAlign = 'left'
+
+      // 1. 시너지 보너스
+      const synergyPairs: [string, string][] = []
+      const assignedDesks = layout.desks.filter(d => d.employeeId)
+      for (const d1 of assignedDesks) {
+        const e1 = player.employees.find(e => e.id === d1.employeeId)
+        if (!e1) continue
+        for (const d2 of assignedDesks) {
+          if (d1.id >= d2.id) continue
+          const e2 = player.employees.find(e => e.id === d2.employeeId)
+          if (!e2) continue
+          const dx = d1.position.x - d2.position.x
+          const dy = d1.position.y - d2.position.y
+          const dist = Math.sqrt(dx*dx + dy*dy)
+          if (dist < 120) {
+            const isPipeline =
+              (e1.role === 'analyst' && e2.role === 'manager') ||
+              (e1.role === 'manager' && e2.role === 'analyst') ||
+              (e1.role === 'manager' && e2.role === 'trader') ||
+              (e1.role === 'trader' && e2.role === 'manager') ||
+              (e1.role === 'analyst' && e2.role === 'trader') ||
+              (e1.role === 'trader' && e2.role === 'analyst')
+            if (isPipeline) synergyPairs.push([e1.role, e2.role])
+          }
+        }
+      }
+
+      ctx.fillStyle = '#22c55e'
+      ctx.fillText(`⚡ 시너지: ${synergyPairs.length}쌍`, 8, overlayY + 14)
+
+      // 2. 직원 평균 스탯
+      const avgStress = assignedEmps.reduce((s, e) => s + (e.stress ?? 0), 0) / assignedEmps.length
+      const avgSatisfaction = assignedEmps.reduce((s, e) => s + (e.satisfaction ?? 50), 0) / assignedEmps.length
+      const avgStamina = assignedEmps.reduce((s, e) => s + (e.stamina ?? 100), 0) / assignedEmps.length
+
+      ctx.fillStyle = avgStress > 60 ? '#ef4444' : avgStress > 30 ? '#f59e0b' : '#22c55e'
+      ctx.fillText(`😰 스트레스: ${Math.round(avgStress)}%`, 140, overlayY + 14)
+
+      ctx.fillStyle = avgSatisfaction > 60 ? '#22c55e' : avgSatisfaction > 30 ? '#f59e0b' : '#ef4444'
+      ctx.fillText(`😊 만족도: ${Math.round(avgSatisfaction)}%`, 290, overlayY + 14)
+
+      ctx.fillStyle = avgStamina > 50 ? '#3b82f6' : '#f59e0b'
+      ctx.fillText(`💪 체력: ${Math.round(avgStamina)}%`, 430, overlayY + 14)
+
+      // 3. 가구 버프 요약
+      const buffSummary: Record<string, number> = {}
+      for (const deco of layout.decorations) {
+        for (const buff of deco.buffs) {
+          const label = buff.type === 'stress_reduction' ? '스트레스↓' :
+                        buff.type === 'stamina_recovery' ? '체력↑' :
+                        buff.type === 'skill_growth' ? '성장↑' :
+                        buff.type === 'trading_speed' ? '속도↑' :
+                        buff.type === 'morale' ? '사기↑' : buff.type
+          buffSummary[label] = (buffSummary[label] ?? 0) + 1
+        }
+      }
+
+      ctx.font = '9px sans-serif'
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'
+      const buffText = Object.entries(buffSummary).map(([k, v]) => `${k}×${v}`).join('  ')
+      ctx.fillText(`🏢 가구 효과: ${buffText || '없음'}`, 8, overlayY + 32)
+
+      // 4. 배치 직원 수
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
+      ctx.fillText(`👤 배치: ${assignedEmps.length}/${player.employees.length}명`, 430, overlayY + 32)
+
+      ctx.textAlign = 'start' // reset
     }
   }, [layout, player.employees, player.officeLevel, employeeBehaviors, mousePos, draggingItem, placementMode, selectedDeskType, selectedDecorationType, selectedItem])
 
@@ -960,9 +1075,25 @@ export function OfficeDotWindow() {
         <div className="text-retro-gray text-[11px]">
           {time.year}년 {time.month}월 | 직원: {player.employees.length}/{MAX_DESKS}명 | 책상: {layout.desks.length}/{layout.maxDesks}개 | 월 지출: {player.monthlyExpenses.toLocaleString()}원
         </div>
+        {/* 활성 월간 카드 효과 */}
+        {monthlyCards?.activeCards?.length > 0 && (
+          <div className="flex gap-0.5 flex-wrap justify-center mt-0.5">
+            {monthlyCards.activeCards.filter((ac) => ac.remainingTicks > 0).map((ac, i) => (
+              <span key={i} className="text-[9px] px-1 py-0.5 bg-purple-100 text-purple-700 rounded border border-purple-300" title={ac.card.description}>
+                {ac.card.icon} {ac.card.title} ({Math.ceil(ac.remainingTicks / 300)}개월)
+              </span>
+            ))}
+          </div>
+        )}
         {autoPlaceMsg && (
           <div className="mt-1 bg-yellow-50 border border-yellow-400 rounded p-1 text-[11px] text-yellow-800 animate-pulse">
             ⚠️ {autoPlaceMsg}
+            {autoPlaceMsg === '책상을 먼저 구매하세요' && (
+              <span className="ml-1 text-blue-600"> (아래 카탈로그에서 구매)</span>
+            )}
+            {autoPlaceMsg === '직원을 먼저 고용하세요' && (
+              <span className="ml-1 text-blue-600"> (아래 고용하기 버튼 이용)</span>
+            )}
           </div>
         )}
         {layout.desks.length === 0 && player.employees.length > 0 && (
@@ -1177,6 +1308,9 @@ export function OfficeDotWindow() {
             {player.employees.length === 0 ? (
               <div className="text-[11px] text-gray-400 text-center py-4 border border-dashed border-gray-200 rounded">
                 직원을 고용하세요
+                <div className="mt-1 text-blue-500 text-[10px]">
+                  ↓ 아래 고용하기 버튼을 이용하세요
+                </div>
               </div>
             ) : (
               player.employees.map((emp) => {
@@ -1198,6 +1332,11 @@ export function OfficeDotWindow() {
                   hr_manager: { label: 'HR', color: '#db2777' },
                 }
                 const roleBadge = roleBadgeConfig[emp.role]
+                const empLevel = emp.level ?? 1
+                const skillUnlockLevels = Object.keys(SKILL_UNLOCKS).map(Number)
+                const reachedUnlocks = skillUnlockLevels.filter((lv) => empLevel >= lv).length
+                const usedUnlocks = (emp.unlockedSkills ?? []).length
+                const hasSkillToUnlock = reachedUnlocks > usedUnlocks
 
                 return (
                   <div
@@ -1225,6 +1364,11 @@ export function OfficeDotWindow() {
                           >
                             {roleBadge.label}
                           </span>
+                          {hasSkillToUnlock && (
+                            <span className="text-[9px] bg-yellow-400 text-black px-1 rounded animate-pulse" title="스킬 해금 가능!">
+                              🔓 스킬!
+                            </span>
+                          )}
                           <span className="text-[11px]">{moodEmoji}</span>
                           {emp.traits?.map((trait, traitIndex) => (
                             <span

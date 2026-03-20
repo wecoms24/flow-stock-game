@@ -10,6 +10,7 @@ type SortBy = 'latest' | 'oldest' | 'confidence_high' | 'confidence_low'
 export function ProposalListWindow() {
   const proposals = useGameStore((s) => s.proposals)
   const employees = useGameStore((s) => s.player.employees)
+  const openWindow = useGameStore((s) => s.openWindow)
 
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('ALL')
   const [sortBy, setSortBy] = useState<SortBy>('latest')
@@ -150,7 +151,14 @@ export function ProposalListWindow() {
       {/* 제안서 리스트 */}
       <div className="flex-1 overflow-y-auto win-inset bg-white p-1">
         {filteredProposals.length === 0 ? (
-          <EmptyState icon="📋" title="제안서가 없습니다" description="직원이 분석한 매매 제안이 여기에 표시됩니다" />
+          <EmptyState icon="📋" title="제안서가 없습니다" description="직원이 분석한 매매 제안이 여기에 표시됩니다">
+            <button
+              className="mt-2 text-[10px] text-blue-600 hover:underline cursor-pointer"
+              onClick={() => openWindow('office_dot')}
+            >
+              사무실 열기 (직원 배치) →
+            </button>
+          </EmptyState>
         ) : (
           <div className="space-y-1">
             {filteredProposals.map((proposal) => (

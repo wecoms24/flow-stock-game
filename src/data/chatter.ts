@@ -258,6 +258,237 @@ export const CHATTER_TEMPLATES: ChatterTemplate[] = [
     cooldownTicks: 3600,
   },
 
+  // ── 성격별 시장 상황 반응 (trait + market context) ──
+
+  // 워커홀릭: 시장 상황 반응
+  {
+    id: 'workaholic_market_up',
+    category: 'trait',
+    condition: (emp) => emp.traits?.includes('workaholic') === true && Math.random() < 0.03,
+    messages: [
+      '상승장이니까 더 분석해야지! 야근 각이다',
+      '이런 장에서 쉬면 안 돼요. 기회를 잡아야죠!',
+      '호황일수록 더 일해야 합니다. 뒤처지면 안 돼요!',
+      '이 기세면 주말에도 나와야겠어요',
+      '장이 좋을 때 포트폴리오 점검을 더 자주 해야죠',
+    ],
+    priority: 4,
+    cooldownTicks: 5400,
+  },
+  {
+    id: 'workaholic_dedication',
+    category: 'trait',
+    condition: (emp) => emp.traits?.includes('workaholic') === true && Math.random() < 0.02,
+    messages: [
+      '새벽까지 분석한 보고서, 드디어 완성!',
+      '집에서도 차트 보고 있었어요... 습관이에요',
+      '휴가? 시장이 쉬지 않는데 제가 어떻게 쉬어요',
+      '오늘도 마지막 퇴근이네요. 뿌듯합니다!',
+      '일요일에 회사 오니까 조용해서 좋네요',
+    ],
+    priority: 3,
+    cooldownTicks: 5400,
+  },
+
+  // 사교적: 시장 상황 반응
+  {
+    id: 'social_market_chat',
+    category: 'trait',
+    condition: (emp) => emp.traits?.includes('social') === true && Math.random() < 0.03,
+    messages: [
+      '다들 오늘 시장 어떻게 봐요? 같이 이야기해요!',
+      '옆 팀이랑 시장 전망 토론했는데 재밌었어요',
+      '오늘 장 끝나고 다 같이 한잔하실래요?',
+      '새로 온 신입한테 시장 현황 설명해줬어요',
+      '점심시간에 투자 스터디 할 사람 모집 중이에요!',
+    ],
+    priority: 3,
+    cooldownTicks: 3600,
+  },
+  {
+    id: 'social_team_spirit',
+    category: 'trait',
+    condition: (emp) => emp.traits?.includes('social') === true && Math.random() < 0.02,
+    messages: [
+      '팀 회식 장소 제가 알아볼게요!',
+      '생일인 동료한테 케이크 주문했어요',
+      '옆자리 분이랑 커피 내기해서 졌어요... 아메리카노 사야겠네요',
+      '다음 주 팀 워크숍 어디로 갈까요?',
+      '점심 맛집 리스트 업데이트했어요. 공유할게요!',
+    ],
+    priority: 2,
+    cooldownTicks: 5400,
+  },
+
+  // 내향적: 시장 상황 반응
+  {
+    id: 'introvert_market_analysis',
+    category: 'trait',
+    condition: (emp) => emp.traits?.includes('introvert') === true && Math.random() < 0.03,
+    messages: [
+      '혼자 조용히 차트 분석하는 게 제일 편해요',
+      '오늘은 좀 조용했으면... 집중하고 싶은데',
+      '소음 차단 이어폰 새로 샀어요. 업무 효율 올라갈 것 같아요',
+      '점심은 혼밥이 편해요. 생각 정리할 시간이 필요하거든요',
+      '회의가 너무 많으면 정작 분석할 시간이 없어요...',
+    ],
+    priority: 4,
+    cooldownTicks: 5400,
+  },
+  {
+    id: 'introvert_deep_thought',
+    category: 'trait',
+    condition: (emp) => emp.traits?.includes('introvert') === true && Math.random() < 0.02,
+    messages: [
+      '이 패턴... 혼자 더 깊이 파봐야겠어요',
+      '사무실이 조용한 날은 생산성이 2배에요',
+      '메일로 보고서 보내놨어요. 대면 보고보다 정확하니까요',
+      '혼자 생각하다 좋은 인사이트 찾았어요!',
+      '집중 모드 들어갈게요. 한 2시간만 말 걸지 말아주세요',
+    ],
+    priority: 3,
+    cooldownTicks: 5400,
+  },
+
+  // 야심가: 시장 상황 반응
+  {
+    id: 'ambitious_market_opportunity',
+    category: 'trait',
+    condition: (emp) => emp.traits?.includes('ambitious') === true && Math.random() < 0.03,
+    messages: [
+      '이번 기회를 잡으면 승진에 한 발짝 더!',
+      '다른 팀보다 성과 더 내야 해요. 집중!',
+      '실장님, 더 큰 프로젝트 맡겨주세요!',
+      '올해 안에 반드시 최고의 성과를 내겠습니다!',
+      '경쟁사 애널리스트보다 더 정확한 예측을 해야 해요',
+    ],
+    priority: 4,
+    cooldownTicks: 5400,
+  },
+  {
+    id: 'ambitious_career_drive',
+    category: 'trait',
+    condition: (emp) => emp.traits?.includes('ambitious') === true && Math.random() < 0.02,
+    messages: [
+      '주말에 CFA 공부했어요. 합격할 때까지!',
+      '이번 분기 목표, 120% 달성이 목표입니다',
+      '5년 뒤엔 이 팀을 이끌고 있을 거예요',
+      '벤치마킹 보고서 준비해왔어요. 한번 보실래요?',
+      '다음 승진 심사, 반드시 통과하겠습니다!',
+    ],
+    priority: 3,
+    cooldownTicks: 5400,
+  },
+
+  // 완벽주의자: 시장 상황 반응
+  {
+    id: 'perfectionist_market_detail',
+    category: 'trait',
+    condition: (emp) => emp.traits?.includes('perfectionist') === true && Math.random() < 0.03,
+    messages: [
+      '이 데이터 소수점 셋째 자리까지 맞는 건지 확인해야 해요',
+      '보고서 오타 발견... 다시 써야겠어요',
+      '다른 팀 분석은 너무 대충인 것 같은데...',
+      '이 차트의 이동평균선 기간 설정이 최적인지 재검증 중이에요',
+      '98% 정확도로는 부족해요. 99.9%를 목표로!',
+    ],
+    priority: 4,
+    cooldownTicks: 5400,
+  },
+  {
+    id: 'perfectionist_quality',
+    category: 'trait',
+    condition: (emp) => emp.traits?.includes('perfectionist') === true && Math.random() < 0.02,
+    messages: [
+      '어제 보고서 3번 수정했어요. 이제 만족스러워요',
+      '이 분석 모델, 백테스트 한 번 더 돌려볼게요',
+      '차트 색상 배합이 가독성에 영향을 주거든요...',
+      '실장님, 이 숫자 한번만 더 확인해주실래요?',
+      '완벽하지 않으면 제출 안 합니다. 그게 제 원칙이에요',
+    ],
+    priority: 3,
+    cooldownTicks: 5400,
+  },
+
+  // 기술 능숙: 시장 상황 반응
+  {
+    id: 'tech_savvy_tools',
+    category: 'trait',
+    condition: (emp) => emp.traits?.includes('tech_savvy') === true && Math.random() < 0.03,
+    messages: [
+      '새 분석 스크립트 짜봤는데 시간이 반으로 줄었어요!',
+      'API 연동해서 실시간 데이터 받는 거 완성했습니다',
+      '이 반복 작업, 자동화하면 5분이면 끝나요',
+      '파이썬으로 백테스트 돌려봤는데 결과가 흥미로워요',
+      'ChatGPT한테 코드 리뷰 시켰더니 버그 찾았어요!',
+    ],
+    priority: 3,
+    cooldownTicks: 5400,
+  },
+
+  // 위험 회피: 시장 상황 반응
+  {
+    id: 'risk_averse_market_caution',
+    category: 'trait',
+    condition: (emp) => emp.traits?.includes('risk_averse') === true && Math.random() < 0.03,
+    messages: [
+      '지금 시장... 좀 불안한데 현금 비중 늘려야 하지 않을까요?',
+      '손절 라인 다시 확인해야 해요. 안전이 최우선!',
+      '이번 포지션 사이즈가 너무 큰 것 같아요...',
+      '분산투자가 답이에요. 한 종목에 몰빵은 위험해요',
+      'VIX 지수 확인하셨어요? 변동성 주의해야 할 것 같아요',
+    ],
+    priority: 4,
+    cooldownTicks: 5400,
+  },
+
+  // 야행성: 시간대별 반응
+  {
+    id: 'nocturnal_morning_struggle',
+    category: 'trait',
+    condition: (emp) => emp.traits?.includes('nocturnal') === true && Math.random() < 0.03,
+    messages: [
+      '아침 9시... 아직 뇌가 안 깨어났어요...',
+      '새벽에 미국장 보느라 졸려요... 커피 더 주세요',
+      '오전 회의는 제 뇌에 잔인한 형벌이에요',
+      '오후가 되면 진짜 제 실력을 보여드리겠습니다',
+    ],
+    priority: 3,
+    cooldownTicks: 5400,
+  },
+
+  // 예민함: 환경 반응
+  {
+    id: 'sensitive_environment',
+    category: 'trait',
+    condition: (emp) => emp.traits?.includes('sensitive') === true && Math.random() < 0.03,
+    messages: [
+      '오늘 사무실이 좀 시끄러운 것 같아요...',
+      '에어컨 온도 좀 올려주실 수 있나요? 추워요...',
+      '옆 자리에서 전화 소리가... 집중이 안 돼요',
+      '조명이 너무 밝은 것 같은데 저만 그런가요?',
+      '시장 분위기가 뭔가 이상해요... 느낌이 안 좋아요',
+    ],
+    priority: 4,
+    cooldownTicks: 5400,
+  },
+
+  // 카페인 중독: 추가 커피 관련
+  {
+    id: 'caffeine_intensity',
+    category: 'trait',
+    condition: (emp) => emp.traits?.includes('caffeine_addict') === true && Math.random() < 0.02,
+    messages: [
+      '오늘 아직 3잔밖에 안 마셨는데... 부족해요',
+      '이 근처 카페 라떼 맛집 발견했어요!',
+      '디카페인? 그건 커피가 아니에요!',
+      '커피 마시면서 차트 보는 게 인생 최대의 행복이에요',
+      '사무실 커피머신이 고장나면 저 퇴사해요 진짜',
+    ],
+    priority: 3,
+    cooldownTicks: 5400,
+  },
+
   // 랜덤
   {
     id: 'random_chat',

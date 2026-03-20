@@ -40,6 +40,7 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
   const cancelLimitOrder = useGameStore((s) => s.cancelLimitOrder)
   const enforcePositionLimit = useGameStore((s) => s.enforcePositionLimit)
   const wealthTier = useGameStore((s) => s.economicPressure.currentTier)
+  const proposals = useGameStore((s) => s.proposals)
 
   const [selectedId, setSelectedId] = useState(companyId ?? companies[0]?.id ?? '')
   const [shares, setShares] = useState(1)
@@ -180,6 +181,19 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
   )
   const totalPnlPercent = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0
 
+  // 보유 종목 우선 정렬 (보유 종목 → 현재가치 내림차순, 미보유 → 시가총액 내림차순)
+  const sortedCompanies = useMemo(() => {
+    const held = companies.filter(c => player.portfolio[c.id]?.shares > 0)
+      .sort((a, b) => {
+        const aVal = (player.portfolio[a.id]?.shares ?? 0) * a.price
+        const bVal = (player.portfolio[b.id]?.shares ?? 0) * b.price
+        return bVal - aVal
+      })
+    const notHeld = companies.filter(c => !player.portfolio[c.id]?.shares)
+      .sort((a, b) => b.marketCap - a.marketCap)
+    return [...held, ...notHeld]
+  }, [companies, player.portfolio])
+
   // 인수 가능 회사 판단 (AcquisitionWindow와 동일한 로직)
   const isAcquirable = (c: typeof companies[0]) => {
     if (c.status !== 'active') return false
@@ -292,6 +306,35 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
         )}
       </div>
 
+      {/* Employee Trading Activity */}
+      {(() => {
+        const recentProposals = proposals.filter(p =>
+          p.status === 'PENDING' || p.status === 'APPROVED'
+        ).slice(0, 3)
+        if (recentProposals.length === 0) return null
+        return (
+          <div className="win-inset bg-[#f8f8ff] p-1 mb-1 text-[10px]">
+            <div className="flex items-center gap-1 text-retro-gray font-bold mb-0.5">
+              AI 매매 활동
+            </div>
+            {recentProposals.map(p => (
+              <div key={p.id} className="flex items-center gap-1 text-[9px]">
+                <span className={p.direction === 'buy' ? 'text-stock-up' : 'text-stock-down'}>
+                  {p.direction === 'buy' ? '▲매수' : '▼매도'}
+                </span>
+                <span className="font-bold">{p.ticker}</span>
+                <span className="text-retro-gray">{p.quantity}주</span>
+                <span className={`px-1 rounded text-white text-[8px] ${
+                  p.status === 'PENDING' ? 'bg-yellow-500' : 'bg-green-500'
+                }`}>
+                  {p.status === 'PENDING' ? '대기' : '승인'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
+
       {/* 탭 전환 */}
       <div className="flex mb-1">
         <button
@@ -319,8 +362,8 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
       {/* 종목 리스트 */}
       <div className="win-inset bg-white flex-1 min-h-0 overflow-y-auto mb-1">
         {tab === 'market' ? (
-          /* 전체 종목 리스트 */
-          companies.map((c) => {
+          /* 전체 종목 리스트 (보유 종목 우선) */
+          sortedCompanies.map((c, idx) => {
             const ch = c.price - c.previousPrice
             const chPct = c.previousPrice ? (ch / c.previousPrice) * 100 : 0
             const isHolding = player.portfolio[c.id]?.shares > 0
@@ -329,9 +372,18 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
 
             const canAcquire = isAcquirable(c)
 
+            // 보유/미보유 구분선: 현재가 미보유이고 이전이 보유였을 때
+            const prevCompany = idx > 0 ? sortedCompanies[idx - 1] : null
+            const showSeparator = !isHolding && prevCompany && player.portfolio[prevCompany.id]?.shares > 0
+
             return (
+              <div key={c.id}>
+              {showSeparator && (
+                <div className="border-t-2 border-retro-gray/40 mx-1 my-0.5">
+                  <div className="text-[9px] text-retro-gray text-center py-0.5">-- 미보유 종목 --</div>
+                </div>
+              )}
               <div
-                key={c.id}
                 className={`flex items-center px-1.5 py-1 cursor-pointer border-b border-retro-gray/20 ${
                   isAcquired ? 'opacity-50 bg-gray-100' : ''
                 } ${
@@ -384,7 +436,7 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
                 <div className="text-right ml-2">
                   <div className="font-bold">{c.price.toLocaleString()}</div>
                   <div
-                    className={`text-[10px] ${
+                    className={`text-[11px] font-bold ${
                       c.id === selectedId
                         ? 'text-white/80'
                         : ch >= 0
@@ -396,6 +448,7 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
                     {chPct.toFixed(1)}%
                   </div>
                 </div>
+              </div>
               </div>
             )
           })
@@ -687,6 +740,30 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
             }
           </RetroButton>
         </div>
+
+        {/* 자금/보유 부족 안내 */}
+        {mode === 'buy' && maxBuyable === 0 && (
+          <div className="text-[10px] text-orange-700 bg-orange-50 border border-orange-200 rounded p-1 flex items-center justify-between">
+            <span>보유 현금이 부족합니다</span>
+            <button
+              className="text-[10px] text-blue-600 hover:underline cursor-pointer"
+              onClick={() => setMode('sell')}
+            >
+              매도 전환 →
+            </button>
+          </div>
+        )}
+        {mode === 'sell' && maxSellable === 0 && (
+          <div className="text-[10px] text-orange-700 bg-orange-50 border border-orange-200 rounded p-1 flex items-center justify-between">
+            <span>이 종목을 보유하고 있지 않습니다</span>
+            <button
+              className="text-[10px] text-blue-600 hover:underline cursor-pointer"
+              onClick={() => setMode('buy')}
+            >
+              매수 전환 →
+            </button>
+          </div>
+        )}
 
         {/* 보유 정보 (보유 중일 때만) */}
         {position && position.shares > 0 && (
