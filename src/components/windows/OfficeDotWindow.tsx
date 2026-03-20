@@ -771,7 +771,7 @@ export function OfficeDotWindow() {
 
       ctx.textAlign = 'start' // reset
     }
-  }, [layout, player.employees, player.officeLevel, employeeBehaviors, mousePos, draggingItem, placementMode, selectedDeskType, selectedDecorationType, selectedItem])
+  }, [layout, player.employees, player.officeLevel, player.totalAssetValue, employeeBehaviors, mousePos, draggingItem, placementMode, selectedDeskType, selectedDecorationType, selectedItem, time.hour, companyProfile, config, competitors])
 
 
   if (!layout) {

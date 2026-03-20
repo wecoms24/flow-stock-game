@@ -314,12 +314,20 @@ export function updateOfficeSystem(
               skills.analysis = Math.min(100, skills.analysis + interaction.effects.initiator.skillDelta)
             }
 
-            // 상호작용 이벤트 로그
+            // 상호작용 이벤트 로그 (능력치 변화 포함)
+            const eff = interaction.effects.initiator
+            const changes: string[] = []
+            if (eff.stressDelta !== 0) changes.push(`스트레스${eff.stressDelta > 0 ? '+' : ''}${eff.stressDelta}`)
+            if (eff.satisfactionDelta !== 0) changes.push(`만족도${eff.satisfactionDelta > 0 ? '+' : ''}${eff.satisfactionDelta}`)
+            if (eff.skillDelta > 0) changes.push(`스킬+${eff.skillDelta.toFixed(1)}`)
+            if (eff.staminaDelta !== 0) changes.push(`체력${eff.staminaDelta > 0 ? '+' : ''}${eff.staminaDelta}`)
+            const changeText = changes.length > 0 ? ` [${changes.join(', ')}]` : ''
+
             officeEvents.push({
               timestamp: absoluteTick,
               type: 'interaction',
               emoji: interaction.emoji,
-              message: `${interaction.initiatorName}: "${interaction.dialogue[0]}" → ${interaction.targetName}: "${interaction.dialogue[1]}"`,
+              message: `${interaction.initiatorName}: "${interaction.dialogue[0]}" → ${interaction.targetName}: "${interaction.dialogue[1]}"${changeText}`,
               employeeIds: [interaction.initiatorId, interaction.targetId],
             })
           }
