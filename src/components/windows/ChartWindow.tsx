@@ -776,15 +776,17 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
           <div className="bg-[#12122a] border border-retro-silver/20 rounded p-1.5 space-y-1">
             <div className="flex gap-0.5 flex-wrap">
               {sectors.map((sector) => (
-                <RetroButton
+                <button
                   key={sector.value}
-                  size="sm"
-                  variant={sectorFilter === sector.value ? 'primary' : 'default'}
                   onClick={() => setSectorFilter(sector.value)}
-                  className="text-[11px] px-1.5 py-0.5"
+                  className={`px-2 py-1 text-[11px] rounded border transition-colors ${
+                    sectorFilter === sector.value
+                      ? 'bg-blue-600 text-white border-blue-400 font-bold'
+                      : 'bg-[#1e1e3a] text-gray-300 border-gray-600 hover:bg-[#2a2a4a] hover:text-white'
+                  }`}
                 >
                   {sector.emoji} {sector.label}
-                </RetroButton>
+                </button>
               ))}
               {[
                 { value: 'industrial', label: '산업재' },
@@ -793,51 +795,39 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
                 { value: 'utilities', label: '유틸리티' },
                 { value: 'realestate', label: '부동산' },
               ].map((sector) => (
-                <RetroButton
+                <button
                   key={sector.value}
-                  size="sm"
-                  variant={sectorFilter === sector.value ? 'primary' : 'default'}
                   onClick={() => setSectorFilter(sector.value)}
-                  className="text-[11px] px-1.5 py-0.5"
+                  className={`px-2 py-1 text-[11px] rounded border transition-colors ${
+                    sectorFilter === sector.value
+                      ? 'bg-blue-600 text-white border-blue-400 font-bold'
+                      : 'bg-[#1e1e3a] text-gray-300 border-gray-600 hover:bg-[#2a2a4a] hover:text-white'
+                  }`}
                 >
                   {sector.label}
-                </RetroButton>
+                </button>
               ))}
             </div>
 
             <div className="flex gap-0.5">
-              <RetroButton
-                size="sm"
-                variant={changeFilter === 'all' ? 'primary' : 'default'}
-                onClick={() => setChangeFilter('all')}
-                className="text-[10px] px-1 py-0.5"
-              >
-                전체
-              </RetroButton>
-              <RetroButton
-                size="sm"
-                variant={changeFilter === 'up5' ? 'primary' : 'default'}
-                onClick={() => setChangeFilter('up5')}
-                className="text-[10px] px-1 py-0.5 text-stock-up"
-              >
-                ▲ +5% 이상
-              </RetroButton>
-              <RetroButton
-                size="sm"
-                variant={changeFilter === 'down5' ? 'primary' : 'default'}
-                onClick={() => setChangeFilter('down5')}
-                className="text-[10px] px-1 py-0.5 text-stock-down"
-              >
-                ▼ -5% 이하
-              </RetroButton>
-              <RetroButton
-                size="sm"
-                variant={changeFilter === 'stable' ? 'primary' : 'default'}
-                onClick={() => setChangeFilter('stable')}
-                className="text-[10px] px-1 py-0.5"
-              >
-                ±2% 이내
-              </RetroButton>
+              {([
+                { key: 'all' as const, label: '전체', color: '' },
+                { key: 'up5' as const, label: '▲ +5% 이상', color: 'text-green-400' },
+                { key: 'down5' as const, label: '▼ -5% 이하', color: 'text-red-400' },
+                { key: 'stable' as const, label: '±2% 이내', color: '' },
+              ]).map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => setChangeFilter(f.key)}
+                  className={`px-2 py-1 text-[11px] rounded border transition-colors ${
+                    changeFilter === f.key
+                      ? 'bg-blue-600 text-white border-blue-400 font-bold'
+                      : `bg-[#1e1e3a] ${f.color || 'text-gray-300'} border-gray-600 hover:bg-[#2a2a4a] hover:text-white`
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
             </div>
           </div>
         )}
