@@ -523,33 +523,76 @@ export function OfficeDotWindow() {
       if (desk.employeeId) {
         const employee = player.employees.find((e) => e.id === desk.employeeId)
         if (employee) {
-          // 픽셀아트 직원 아바타 렌더링
-          const behavior = (employeeBehaviors[employee.id] ?? 'WORKING') as 'WORKING' | 'IDLE' | 'BREAK' | 'SOCIALIZING' | 'COFFEE' | 'MEETING' | 'STRESSED_OUT' | 'COUNSELING' | 'PANIC'
-          const badge = badgeForLevel(employee.level ?? 1)
-          const hairStyle = employee.id.charCodeAt(0) % 3
-          const empSprite = pixelArtCache.getEmployeeSprite(employee.role, badge, behavior, hairStyle)
-          ctx.drawImage(empSprite as HTMLCanvasElement, desk.position.x - 16, desk.position.y - 36, 32, 40)
+          // 업무 시간 외(18시 이후, 9시 이전)에는 직원 미표시 — 빈 책상만
+          const isBusinessHours = time.hour >= 9 && time.hour < 18
+          if (!isBusinessHours) {
+            // 퇴근 후: 빈 의자 표시
+            ctx.font = '8px sans-serif'
+            ctx.fillStyle = 'rgba(0,0,0,0.3)'
+            ctx.textAlign = 'center'
+            ctx.fillText('퇴근', desk.position.x, desk.position.y - 4)
+            ctx.textAlign = 'start'
+          } else {
+            // 근무 중: 픽셀아트 직원 아바타 렌더링
+            const behavior = (employeeBehaviors[employee.id] ?? 'WORKING') as 'WORKING' | 'IDLE' | 'BREAK' | 'SOCIALIZING' | 'COFFEE' | 'MEETING' | 'STRESSED_OUT' | 'COUNSELING' | 'PANIC'
+            const badge = badgeForLevel(employee.level ?? 1)
+            const hairStyle = employee.id.charCodeAt(0) % 3
+            const empSprite = pixelArtCache.getEmployeeSprite(employee.role, badge, behavior, hairStyle)
 
-          // 이름 표시
-          ctx.font = 'bold 9px sans-serif'
-          ctx.fillStyle = '#333'
-          ctx.textAlign = 'center'
-          ctx.fillText(employee.name.substring(0, 4), desk.position.x, desk.position.y + 24)
-          ctx.textAlign = 'start'
+            // 스트레스/만족도에 따른 오라 효과
+            const empStress = employee.stress ?? 0
+            const empSat = employee.satisfaction ?? 50
+            if (empStress > 70) {
+              // 높은 스트레스: 빨간 오라
+              ctx.beginPath()
+              ctx.arc(desk.position.x, desk.position.y - 16, 18, 0, Math.PI * 2)
+              ctx.fillStyle = `rgba(255, 50, 50, ${0.08 + Math.sin(Date.now() / 300) * 0.04})`
+              ctx.fill()
+            } else if (empSat > 80) {
+              // 높은 만족도: 초록 오라
+              ctx.beginPath()
+              ctx.arc(desk.position.x, desk.position.y - 16, 18, 0, Math.PI * 2)
+              ctx.fillStyle = 'rgba(50, 200, 50, 0.08)'
+              ctx.fill()
+            }
 
-          // 스트레스 바
-          const stress = employee.stress ?? 0
-          const barWidth = 24
-          const barHeight = 3
-          const barX = desk.position.x - barWidth / 2
-          const barY = desk.position.y + 27
+            ctx.drawImage(empSprite as HTMLCanvasElement, desk.position.x - 16, desk.position.y - 36, 32, 40)
 
-          ctx.fillStyle = '#ddd'
-          ctx.fillRect(barX, barY, barWidth, barHeight)
+            // 상태 이모지 (스트레스 높으면 땀, 만족도 높으면 하트)
+            if (empStress > 80) {
+              ctx.font = '10px sans-serif'
+              ctx.fillText('💦', desk.position.x + 12, desk.position.y - 30)
+            } else if (empSat > 85) {
+              ctx.font = '10px sans-serif'
+              ctx.fillText('✨', desk.position.x + 12, desk.position.y - 30)
+            }
 
-          const stressColor = stress > 70 ? '#f44' : stress > 50 ? '#fa4' : '#4a4'
-          ctx.fillStyle = stressColor
-          ctx.fillRect(barX, barY, (barWidth * stress) / 100, barHeight)
+            // 이름 표시
+            ctx.font = 'bold 9px sans-serif'
+            ctx.fillStyle = '#333'
+            ctx.textAlign = 'center'
+            ctx.fillText(employee.name.substring(0, 4), desk.position.x, desk.position.y + 24)
+            ctx.textAlign = 'start'
+
+            // 스트레스 바 + 만족도 바
+            const barWidth = 24
+            const barHeight = 2
+            const barX = desk.position.x - barWidth / 2
+
+            // 스트레스 바 (위)
+            const barY1 = desk.position.y + 27
+            ctx.fillStyle = '#ddd'
+            ctx.fillRect(barX, barY1, barWidth, barHeight)
+            ctx.fillStyle = empStress > 70 ? '#f44' : empStress > 50 ? '#fa4' : '#4a4'
+            ctx.fillRect(barX, barY1, (barWidth * empStress) / 100, barHeight)
+
+            // 만족도 바 (아래)
+            const barY2 = barY1 + 3
+            ctx.fillStyle = '#ddd'
+            ctx.fillRect(barX, barY2, barWidth, barHeight)
+            ctx.fillStyle = empSat > 60 ? '#22c55e' : empSat > 30 ? '#fa4' : '#f44'
+            ctx.fillRect(barX, barY2, (barWidth * empSat) / 100, barHeight)
+          }
         }
       }
     })
