@@ -49,4 +49,58 @@ export const XP_AMOUNTS = {
   TRADE_SUCCESS: 10, // 거래 성공 시
   PRAISE: 5, // 칭찬 받기
   PERFECT_STAMINA: 5, // 스태미너 50% 이상 유지
+  INTERACTION_MENTORING: 8, // 멘토링 상호작용 시
+  INTERACTION_COLLABORATION: 5, // 협업 상호작용 시
+  PROPOSAL_APPROVED: 7, // 매매 제안 승인 시
+  PROPOSAL_PROFITABLE: 15, // 수익 낸 거래 완료 시
+  CRISIS_SURVIVAL: 12, // 위기 레짐에서 버티기
+  SKILL_USAGE: 3, // 스킬 뱃지 효과 발동 시
+  TRAINING_COMPLETE: 20, // 교육 프로그램 수료
+  STREAK_BONUS: 8, // 연속 출근 보너스 (스트레스 50 미만 유지)
 } as const
+
+/* ── Level-Up Rewards ── */
+export const LEVEL_REWARDS: Record<number, {
+  title: string
+  bonus: string
+  statBoost?: { stress?: number; satisfaction?: number; stamina?: number }
+  salaryMultiplier?: number
+}> = {
+  5: { title: '숙련', bonus: '기본 스킬 +5', statBoost: { satisfaction: 5 } },
+  10: {
+    title: '전문가',
+    bonus: 'Auto-Analysis 해금',
+    statBoost: { satisfaction: 10, stamina: 5 },
+    salaryMultiplier: 1.2,
+  },
+  15: { title: '베테랑', bonus: '시너지 보너스 +10%', statBoost: { satisfaction: 5 } },
+  20: {
+    title: '달인',
+    bonus: 'Deep Insight 해금',
+    statBoost: { satisfaction: 15, stamina: 10 },
+    salaryMultiplier: 1.5,
+  },
+  25: { title: '전설', bonus: '매매 수수료 -20%', statBoost: { satisfaction: 10 } },
+  30: {
+    title: '마스터',
+    bonus: 'Market Sense 해금 + 전체 보너스',
+    statBoost: { satisfaction: 20, stamina: 15 },
+    salaryMultiplier: 2.0,
+  },
+}
+
+/* ── Role-based XP Multiplier ── */
+export function xpMultiplierForRole(role: string, level: number): number {
+  const roleBase: Record<string, number> = {
+    analyst: 1.0,
+    trader: 1.1, // 트레이더는 XP 약간 빠르게
+    manager: 0.9, // 매니저는 느리지만 효과 큼
+    intern: 1.3, // 인턴은 빠르게 성장
+    ceo: 0.7, // CEO는 느리게
+    hr_manager: 0.8,
+  }
+  const base = roleBase[role] ?? 1.0
+  // 저레벨일수록 빠르게 성장 (감소하는 보너스)
+  const levelBonus = Math.max(0.5, 1.5 - level * 0.03)
+  return base * levelBonus
+}

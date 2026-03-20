@@ -79,7 +79,7 @@ import {
   simulateInstitutionalTrading,
 } from '../engines/institutionEngine'
 import { PANIC_SELL_CONFIG, PERFORMANCE_CONFIG } from '../config/aiConfig'
-import { xpForLevel, titleForLevel, badgeForLevel, SKILL_UNLOCKS, XP_AMOUNTS } from '../systems/growthSystem'
+import { xpForLevel, titleForLevel, badgeForLevel, SKILL_UNLOCKS, XP_AMOUNTS, LEVEL_REWARDS, xpMultiplierForRole } from '../systems/growthSystem'
 import { soundManager } from '../systems/soundManager'
 import { updateOfficeSystem } from '../engines/officeSystem'
 import { processHRAutomation, type HRAutomationResult } from '../engines/hrAutomation'
@@ -1501,6 +1501,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ? [...st.officeEvents, ...managerEvents].slice(-200)
         : st.officeEvents,
     }))
+
+    // Grant PROPOSAL_APPROVED XP to the analyst whose proposal was approved
+    for (let i = 0; i < Math.min(processCount, pendingProposals.length); i++) {
+      const proposal = pendingProposals[i]
+      const wasApproved = updatedProposals.find((p) => p.id === proposal.id)?.status === 'APPROVED'
+      if (wasApproved && proposal.createdByEmployeeId) {
+        get().gainXP(proposal.createdByEmployeeId, XP_AMOUNTS.PROPOSAL_APPROVED, 'proposal_approved')
+      }
+    }
   },
 
   /**
@@ -1758,6 +1767,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
           `⚡ ${proposal.ticker} ${proposal.direction === 'buy' ? '매수' : '매도'} · ${skillTexts.join(' · ')}`,
           400, 300, proposal.direction === 'buy' ? '#2563eb' : '#dc2626',
         )
+
+        // Grant SKILL_USAGE XP to involved employees when badge effects activate
+        const skillXPTargets = [
+          proposal.createdByEmployeeId,
+          trader?.id,
+        ].filter((id): id is string => !!id)
+        for (const eid of skillXPTargets) {
+          get().gainXP(eid, XP_AMOUNTS.SKILL_USAGE, 'skill_usage')
+        }
       }
 
       // Record cash flow entries for the trade
@@ -1815,6 +1833,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
               }
               return { employeeBios: updatedBios }
             })
+
+            // Grant PROPOSAL_PROFITABLE XP to all involved employees on profitable trades
+            if (tradePnl > 0) {
+              for (const eid of involvedIds) {
+                get().gainXP(eid, XP_AMOUNTS.PROPOSAL_PROFITABLE, 'proposal_profitable')
+              }
+            }
           }
         }
       }
@@ -2076,10 +2101,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
         const hourlyXP = XP_AMOUNTS.MONTHLY_WORK / HPM
         const bonusXP = newStamina > emp.maxStamina * 0.5 ? XP_AMOUNTS.PERFECT_STAMINA / HPM : 0
-        const totalXP = hourlyXP + bonusXP
 
+        // Crisis survival XP: employees working during CRISIS regime earn bonus XP
+        const crisisBonusXP = st.marketRegime.current === 'CRISIS'
+          ? XP_AMOUNTS.CRISIS_SURVIVAL / HPM
+          : 0
+
+        // Streak bonus: low-stress employees earn consistency XP
+        const streakBonusXP = (emp.stress ?? 0) < 50 ? XP_AMOUNTS.STREAK_BONUS / HPM : 0
+
+        const baseXP = hourlyXP + bonusXP + crisisBonusXP + streakBonusXP
+
+        // Role-specific XP multiplier
         const currentLevel = emp.level ?? 1
-        const currentXP = (emp.xp ?? 0) + totalXP
+        const xpMult = xpMultiplierForRole(emp.role, currentLevel)
+        const adjustedXP = baseXP * xpMult
+
+        // Trait-based XP bonus
+        let traitXPBonus = 0
+        if (emp.traits?.includes('ambitious')) traitXPBonus += 0.15
+        if (emp.traits?.includes('workaholic')) traitXPBonus += 0.1
+        if (emp.traits?.includes('perfectionist')) traitXPBonus += 0.05
+
+        const finalXP = adjustedXP * (1 + traitXPBonus)
+
+        const currentXP = (emp.xp ?? 0) + finalXP
         const xpNeeded = emp.xpToNextLevel ?? xpForLevel(currentLevel)
 
         if (currentXP >= xpNeeded) {
@@ -2087,10 +2133,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
           const newTitle = titleForLevel(newLevel)
           const newBadge = badgeForLevel(newLevel)
           const oldTitle = emp.title ?? 'intern'
+
+          // Apply level rewards
+          const reward = LEVEL_REWARDS[newLevel]
+          let rewardStamina = newStamina
+          let rewardSatisfaction = emp.satisfaction ?? 50
+          if (reward?.statBoost) {
+            if (reward.statBoost.satisfaction) {
+              rewardSatisfaction = Math.min(100, rewardSatisfaction + reward.statBoost.satisfaction)
+            }
+            if (reward.statBoost.stamina) {
+              rewardStamina = Math.min(emp.maxStamina, rewardStamina + reward.statBoost.stamina)
+            }
+          }
+
+          const rewardDesc = reward ? ` 보상: ${reward.bonus}` : ''
           const logEntry = {
             day: (st.time.year - st.config.startYear) * 360 + (st.time.month - 1) * 30 + st.time.day,
             event: 'LEVEL_UP' as const,
-            description: `Lv.${newLevel} 달성!${newTitle !== oldTitle ? ` ${newTitle.toUpperCase()}로 승급!` : ''}`,
+            description: `Lv.${newLevel} 달성!${newTitle !== oldTitle ? ` ${newTitle.toUpperCase()}로 승급!` : ''}${rewardDesc}`,
           }
 
           if (!firstLevelUp) {
@@ -2106,7 +2167,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
           return {
             ...emp,
-            stamina: newStamina,
+            stamina: rewardStamina,
             sprite,
             mood: newMood,
             level: newLevel,
@@ -2114,6 +2175,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             xpToNextLevel: xpForLevel(newLevel),
             title: newTitle,
             badge: newBadge,
+            satisfaction: rewardSatisfaction,
             growthLog: [...(emp.growthLog ?? []), logEntry].slice(-50),
           }
         }
@@ -2542,6 +2604,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (emps.length > 0) {
       const lucky = emps[Math.floor(Math.random() * emps.length)]
       get().gainXP(lucky.id, XP_AMOUNTS.TRADE_SUCCESS, 'trade_success')
+
+      // Bonus XP for profitable manual sell trades
+      if (company) {
+        const sellPnl = (company.price - preSellAvgBuyPrice) * shares
+        if (sellPnl > 0) {
+          get().gainXP(lucky.id, XP_AMOUNTS.PROPOSAL_PROFITABLE, 'proposal_profitable')
+        }
+      }
     }
 
     // ✨ Queue trade animation
@@ -4246,6 +4316,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
         totalTraineesGraduated: st.training.totalTraineesGraduated + graduatedDelta,
       },
     }))
+
+    // Grant TRAINING_COMPLETE XP to all graduated trainees
+    if (graduatedDelta > 0) {
+      for (const program of updatedPrograms) {
+        if (program.status === 'completed') {
+          for (const traineeId of program.traineeIds) {
+            get().gainXP(traineeId, XP_AMOUNTS.TRAINING_COMPLETE, 'training_complete')
+          }
+        }
+      }
+    }
   },
 
   cancelTrainingProgram: (programId) => {
@@ -5421,6 +5502,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   /* ── Growth System (Sprint 3) ── */
   gainXP: (employeeId, amount, _source) => {
     void _source // 향후 확장을 위해 보존 (로그, 분석 등)
+
+    // Apply role-based XP multiplier for direct XP grants
+    const empForMult = get().player.employees.find((e) => e.id === employeeId)
+    const scaledAmount = empForMult
+      ? amount * xpMultiplierForRole(empForMult.role, empForMult.level ?? 1)
+      : amount
+
     soundManager.playXPGain()
     set((s) => {
       const empIdx = s.player.employees.findIndex((e) => e.id === employeeId)
@@ -5428,7 +5516,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       const emp = s.player.employees[empIdx]
       const currentLevel = emp.level ?? 1
-      const currentXP = (emp.xp ?? 0) + amount
+      const currentXP = (emp.xp ?? 0) + scaledAmount
       const xpNeeded = emp.xpToNextLevel ?? xpForLevel(currentLevel)
 
       if (currentXP >= xpNeeded) {
@@ -5439,10 +5527,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const oldTitle = emp.title ?? 'intern'
         const skillUnlock = SKILL_UNLOCKS[newLevel]
 
+        // Apply level rewards
+        const reward = LEVEL_REWARDS[newLevel]
+        let rewardSatisfaction = emp.satisfaction ?? 50
+        let rewardStamina = emp.stamina
+        if (reward?.statBoost) {
+          if (reward.statBoost.satisfaction) {
+            rewardSatisfaction = Math.min(100, rewardSatisfaction + reward.statBoost.satisfaction)
+          }
+          if (reward.statBoost.stamina) {
+            rewardStamina = Math.min(emp.maxStamina, rewardStamina + reward.statBoost.stamina)
+          }
+        }
+
+        const rewardDesc = reward ? ` 보상: ${reward.bonus}` : ''
         const logEntry = {
           day: (s.time.year - s.config.startYear) * 360 + (s.time.month - 1) * 30 + s.time.day,
           event: 'LEVEL_UP' as const,
-          description: `Lv.${newLevel} 달성!${newTitle !== oldTitle ? ` ${newTitle.toUpperCase()}로 승급!` : ''}`,
+          description: `Lv.${newLevel} 달성!${newTitle !== oldTitle ? ` ${newTitle.toUpperCase()}로 승급!` : ''}${rewardDesc}`,
         }
 
         const updatedEmployees = [...s.player.employees]
@@ -5453,6 +5555,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
           xpToNextLevel: xpForLevel(newLevel),
           title: newTitle,
           badge: newBadge,
+          satisfaction: rewardSatisfaction,
+          stamina: rewardStamina,
           growthLog: [...(emp.growthLog ?? []), logEntry].slice(-50),
         }
 
@@ -5839,7 +5943,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const state = get()
     if (state.player.employees.length === 0) return
 
-    const { updatedEmployees, resignedIds, warnings, officeEvents, behaviors } = updateOfficeSystem(
+    const { updatedEmployees, resignedIds, warnings, officeEvents, behaviors, interactions } = updateOfficeSystem(
       state.player.employees,
       state.player.officeGrid,
       state.time,
@@ -5858,6 +5962,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
         impactSummary: '직원 퇴사 위험',
       })
     })
+
+    // Grant interaction XP for mentoring and collaboration
+    if (interactions && interactions.length > 0) {
+      for (const interaction of interactions) {
+        if (resignedIds.includes(interaction.initiatorId) || resignedIds.includes(interaction.targetId)) continue
+        if (interaction.type === 'mentoring' || interaction.type === 'teaching_moment') {
+          get().gainXP(interaction.initiatorId, XP_AMOUNTS.INTERACTION_MENTORING, 'interaction_mentoring')
+          get().gainXP(interaction.targetId, XP_AMOUNTS.INTERACTION_MENTORING, 'interaction_mentoring')
+        } else if (interaction.type === 'collaboration' || interaction.type === 'signal_sharing' || interaction.type === 'market_debate') {
+          get().gainXP(interaction.initiatorId, XP_AMOUNTS.INTERACTION_COLLABORATION, 'interaction_collaboration')
+          get().gainXP(interaction.targetId, XP_AMOUNTS.INTERACTION_COLLABORATION, 'interaction_collaboration')
+        }
+      }
+    }
 
     // 퇴사 처리: 좌석 정리 + 쿨다운 정리 + 제안서 정리 + 뉴스
     resignedIds.forEach((id) => {
