@@ -145,7 +145,7 @@ export function CelebrationManager() {
           onClick={dismissCeremony}
         >
           <div
-            className="win-outset bg-win-face shadow-2xl max-w-sm w-full mx-4"
+            className="win-outset bg-win-face shadow-2xl max-w-md w-full mx-4"
             onClick={(e) => e.stopPropagation()}
             style={{ animation: 'bounceOnce 0.6s ease-out' }}
           >

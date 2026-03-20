@@ -5,7 +5,6 @@ import { PixelIcon, type IconName } from '../ui/PixelIcon'
 import { NotificationCenter } from '../ui/NotificationCenter'
 import { CompetitorWidget } from './CompetitorWidget'
 import { ObjectiveWidget } from './ObjectiveWidget'
-import { formatHour } from '../../config/timeConfig'
 import type { WindowType, WindowLayoutPreset } from '../../types'
 
 // 단일 진실의 원천: 모든 메뉴 항목 정의
@@ -171,7 +170,7 @@ export function Taskbar() {
 
         {/* Windows 95 Start Menu */}
         {showStartMenu && (
-          <div className="absolute bottom-full left-0 mb-1 win-outset bg-win-face flex z-50 shadow-lg">
+          <div className="absolute bottom-full left-0 mb-1 win-outset bg-win-face flex z-50 shadow-lg max-h-[70vh]">
             {/* Left vertical bar */}
             <div className="w-6 bg-gradient-to-b from-blue-700 to-blue-900 flex items-end justify-center py-2 px-1">
               <div
@@ -183,7 +182,7 @@ export function Taskbar() {
             </div>
 
             {/* Right menu content */}
-            <div className="p-1 min-w-[180px]">
+            <div className="p-1 min-w-[180px] overflow-y-auto">
               {START_MENU_CATEGORIES.map((category, idx) => (
                 <div key={category.name}>
                   {idx > 0 && <div className="h-px bg-win-shadow my-1" />}
@@ -248,7 +247,7 @@ export function Taskbar() {
             ▸
           </RetroButton>
           {showMoreIcons && (
-            <div className="absolute bottom-full left-0 mb-1 win-outset bg-win-face p-1.5 space-y-0.5 min-w-[140px] z-50">
+            <div className="absolute bottom-full left-0 mb-1 win-outset bg-win-face p-1.5 space-y-0.5 min-w-[140px] max-h-[60vh] overflow-y-auto z-50">
               {TASKBAR_ITEMS.slice(4).map((item) => (
                 <RetroButton
                   key={item.type}
@@ -310,7 +309,7 @@ export function Taskbar() {
 
         {/* Dropdown Menu */}
         {showLayoutMenu && (
-          <div className="absolute bottom-full left-0 mb-1 win-outset bg-win-face p-1.5 space-y-0.5 min-w-[160px] z-50">
+          <div className="absolute bottom-full left-0 mb-1 win-outset bg-win-face p-1.5 space-y-0.5 min-w-[160px] max-h-[60vh] overflow-y-auto z-50">
             {LAYOUT_PRESETS.map(({ preset, label, icon }) => (
               <RetroButton
                 key={preset}
@@ -437,8 +436,11 @@ export function Taskbar() {
       )}
       <div className="win-inset bg-white px-2 py-0.5 text-[10px] shrink-0 tabular-nums flex items-center gap-1">
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" title="장 중" />
-        {time.year}.{String(time.month).padStart(2, '0')}.{String(time.day).padStart(2, '0')}{' '}
-        {formatHour(time.hour)}
+        {time.year}.{String(time.month).padStart(2, '0')}.{String(time.day).padStart(2, '0')}
+        <span className="text-retro-gray">
+          ({['월', '화', '수', '목', '금'][((time.day - 1) % 5 + 5) % 5]})
+        </span>
+        {' '}{String(time.hour).padStart(2, '0')}<span className="blink-colon">:</span>00
       </div>
     </div>
   )

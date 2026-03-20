@@ -1059,7 +1059,7 @@ export function OfficeDotWindow() {
           {/* Desk Purchase Panel */}
           <div className="space-y-1">
             <div className="font-bold text-[11px]">책상 ({layout.desks.length}/{layout.maxDesks})</div>
-            <div className="win-inset bg-white p-1 space-y-0.5 max-h-32 overflow-y-auto">
+            <div className="win-inset bg-white p-1 space-y-0.5 max-h-48 overflow-y-auto">
               {Object.values(DESK_CATALOG).map((desk) => {
                 const { canBuy, reason } = canBuyDesk(
                   desk.type,
@@ -1117,7 +1117,7 @@ export function OfficeDotWindow() {
           {/* Decoration Purchase Panel */}
           <div className="space-y-1">
             <div className="font-bold text-[11px]">장식 가구</div>
-            <div className="win-inset bg-white p-1 space-y-0.5 max-h-32 overflow-y-auto">
+            <div className="win-inset bg-white p-1 space-y-0.5 max-h-48 overflow-y-auto">
               {Object.values(DECORATION_CATALOG).map((deco) => {
                 const { canBuy, reason } = canBuyDecoration(
                   deco.type,
@@ -1214,7 +1214,7 @@ export function OfficeDotWindow() {
                           <BadgeIcon badge={badge} title={empTitle} size={14} />
                           <span
                             className="text-[11px] font-bold truncate cursor-pointer hover:text-blue-600 hover:underline"
-                            onClick={() => openWindow('employee_detail', { employeeId: emp.id })}
+                            onClick={(e) => { e.stopPropagation(); openWindow('employee_detail', { employeeId: emp.id }) }}
                             title="클릭하여 상세 정보 보기"
                           >
                             {emp.name}
@@ -1389,7 +1389,7 @@ export function OfficeDotWindow() {
       {/* Phase 4: 첫 방문 튜토리얼 */}
       {showDotTutorial && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-          <div className="bg-white border-2 border-gray-800 rounded-lg p-4 max-w-sm shadow-xl">
+          <div className="bg-white border-2 border-gray-800 rounded-lg p-4 max-w-md shadow-xl">
             <h3 className="font-bold text-sm mb-2">🏢 사무실 안내</h3>
             <ul className="text-[11px] space-y-1.5 text-gray-700">
               <li>📌 아래 카탈로그에서 <b>책상/장식</b>을 구매하세요</li>

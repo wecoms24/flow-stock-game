@@ -1,9 +1,25 @@
-import { useRef, useCallback, useState, type ReactNode } from 'react'
+import { useRef, useCallback, useState, useMemo, type ReactNode } from 'react'
 import { motion } from 'motion/react'
 import { useGameStore } from '../../stores/gameStore'
 import { windowVariants } from '../../utils/motionVariants'
 import { useReducedMotion } from '../../hooks/useReducedMotion'
 import type { WindowState, WindowType } from '../../types'
+
+/* ── Window-type specific title bar colors (active state) ── */
+const TITLE_BAR_COLORS: Partial<Record<WindowType, string>> = {
+  portfolio: '#000080',      // default blue
+  chart: '#0c0c1e',          // dark navy
+  trading: '#1a5c2a',        // green tint
+  office: '#5c3a1a',         // warm brown
+  office_dot: '#5c3a1a',     // warm brown
+  news: '#8b5a00',           // orange tint
+  ranking: '#4a1a6b',        // purple tint
+  settings: '#555555',       // gray
+  proposals: '#1a4a5c',      // teal
+  dashboard: '#1a3a6b',      // deeper blue
+}
+const DEFAULT_TITLE_COLOR = '#000080'
+const INACTIVE_TITLE_COLOR = '#808080'
 
 /* ── Snap Zone Config ── */
 const SNAP_THRESHOLD = 20 // px from edge to trigger snap
@@ -59,7 +75,14 @@ interface WindowFrameProps {
 export function WindowFrame({ window: win, children }: WindowFrameProps) {
   const { closeWindow, minimizeWindow, toggleMaximizeWindow, focusWindow, moveWindow, resizeWindow } =
     useGameStore()
+  const maxZIndex = useGameStore((s) => Math.max(...s.windows.map((w) => w.zIndex)))
+  const isFocused = win.zIndex === maxZIndex
   const reducedMotion = useReducedMotion()
+
+  const titleBarBg = useMemo(() => {
+    if (!isFocused) return INACTIVE_TITLE_COLOR
+    return TITLE_BAR_COLORS[win.type] ?? DEFAULT_TITLE_COLOR
+  }, [isFocused, win.type])
   const [snapZone, setSnapZone] = useState<SnapZone>(null)
   const dragRef = useRef<{ startX: number; startY: number; winX: number; winY: number } | null>(
     null,
@@ -232,7 +255,10 @@ export function WindowFrame({ window: win, children }: WindowFrameProps) {
           toggleMaximizeWindow(win.id)
         }}
       >
-        <div className="flex-1 bg-win-title-active text-win-title-text px-1.5 py-0.5 text-xs font-bold truncate">
+        <div
+          className="flex-1 text-win-title-text px-1.5 py-0.5 text-xs font-bold truncate transition-colors duration-150"
+          style={{ backgroundColor: titleBarBg }}
+        >
           {win.title}
         </div>
         <button

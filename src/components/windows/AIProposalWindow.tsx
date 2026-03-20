@@ -33,7 +33,7 @@ export function AIProposalWindow({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="w-[480px] max-h-[600px] bg-gray-900 border-2 border-blue-500 rounded shadow-2xl flex flex-col">
+      <div className="w-[480px] max-h-[85vh] bg-gray-900 border-2 border-blue-500 rounded shadow-2xl flex flex-col">
         {/* Header */}
         <div className="bg-blue-700 px-3 py-2 flex items-center justify-between">
           <h2 className="text-white font-bold">🤖 AI 아키텍트의 제안</h2>

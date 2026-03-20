@@ -420,8 +420,8 @@ export function SettingsWindow() {
 
       {dialog && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/30 z-50">
-          <div className="win-outset bg-win-face p-3 max-w-[280px] shadow-lg">
-            <div className="text-xs whitespace-pre-line mb-3">{dialog.message}</div>
+          <div className="win-outset bg-win-face p-3 max-w-sm shadow-lg">
+            <div className="text-xs whitespace-pre-line mb-3 max-h-[60vh] overflow-y-auto">{dialog.message}</div>
             <div className="flex justify-end gap-1">
               {dialog.type === 'confirm' && (
                 <RetroButton size="sm" onClick={() => { dialog.onConfirm?.(); setDialog(null) }}>

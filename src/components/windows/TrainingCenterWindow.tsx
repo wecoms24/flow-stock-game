@@ -115,8 +115,8 @@ function ProgramList() {
       {/* Retro Dialog */}
       {dialog && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/30 z-50">
-          <div className="win-outset bg-win-face p-3 max-w-[280px] shadow-lg">
-            <div className="text-xs whitespace-pre-line mb-3">{dialog.message}</div>
+          <div className="win-outset bg-win-face p-3 max-w-sm shadow-lg">
+            <div className="text-xs whitespace-pre-line mb-3 max-h-[60vh] overflow-y-auto">{dialog.message}</div>
             <div className="flex justify-end gap-1">
               {dialog.onConfirm && (
                 <RetroButton size="sm" onClick={() => { dialog.onConfirm?.(); setDialog(null) }}>
@@ -384,8 +384,8 @@ function NewProgramForm({ onCreated }: NewProgramFormProps) {
       {/* Retro Dialog */}
       {dialogMsg && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/30 z-50">
-          <div className="win-outset bg-win-face p-3 max-w-[280px] shadow-lg">
-            <div className="text-xs whitespace-pre-line mb-3">{dialogMsg}</div>
+          <div className="win-outset bg-win-face p-3 max-w-sm shadow-lg">
+            <div className="text-xs whitespace-pre-line mb-3 max-h-[60vh] overflow-y-auto">{dialogMsg}</div>
             <div className="flex justify-end">
               <RetroButton size="sm" onClick={() => setDialogMsg(null)}>
                 확인

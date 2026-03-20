@@ -93,7 +93,7 @@ export function NotificationCenter() {
           />
 
           {/* 알림 패널 — 태스크바가 하단 fixed이므로 위로 열림 */}
-          <div className="absolute bottom-full right-0 mb-0.5 w-80 max-h-96 win-outset bg-win-face shadow-lg z-50 overflow-hidden">
+          <div className="absolute bottom-full right-0 mb-0.5 w-80 max-h-[70vh] win-outset bg-win-face shadow-lg z-50 overflow-y-auto">
             {/* 헤더 */}
             <div className="bg-win-title-active text-white px-2 py-1 text-xs font-bold flex items-center justify-between">
               <span>알림 센터</span>
@@ -118,7 +118,7 @@ export function NotificationCenter() {
             </div>
 
             {/* 알림 리스트 */}
-            <div className="overflow-y-auto max-h-80 win-inset bg-white">
+            <div className="overflow-y-auto win-inset bg-white">
               {notifications.length === 0 ? (
                 <div className="text-center text-retro-gray py-8 text-xs">
                   알림이 없습니다

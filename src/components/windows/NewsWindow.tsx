@@ -12,6 +12,12 @@ const SENTIMENT_BADGE: Record<NewsSentiment, { label: string; className: string 
   neutral: { label: '중립', className: 'bg-retro-gray text-retro-white' },
 }
 
+const SENTIMENT_BORDER: Record<NewsSentiment, string> = {
+  positive: '#22c55e',
+  negative: '#ef4444',
+  neutral: '#9ca3af',
+}
+
 export function NewsWindow() {
   const news = useGameStore((s) => s.news)
   const openWindow = useGameStore((s) => s.openWindow)
@@ -28,15 +34,24 @@ export function NewsWindow() {
         </EmptyState>
       ) : (
         <>
-          {visibleNews.map((item) => {
+          {visibleNews.map((item, idx) => {
             const badge = item.sentiment ? SENTIMENT_BADGE[item.sentiment] : null
+            const borderColor = item.sentiment ? SENTIMENT_BORDER[item.sentiment] : undefined
             const isMnaNews = item.headline.includes('인수')
             const companies = useGameStore.getState().companies
 
             return (
               <div
                 key={item.id}
-                className={`p-2 ${isMnaNews ? 'border-l-4 border-orange-500 bg-orange-50/10' : ''} ${item.isBreaking ? 'bg-retro-yellow/20 win-outset' : 'border-b border-win-shadow'}`}
+                className={`p-2 ${isMnaNews ? 'bg-orange-50/10' : ''} ${item.isBreaking ? 'bg-retro-yellow/20 win-outset' : 'border-b border-win-shadow'}`}
+                style={{
+                  borderLeft: isMnaNews
+                    ? '4px solid #f97316'
+                    : borderColor
+                      ? `3px solid ${borderColor}`
+                      : '3px solid transparent',
+                  animation: idx < 3 ? `newsSlideIn 0.3s ease-out ${idx * 0.05}s both` : undefined,
+                }}
               >
                 <div className="flex items-center gap-1">
                   {isMnaNews && (
@@ -62,7 +77,7 @@ export function NewsWindow() {
                 <div className="font-bold mt-0.5">{item.headline}</div>
                 <div className="text-retro-gray mt-0.5">{item.body}</div>
                 {item.relatedCompanies && item.relatedCompanies.length > 0 && (
-                  <div className="mt-1 flex items-center gap-1 flex-wrap">
+                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                     <span className="text-[10px] text-retro-gray">영향 종목:</span>
                     {item.relatedCompanies.slice(0, 3).map((id) => {
                       const company = companies.find((c) => c.id === id)
@@ -71,7 +86,7 @@ export function NewsWindow() {
                         <button
                           key={id}
                           onClick={() => openWindow('chart', { companyId: id })}
-                          className="text-[10px] px-1 py-0.5 bg-win-face border border-win-shadow hover:bg-win-highlight/10 cursor-pointer"
+                          className="text-[11px] px-2 py-1 bg-win-face border border-win-shadow hover:bg-win-highlight/20 active:win-pressed cursor-pointer font-bold transition-colors"
                           title={`${company.name} 차트 열기`}
                         >
                           {company.ticker}

@@ -1,10 +1,76 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useRef, useEffect, useCallback } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { VICTORY_GOALS } from '../../data/difficulty'
 import { formatMoney } from '../../utils/formatMoney'
 import type { Sector } from '../../types'
 import { PnLTab } from './portfolio/PnLTab'
 import { CashFlowTab } from './portfolio/CashFlowTab'
+
+/** Mini sparkline canvas for portfolio value trend */
+function MiniSparkline({ data, width = 120, height = 28 }: { data: number[]; width?: number; height?: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || data.length < 2) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = width * dpr
+    canvas.height = height * dpr
+    ctx.scale(dpr, dpr)
+    ctx.clearRect(0, 0, width, height)
+
+    const min = Math.min(...data)
+    const max = Math.max(...data)
+    const range = max - min || 1
+    const padding = 2
+
+    const isPositive = data[data.length - 1] >= data[0]
+    const strokeColor = isPositive ? '#22c55e' : '#ef4444'
+    const fillColor = isPositive ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)'
+
+    const stepX = (width - padding * 2) / (data.length - 1)
+
+    // Fill area
+    ctx.beginPath()
+    ctx.moveTo(padding, height - padding)
+    for (let i = 0; i < data.length; i++) {
+      const x = padding + i * stepX
+      const y = height - padding - ((data[i] - min) / range) * (height - padding * 2)
+      ctx.lineTo(x, y)
+    }
+    ctx.lineTo(padding + (data.length - 1) * stepX, height - padding)
+    ctx.closePath()
+    ctx.fillStyle = fillColor
+    ctx.fill()
+
+    // Stroke line
+    ctx.beginPath()
+    for (let i = 0; i < data.length; i++) {
+      const x = padding + i * stepX
+      const y = height - padding - ((data[i] - min) / range) * (height - padding * 2)
+      if (i === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    }
+    ctx.strokeStyle = strokeColor
+    ctx.lineWidth = 1.5
+    ctx.lineJoin = 'round'
+    ctx.stroke()
+
+    // End dot
+    const lastX = padding + (data.length - 1) * stepX
+    const lastY = height - padding - ((data[data.length - 1] - min) / range) * (height - padding * 2)
+    ctx.beginPath()
+    ctx.arc(lastX, lastY, 2, 0, Math.PI * 2)
+    ctx.fillStyle = strokeColor
+    ctx.fill()
+  }, [data, width, height])
+
+  if (data.length < 2) return null
+  return <canvas ref={canvasRef} style={{ width, height }} className="block" />
+}
 
 const SECTOR_LABELS: Record<Sector, string> = {
   tech: '기술',
@@ -96,6 +162,22 @@ function OverviewTab() {
       ? ((totalAssets - config.initialCash) / config.initialCash) * 100
       : 0
 
+  // Sparkline: track portfolio value history (last 30 data points)
+  const sparklineHistoryRef = useRef<number[]>([])
+  const lastRecordedHourRef = useRef(-1)
+
+  const recordSparkline = useCallback(() => {
+    const currentHour = time.year * 12 * 30 * 10 + time.month * 30 * 10 + time.day * 10 + time.hour
+    // Record at most once per 10 game hours
+    if (currentHour - lastRecordedHourRef.current >= 10) {
+      lastRecordedHourRef.current = currentHour
+      sparklineHistoryRef.current = [...sparklineHistoryRef.current.slice(-29), totalAssets]
+    }
+  }, [time.year, time.month, time.day, time.hour, totalAssets])
+  recordSparkline()
+
+  const sparklineData = sparklineHistoryRef.current
+
   // Victory goal info
   const currentGoal = VICTORY_GOALS.find((g) => g.targetAsset === config.targetAsset)
   const goalProgress = Math.min((totalAssets / config.targetAsset) * 100, 100)
@@ -154,33 +236,48 @@ function OverviewTab() {
 
 
   return (
-    <div className="text-xs space-y-2 h-full overflow-auto">
+    <div
+      className="text-xs space-y-2 h-full overflow-auto transition-colors duration-500"
+      style={{
+        backgroundColor: returnRate > 5
+          ? 'rgba(34,197,94,0.04)'
+          : returnRate < -5
+            ? 'rgba(239,68,68,0.04)'
+            : 'transparent',
+      }}
+    >
       {/* ── Victory Goal Progress ── */}
       <div className="p-2 bg-win-face border border-win-shadow rounded">
         <div className="flex items-center justify-between mb-1">
           <span className="font-bold text-[11px]">
             {currentGoal?.icon ?? '🎯'} 목표: {currentGoal?.label ?? '커스텀'}
           </span>
-          <span
-            className={`text-[10px] font-bold ${goalReached ? 'text-stock-up' : 'text-retro-gray'}`}
-          >
-            {goalReached ? '달성!' : `${goalProgress.toFixed(1)}%`}
-          </span>
+          <MiniSparkline data={sparklineData} width={80} height={20} />
         </div>
-        {/* Progress bar */}
-        <div className="w-full h-3 bg-win-shadow rounded overflow-hidden border border-win-shadow">
+        {/* Enhanced progress bar with gradient fill and embedded percentage */}
+        <div className="relative w-full h-5 bg-win-shadow rounded overflow-hidden border border-win-shadow">
           <div
-            className={`h-full transition-all duration-300 ${
-              goalReached
-                ? 'bg-stock-up'
+            className="h-full transition-all duration-500 ease-out"
+            style={{
+              width: `${goalProgress}%`,
+              background: goalReached
+                ? 'linear-gradient(90deg, #16a34a, #22c55e, #4ade80)'
                 : goalProgress >= 75
-                  ? 'bg-yellow-400'
+                  ? 'linear-gradient(90deg, #ca8a04, #eab308, #facc15)'
                   : goalProgress >= 50
-                    ? 'bg-blue-400'
-                    : 'bg-win-highlight'
-            }`}
-            style={{ width: `${goalProgress}%` }}
+                    ? 'linear-gradient(90deg, #1d4ed8, #3b82f6, #60a5fa)'
+                    : 'linear-gradient(90deg, #4338ca, #6366f1, #818cf8)',
+            }}
           />
+          <span
+            className="absolute inset-0 flex items-center justify-center text-[10px] font-bold"
+            style={{
+              color: goalProgress > 45 ? '#fff' : '#333',
+              textShadow: goalProgress > 45 ? '0 1px 2px rgba(0,0,0,0.4)' : 'none',
+            }}
+          >
+            {goalReached ? '목표 달성!' : `${goalProgress.toFixed(1)}%`}
+          </span>
         </div>
         <div className="flex justify-between mt-0.5 text-[9px] text-retro-gray">
           <span>{formatMoney(totalAssets)}원</span>
@@ -190,7 +287,10 @@ function OverviewTab() {
 
       {/* ── Game Stats Grid ── */}
       <div className="grid grid-cols-3 gap-1">
-        <div className="win-inset bg-white p-1.5 text-center">
+        <div
+          className="win-inset bg-white p-1.5 text-center"
+          style={{ borderLeft: `3px solid ${returnRate >= 0 ? '#22c55e' : '#ef4444'}` }}
+        >
           <div className="text-[9px] text-retro-gray">수익률</div>
           <div
             className={`font-bold text-[11px] ${returnRate >= 0 ? 'text-stock-up' : 'text-stock-down'}`}

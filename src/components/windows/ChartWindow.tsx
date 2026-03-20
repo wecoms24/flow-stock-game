@@ -773,7 +773,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
 
         {/* 접기/펼치기 가능한 섹터 + 등락률 필터 */}
         {showFilters && (
-          <>
+          <div className="bg-[#12122a] border border-retro-silver/20 rounded p-1.5 space-y-1">
             <div className="flex gap-0.5 flex-wrap">
               {sectors.map((sector) => (
                 <RetroButton
@@ -839,7 +839,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
                 ±2% 이내
               </RetroButton>
             </div>
-          </>
+          </div>
         )}
 
         {/* 종목 선택 및 결과 개수 */}

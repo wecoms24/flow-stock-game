@@ -192,7 +192,7 @@ export function EndingScreen() {
       {/* Skill Carryover Selection Modal */}
       {showSkillSelect && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-[20001]">
-          <RetroPanel className="p-1 max-w-sm w-full mx-4">
+          <RetroPanel className="p-1 max-w-lg w-full mx-4">
             <div className="bg-win-title-active text-win-title-text px-2 py-1 text-sm font-bold flex justify-between items-center">
               <span>⭐ New Game+ — 스킬 이월</span>
               <button

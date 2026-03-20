@@ -669,7 +669,7 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
       {/* Battle Config Modal */}
       {showBattleConfig && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
-          <RetroPanel className="p-1 max-w-sm w-full mx-4">
+          <RetroPanel className="p-1 max-w-md w-full mx-4">
             <div className="bg-win-title-active text-win-title-text px-2 py-1 text-sm font-bold mb-1 flex justify-between items-center">
               <span>🥊 경쟁 모드 설정</span>
               <button

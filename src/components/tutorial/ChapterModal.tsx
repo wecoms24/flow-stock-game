@@ -56,11 +56,11 @@ export function ChapterModal() {
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-[20000]">
-      <RetroPanel className="p-1 max-w-md w-full mx-4">
+      <RetroPanel className="p-1 max-w-lg w-full mx-4">
         <div className="bg-win-title-active text-win-title-text px-2 py-1 text-sm font-bold mb-1">
           📖 챕터 {chapter.id}: {chapter.name} ({chapter.yearRange[0]}-{chapter.yearRange[1]})
         </div>
-        <div className="p-4 space-y-3">
+        <div className="p-4 space-y-3 max-h-[80vh] overflow-y-auto">
           {prevObjectiveResults && prevObjectiveResults.length > 0 && (
             <RetroPanel variant="inset" className="p-2 space-y-1">
               <div className="text-xs font-bold text-retro-gray">이전 챕터 결과:</div>
