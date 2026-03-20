@@ -47,7 +47,7 @@ import { calculateBonuses, canRespec as canRespecFn, executeRespec as executeRes
 import { selectChain, initChainState, advanceChainWeek, getCurrentWeekModifiers, canStartChain } from '../engines/eventChainEngine'
 import { EVENT_CHAIN_TEMPLATES } from '../data/eventChains'
 import { updateTier, calculateMonthlyTax, checkPositionLimit, recordMonthlyPerformance } from '../engines/economicPressureEngine'
-import { OFFICE_BALANCE } from '../config/balanceConfig'
+import { OFFICE_BALANCE, SALARY_BALANCE, STRESS_WARNING } from '../config/balanceConfig'
 import { getTierConfig, RELIEF_TAX_DISCOUNT } from '../config/economicPressureConfig'
 import { EMPLOYEE_ROLE_CONFIG } from '../types'
 import type { GameMode } from '../types'
@@ -97,6 +97,7 @@ import { generateBadgesFromSkills } from '../utils/badgeConverter' // ✨ 신규
 import { createInitialCorporateSkills } from '../data/corporateSkills'
 import { getPrestigeBonuses } from '../systems/prestigeSystem'
 import { dispatchCelebration, setCelebrationSuppressed } from '../components/ui/CelebrationManager'
+import { showToast } from '../components/ui/ToastContainer'
 import {
   createCelebration,
   celebrateStreak,
@@ -200,7 +201,13 @@ function getEndingScenarios(config: GameConfig): EndingScenario[] {
       type: 'bankrupt',
       title: '파산',
       description: '자산이 바닥났습니다. 시장은 냉혹합니다.',
-      condition: (player) => player.cash <= 0 && Object.keys(player.portfolio).length === 0,
+      condition: (player, time, cfg) => {
+        // 시작 3개월은 보호기간
+        const monthsPlayed = (time.year - cfg.startYear) * 12 + time.month
+        if (monthsPlayed < 3) return false
+        // 총 자산이 초기 자본의 5% 미만이면 파산
+        return player.totalAssetValue < cfg.initialCash * 0.05
+      },
     },
   ]
 }
@@ -331,6 +338,7 @@ interface GameStore {
 
   // Actions - Employees
   hireEmployee: (role: EmployeeRole) => void
+  hireAndSetup: (role: EmployeeRole) => boolean
   fireEmployee: (id: string) => void
   updateEmployeeBadges: (employeeId: string) => void
   setTradingLimits: (employeeId: string, limits: TradingLimits | null) => void
@@ -353,7 +361,8 @@ interface GameStore {
   updateInstitutionalFlowForSector: (sectorIndex: number) => void
 
   // Actions - Growth System (Sprint 3)
-  pendingLevelUp: LevelUpEvent | null
+  pendingLevelUp: LevelUpEvent | null // compat getter (pendingLevelUps[0])
+  pendingLevelUps: LevelUpEvent[]
   gainXP: (employeeId: string, amount: number, source?: string) => void
   praiseEmployee: (employeeId: string) => void
   scoldEmployee: (employeeId: string) => void
@@ -431,6 +440,9 @@ interface GameStore {
   realizedTrades: RealizedTrade[]
   monthlyCashFlowSummaries: MonthlySummary[]
   cashFlowAnomalies: string[]
+  lastLowCashWarningTick: number
+  lastStressWarningTick: number
+  lastCompetitorNewsTick: Record<string, number>
 
   // Actions - Cash Flow
   recordCashFlow: (category: CashFlowCategory, amount: number, description: string, meta?: CashFlowEntry['meta']) => void
@@ -542,11 +554,15 @@ interface GameStore {
     events: string[]
     startTime: { year: number; month: number; day: number; hour: number }
   } | null
-  fastForward: () => void
+  fastForwardWarnings: string[] | null
+  fastForward: (force?: boolean) => void
+  confirmFastForward: () => void
+  dismissFastForward: () => void
   cancelFastForward: () => void
 }
 
 let employeeIdCounter = 0
+let zeroCashMonths = 0 // FIX-4: 현금 0원 지속 카운터 (세션 내에서만 유효)
 
 export const useGameStore = create<GameStore>((set, get) => ({
   config: {
@@ -565,6 +581,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   pendingCeremony: null,
   isFastForwarding: false,
   fastForwardProgress: null,
+  fastForwardWarnings: null,
 
   time: { year: 1995, quarter: 1, month: 1, day: 1, hour: 9, speed: 1, isPaused: true },
   lastProcessedMonth: 0,
@@ -601,6 +618,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   unreadNewsCount: 0,
 
   pendingLevelUp: null,
+  pendingLevelUps: [],
   lastMnaQuarter: 0,
   pendingIPOs: [],
   playerAcquisitionHistory: [],
@@ -630,6 +648,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   realizedTrades: [],
   monthlyCashFlowSummaries: [],
   cashFlowAnomalies: [],
+  lastLowCashWarningTick: 0,
+  lastStressWarningTick: 0,
+  lastCompetitorNewsTick: {} as Record<string, number>,
 
   // Chapter & Company Profile
   chapterProgress: defaultChapterProgress(),
@@ -2066,6 +2087,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({
         isFastForwarding: false,
         fastForwardProgress: null,
+        fastForwardWarnings: null,
       })
     }
     set((st) => ({ time: { ...st.time, isPaused: true } }))
@@ -2221,7 +2243,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     set((st) => {
       // 1. Hourly salary (rounded to prevent floating-point accumulation drift)
-      const hourlySalary = Math.round(st.player.employees.reduce((sum, emp) => sum + emp.salary / HPM, 0))
+      // 수습 기간(3개월) 중에는 급여 50% 할인
+      const currentMonth = (st.time.year - st.config.startYear) * 12 + st.time.month
+      const hourlySalary = Math.round(st.player.employees.reduce((sum, emp) => {
+        const monthsEmployed = currentMonth - emp.hiredMonth
+        const rate = monthsEmployed < SALARY_BALANCE.PROBATION_MONTHS ? SALARY_BALANCE.PROBATION_SALARY_RATE : 1.0
+        return sum + (emp.salary * rate) / HPM
+      }, 0))
 
       // 2. Hourly wealth tax (rounded)
       const totalAssets = st.player.cash + calcPortfolioValue(st.player.portfolio, st.companies)
@@ -2366,7 +2394,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           salaryPaid: st.hourlyAccumulators.salaryPaid + hourlySalary,
           taxPaid: st.hourlyAccumulators.taxPaid + hourlyTax,
         },
-        ...(firstLevelUp ? { pendingLevelUp: firstLevelUp } : {}),
+        ...(firstLevelUp ? { pendingLevelUps: [...st.pendingLevelUps, firstLevelUp], pendingLevelUp: firstLevelUp } : {}),
       }
     })
 
@@ -2402,6 +2430,29 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       })
     }
+
+    // ── 현금 부족 경고 (매일 09시, 월 1회 쿨다운) ──
+    {
+      const latestState = get()
+      if (latestState.time.hour === 9 && latestState.player.employees.length > 0) {
+        const tick = getAbsoluteTimestamp(latestState.time, latestState.config.startYear)
+        const monthlySalary = latestState.player.employees.reduce((sum, emp) => sum + emp.salary, 0)
+        if (latestState.player.cash < monthlySalary * 2 && tick - latestState.lastLowCashWarningTick > 300) {
+          const monthsLeft = monthlySalary > 0 ? Math.floor(latestState.player.cash / monthlySalary) : 0
+          latestState.addNews({
+            id: `news-low-cash-${Date.now()}`,
+            timestamp: { ...latestState.time },
+            headline: `현금 부족 경고!`,
+            body: `현재 현금이 ${Math.round(latestState.player.cash).toLocaleString()}원으로, 약 ${monthsLeft}개월분 급여만 남았습니다. 주식 매도 또는 직원 감축을 고려하세요.`,
+            isBreaking: true,
+            sentiment: 'negative',
+            relatedCompanies: [],
+            impactSummary: '현금 부족',
+          })
+          set({ lastLowCashWarningTick: tick })
+        }
+      }
+    }
   },
 
   /* ── Monthly Processing: cashflow recording + monthly events ── */
@@ -2413,7 +2464,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // Record accumulated salary/tax from hourly processing
     const accum = state.hourlyAccumulators
-    const totalSalaryOwed = state.player.employees.reduce((sum, emp) => sum + emp.salary, 0)
+    // 수습 기간 할인을 반영한 실제 급여 총액 계산
+    const currentMonthNum = (state.time.year - state.config.startYear) * 12 + state.time.month
+    const totalSalaryOwed = state.player.employees.reduce((sum, emp) => {
+      const monthsEmployed = currentMonthNum - emp.hiredMonth
+      const rate = monthsEmployed < SALARY_BALANCE.PROBATION_MONTHS ? SALARY_BALANCE.PROBATION_SALARY_RATE : 1.0
+      return sum + emp.salary * rate
+    }, 0)
 
     set((s) => ({
       lastProcessedMonth: monthNum,
@@ -2431,7 +2488,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     // Detect salary deficit (hourly cash clamping may have underpaid)
-    if (totalSalaryOwed > 0 && accum.salaryPaid < totalSalaryOwed * 0.95) {
+    const isSalaryDeficit = totalSalaryOwed > 0 && accum.salaryPaid < totalSalaryOwed * 0.95
+    if (isSalaryDeficit) {
       const deficit = totalSalaryOwed - accum.salaryPaid
       set((st) => ({
         cashFlowAnomalies: [
@@ -2439,6 +2497,101 @@ export const useGameStore = create<GameStore>((set, get) => ({
           `급여 부족! ${Math.round(deficit).toLocaleString()}원 미지급 (현금 부족으로 일부 미지급)`,
         ].slice(-50),
       }))
+    }
+
+    // ── 미지급 월급 추적 → 직원 퇴사 메커니즘 ──
+    {
+      const unpaidResignIds: string[] = []
+      set((st) => {
+        const updatedEmployees = st.player.employees.map((emp) => {
+          if (isSalaryDeficit) {
+            const newUnpaid = (emp.unpaidMonths ?? 0) + 1
+            const newSatisfaction = Math.max(0, (emp.satisfaction ?? 80) - (newUnpaid === 1 ? 20 : 40))
+            if (newUnpaid >= 3) {
+              unpaidResignIds.push(emp.id)
+            }
+            return { ...emp, unpaidMonths: newUnpaid, satisfaction: newSatisfaction }
+          }
+          // 정상 지급 시 리셋
+          return emp.unpaidMonths ? { ...emp, unpaidMonths: 0 } : emp
+        })
+        return { player: { ...st.player, employees: updatedEmployees } }
+      })
+
+      // 미지급 뉴스 경고
+      if (isSalaryDeficit) {
+        const curState = get()
+        const unpaidCount = curState.player.employees.filter((e) => (e.unpaidMonths ?? 0) >= 2).length
+        if (unpaidCount > 0) {
+          curState.addNews({
+            id: `news-unpaid-${Date.now()}`,
+            timestamp: { ...curState.time },
+            headline: `급여 미지급 ${unpaidCount}명 불만 폭증!`,
+            body: `${unpaidCount}명의 직원이 2개월 이상 급여를 받지 못했습니다. 3개월 연속 미지급 시 퇴사합니다!`,
+            isBreaking: true,
+            sentiment: 'negative',
+            relatedCompanies: [],
+            impactSummary: '직원 이탈 위험',
+          })
+        }
+      }
+
+      // 3개월 미지급 자동 퇴사 처리
+      for (const id of unpaidResignIds) {
+        const emp = get().player.employees.find((e) => e.id === id)
+        if (emp) {
+          cleanupChatterCooldown(id)
+          cleanupInteractionCooldowns(id)
+          cleanupBehaviorState(id)
+          get().addNews({
+            id: `news-unpaid-resign-${Date.now()}-${id}`,
+            timestamp: { ...get().time },
+            headline: `${emp.name} 퇴사!`,
+            body: `3개월 연속 급여 미지급으로 ${emp.name}이(가) 퇴사했습니다.`,
+            isBreaking: true,
+            sentiment: 'negative',
+            relatedCompanies: [],
+            impactSummary: '직원 퇴사',
+          })
+          set((st) => {
+            const layout = st.player.officeLayout
+            let updatedLayout = layout
+            if (layout && emp.deskId) {
+              updatedLayout = {
+                ...layout,
+                desks: layout.desks.map((d) =>
+                  d.employeeId === id ? { ...d, employeeId: null } : d,
+                ),
+              }
+            }
+            return {
+              player: {
+                ...st.player,
+                employees: st.player.employees.filter((e) => e.id !== id),
+                officeLayout: updatedLayout,
+              },
+            }
+          })
+        }
+      }
+    }
+
+    // FIX-4: 현금 0원 좀비 상태 카운터 + 경고
+    {
+      const curState = get()
+      if (curState.player.cash === 0 && curState.player.employees.length > 0) {
+        zeroCashMonths++
+        if (zeroCashMonths >= 3) {
+          showToast({
+            type: 'critical',
+            title: '경영 위기',
+            message: `${zeroCashMonths}개월째 현금이 0원입니다. 직원 해고 또는 주식 매도를 고려하세요.`,
+            icon: '🚨',
+          })
+        }
+      } else {
+        zeroCashMonths = 0
+      }
     }
 
     // Record tax cash flow
@@ -3130,7 +3283,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       })
 
-      if (s.player.cash < adjustedSalary * 3) return s // Must afford 3 months upfront (adjusted)
+      if (s.player.cash < adjustedSalary * SALARY_BALANCE.HIRING_COST_MULTIPLIER) return s // Must afford upfront signing bonus (adjusted)
 
       const employeeId = `emp-${++employeeIdCounter}`
 
@@ -3179,8 +3332,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // ✨ RPG Skill Tree: Initialize progression system
       migrateEmployeeToSkillTree(employee)
 
-      // Deduct 3-month upfront signing bonus (adjusted salary)
-      const newCash = s.player.cash - adjustedSalary * 3
+      // Deduct upfront signing bonus (adjusted salary)
+      const newCash = s.player.cash - adjustedSalary * SALARY_BALANCE.HIRING_COST_MULTIPLIER
 
       // officeLayout 자동 초기화 (첫 고용 시)
       const layout = s.player.officeLayout ?? createInitialOfficeLayout()
@@ -3214,7 +3367,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const postState = get()
     const newEmp = postState.player.employees[postState.player.employees.length - 1]
     if (newEmp) {
-      const signingBonus = newEmp.salary * 3
+      const signingBonus = newEmp.salary * SALARY_BALANCE.HIRING_COST_MULTIPLIER
       get().recordCashFlow('HIRE_BONUS', -signingBonus, `${newEmp.name} 채용 보너스`, { employeeId: newEmp.id })
       // 바이오 자동 생성
       get().createEmployeeBio(newEmp.id)
@@ -3229,7 +3382,101 @@ export const useGameStore = create<GameStore>((set, get) => ({
           employeeIds: [newEmp.id],
         }],
       }))
+
+      // 미배치 시 경고 토스트
+      if (!newEmp.deskId) {
+        showToast({
+          type: 'warning',
+          title: '직원 미배치',
+          message: '책상을 구매하고 배치해야 업무를 시작합니다!',
+          icon: '🪑',
+        })
+      }
+
+      // FIX-3: 첫 직원 고용 시 월급 지출 경고
+      if (postState.player.employees.length === 1) {
+        showToast({
+          type: 'warning',
+          title: '월급 지출 시작',
+          message: `매월 ${newEmp.salary.toLocaleString()}원이 월급으로 차감됩니다. 상단 바에서 잔여 개월 수를 확인하세요!`,
+          icon: '💸',
+        })
+      }
     }
+  },
+
+  hireAndSetup: (role) => {
+    const s = get()
+    const layout = s.player.officeLayout ?? createInitialOfficeLayout()
+
+    // 빈 책상이 있으면 기존 hireEmployee 사용
+    const hasEmptyDesk = layout.desks.some((d) => !d.employeeId)
+    if (hasEmptyDesk) {
+      get().hireEmployee(role)
+      return true
+    }
+
+    // 빈 책상 없음 → 자동으로 기본 책상 구매 + 배치
+    if (layout.desks.length >= layout.maxDesks) {
+      // 책상 한도 도달 — 기존 hireEmployee 폴백 (미배치 상태로 고용)
+      get().hireEmployee(role)
+      return true
+    }
+
+    const deskCost = DESK_CATALOG.basic.cost
+    const roleConfig = EMPLOYEE_ROLE_CONFIG[role]
+    const salary = Math.round(roleConfig.baseSalary * s.difficultyConfig.employeeSalaryMultiplier)
+    const hiringCost = salary * SALARY_BALANCE.HIRING_COST_MULTIPLIER
+
+    if (s.player.cash < deskCost + hiringCost) {
+      showToast({
+        type: 'critical',
+        title: '자금 부족',
+        message: `책상(${deskCost.toLocaleString()}원) + 채용비(${hiringCost.toLocaleString()}원) 필요`,
+        icon: '💸',
+      })
+      return false
+    }
+
+    // officeLayout 초기화
+    if (!s.player.officeLayout) {
+      get().initializeOfficeLayout()
+    }
+
+    // 빈 위치 찾기 (충돌 회피)
+    const currentLayout = get().player.officeLayout!
+    const desks = currentLayout.desks
+    const decorations = currentLayout.decorations
+    let placed = false
+    for (let gy = 1; gy <= 8 && !placed; gy++) {
+      for (let gx = 1; gx <= 13 && !placed; gx++) {
+        const x = gx * 40
+        const y = gy * 40
+        const collision = desks.some((d) => {
+          const dx = d.position.x - x
+          const dy = d.position.y - y
+          return Math.sqrt(dx * dx + dy * dy) < 30
+        }) || decorations.some((d) => {
+          const dx = d.position.x - x
+          const dy = d.position.y - y
+          return Math.sqrt(dx * dx + dy * dy) < 30
+        })
+        if (!collision) {
+          get().buyDesk('basic', x, y)
+          placed = true
+        }
+      }
+    }
+
+    if (!placed) {
+      // 위치 못 찾음 — 폴백
+      get().hireEmployee(role)
+      return true
+    }
+
+    // 책상 구매 후 hireEmployee 호출 (자동 빈 책상 배치 발동)
+    get().hireEmployee(role)
+    return true
   },
 
   fireEmployee: (id) => {
@@ -4787,9 +5034,34 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
-  fastForward: () => {
+  confirmFastForward: () => {
+    set({ fastForwardWarnings: null })
+    get().fastForward(true)
+  },
+
+  dismissFastForward: () => {
+    set({ fastForwardWarnings: null })
+  },
+
+  fastForward: (force) => {
     const state = get()
     if (state.isFastForwarding || !state.isGameStarted || state.isGameOver) return
+
+    // Readiness check (skip if force=true)
+    if (!force) {
+      const warnings: string[] = []
+      const unplacedCount = state.player.employees.filter((e) => !e.deskId).length
+      if (unplacedCount > 0) warnings.push(`unplaced:${unplacedCount}`)
+      if (Object.keys(state.player.portfolio).length === 0 && state.player.employees.length > 0)
+        warnings.push('no_stocks')
+      const monthlySalary = state.player.employees.reduce((acc, e) => acc + e.salary, 0)
+      if (monthlySalary > 0 && state.player.cash < monthlySalary * 3) warnings.push('low_cash')
+
+      if (warnings.length > 0) {
+        set({ fastForwardWarnings: warnings, time: { ...state.time, isPaused: true } })
+        return
+      }
+    }
 
     // Pause the game and set fast forward mode
     const startTime = {
@@ -4813,8 +5085,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       time: { ...state.time, isPaused: true },
     })
 
-    const MAX_HOURS = 720 // 3 months max
-    const BATCH_SIZE = 3 // hours per frame for responsiveness (small to avoid jank)
+    const MAX_HOURS = 2400 // 8 months max
+    const BATCH_SIZE = 10 // hours per frame for responsiveness
     let hoursProcessed = 0
     const collectedEvents: string[] = []
     let cancelled = false
@@ -4841,6 +5113,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         try {
           before.advanceHour()
           get().processHourly()
+          get().checkEnding()
         } catch (err) {
           console.error('[FastForward] Error during hour processing:', err)
           collectedEvents.push(`오류 발생 - 빨리감기 중단`)
@@ -4878,7 +5151,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           )
         }
 
-        // Check for new market events
+        // Check for new market events — log but don't stop
         const afterState = get()
         if (afterState.events.length > beforeEventCount) {
           const newEvents = afterState.events.slice(beforeEventCount)
@@ -4887,24 +5160,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
               `${afterState.time.year}.${String(afterState.time.month).padStart(2, '0')}.${String(afterState.time.day).padStart(2, '0')} - ${evt.title}`,
             )
           }
-          // Stop on significant event
-          set({
-            fastForwardProgress: {
-              current: hoursProcessed,
-              skippedHours: MAX_HOURS,
-              events: collectedEvents,
-              startTime,
-            },
-          })
-          finalize()
-          return
         }
 
         // Random event generation (same probability as tick engine)
         const eventChance = afterState.difficultyConfig.eventChance / afterState.time.speed
         if (Math.random() < eventChance) {
           generateRandomEvent()
-          // Re-check if new events appeared
           const postEventState = get()
           if (postEventState.events.length > beforeEventCount) {
             const newEvts = postEventState.events.slice(beforeEventCount)
@@ -4913,20 +5174,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 `${postEventState.time.year}.${String(postEventState.time.month).padStart(2, '0')}.${String(postEventState.time.day).padStart(2, '0')} - ${evt.title}`,
               )
             }
-            set({
-              fastForwardProgress: {
-                current: hoursProcessed,
-                skippedHours: MAX_HOURS,
-                events: collectedEvents,
-                startTime,
-              },
-            })
-            finalize()
-            return
           }
         }
 
-        // Check employee level-ups
+        // Check employee level-ups — log but don't stop
         const afterEmployeeLevels = afterState.player.employees.map((e) => e.level ?? 1)
         for (let j = 0; j < afterEmployeeLevels.length; j++) {
           if (
@@ -4937,18 +5188,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
             collectedEvents.push(
               `${afterState.time.year}.${String(afterState.time.month).padStart(2, '0')}.${String(afterState.time.day).padStart(2, '0')} - ${emp.name} Lv.${afterEmployeeLevels[j]} 달성`,
             )
-            // Stop on level-up as interesting event
-            set({
-              fastForwardProgress: {
-                current: hoursProcessed,
-                skippedHours: MAX_HOURS,
-                events: collectedEvents,
-                startTime,
-              },
-            })
-            finalize()
-            return
           }
+        }
+
+        // Stop on game-ending conditions (bankruptcy, year end)
+        if (afterState.isGameOver) {
+          collectedEvents.push('게임 오버!')
+          set({
+            fastForwardProgress: {
+              current: hoursProcessed,
+              skippedHours: MAX_HOURS,
+              events: collectedEvents,
+              startTime,
+            },
+          })
+          finalize()
+          return
         }
 
         // Check game year end
@@ -4979,7 +5234,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       if (hoursProcessed >= MAX_HOURS) {
         if (collectedEvents.length === 0) {
-          collectedEvents.push('3개월간 특별한 이벤트 없음')
+          collectedEvents.push('8개월간 특별한 이벤트 없음')
         }
         finalize()
         return
@@ -5896,6 +6151,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       })
 
+      // ── Phase 5: 경쟁자 매매 뉴스 쿨다운 업데이트 (20% 확률, 경쟁자당 50시간 쿨다운) ──
+      const competitorNewsCooldowns = { ...state.lastCompetitorNewsTick }
+      const newsActions: typeof actions = []
+      actions.forEach((action) => {
+        if (action.action !== 'buy' && action.action !== 'sell') return
+        const lastTick = competitorNewsCooldowns[action.competitorId] ?? 0
+        if (batchTick - lastTick < 50) return
+        if (Math.random() > 0.20) return
+        competitorNewsCooldowns[action.competitorId] = batchTick
+        newsActions.push(action)
+      })
+
       // Accumulate order flow from competitor trades
       const newOrderFlow = { ...state.orderFlowByCompany }
       actions.forEach((action) => {
@@ -5917,7 +6184,34 @@ export const useGameStore = create<GameStore>((set, get) => ({
         taunts: newTaunts.slice(-20), // Keep last 20
         competitorActions: [...state.competitorActions, ...actions].slice(-100), // Keep last 100
         orderFlowByCompany: newOrderFlow,
+        lastCompetitorNewsTick: competitorNewsCooldowns,
       }
+    })
+
+    // 경쟁자 매매 뉴스 생성 (set 이후)
+    const afterState = get()
+    actions.forEach((action) => {
+      if (action.action !== 'buy' && action.action !== 'sell') return
+      const cooldown = afterState.lastCompetitorNewsTick[action.competitorId] ?? 0
+      const tick = getAbsoluteTimestamp(afterState.time, afterState.config.startYear)
+      // 쿨다운이 바로 지금 설정된 경우만 뉴스 생성 (이번 배치에서 선택됨)
+      if (Math.abs(cooldown - tick) > 1) return
+
+      const competitor = afterState.competitors.find((c) => c.id === action.competitorId)
+      const company = afterState.companies.find((c) => c.id === action.companyId)
+      if (!competitor || !company) return
+
+      const actionLabel = action.action === 'buy' ? '매수' : '매도'
+      afterState.addNews({
+        id: `news-ai-trade-${Date.now()}-${action.competitorId}`,
+        timestamp: { ...afterState.time },
+        headline: `${competitor.name}이(가) ${company.ticker} ${action.quantity}주 ${actionLabel}`,
+        body: `경쟁자 ${competitor.name}이(가) ${company.name}(${company.ticker})을 ${action.quantity}주 ${actionLabel}했습니다.`,
+        isBreaking: false,
+        sentiment: 'neutral',
+        relatedCompanies: [company.id],
+        impactSummary: `경쟁자 ${actionLabel}`,
+      })
     })
   },
 
@@ -6219,6 +6513,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
 
         return {
+          pendingLevelUps: [...s.pendingLevelUps, levelUpEvent],
           pendingLevelUp: levelUpEvent,
           player: { ...s.player, employees: updatedEmployees },
         }
@@ -6299,7 +6594,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
   },
 
-  dismissLevelUp: () => set({ pendingLevelUp: null }),
+  dismissLevelUp: () => set((s) => {
+    const remaining = s.pendingLevelUps.slice(1)
+    return { pendingLevelUps: remaining, pendingLevelUp: remaining[0] ?? null }
+  }),
 
   /* ── RPG Skill Tree System ── */
   unlockEmployeeSkill: (employeeId, skillId) => {
@@ -6864,6 +7162,29 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // Record HR cash flow
     if (hrResult.cashSpent > 0) {
       get().recordCashFlow('HR_CARE', -hrResult.cashSpent, `HR 자동 관리 비용`)
+    }
+
+    // ── 스트레스 경고 알림 (쿨다운 기반) ──
+    {
+      const curState = get()
+      const tick = getAbsoluteTimestamp(curState.time, curState.config.startYear)
+      const stressedEmps = curState.player.employees.filter(
+        (e) => (e.stress ?? 0) >= STRESS_WARNING.THRESHOLD && !resignedIds.includes(e.id),
+      )
+      if (stressedEmps.length > 0 && tick - curState.lastStressWarningTick > STRESS_WARNING.COOLDOWN_HOURS) {
+        const names = stressedEmps.slice(0, 2).map((e) => e.name).join(', ')
+        const extra = stressedEmps.length > 2 ? ` 외 ${stressedEmps.length - 2}명` : ''
+        set((s) => ({
+          officeEvents: [...s.officeEvents, {
+            timestamp: Date.now(),
+            type: 'stressed_out' as const,
+            emoji: '⚠️',
+            message: `직원 스트레스 주의! ${names}${extra} 스트레스 ${STRESS_WARNING.THRESHOLD}% 이상. 가구를 배치하거나 휴식을 주세요.`,
+            employeeIds: stressedEmps.map((e) => e.id),
+          }],
+          lastStressWarningTick: tick,
+        }))
+      }
     }
 
     // ✨ Training System: 교육 프로그램 진행

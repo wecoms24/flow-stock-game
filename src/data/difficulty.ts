@@ -20,7 +20,7 @@ export const DIFFICULTY_TABLE: Record<Difficulty, DifficultyConfig> = {
   normal: {
     startYear: 1995,
     endYear: 2025,
-    initialCash: 50_000_000,
+    initialCash: 70_000_000,
     maxCompanies: 100,
     eventChance: 0.01, // 1% per tick (baseline)
     volatilityMultiplier: 1.0,
@@ -30,7 +30,7 @@ export const DIFFICULTY_TABLE: Record<Difficulty, DifficultyConfig> = {
   hard: {
     startYear: 1995,
     endYear: 2025,
-    initialCash: 20_000_000,
+    initialCash: 30_000_000,
     maxCompanies: 100,
     eventChance: 0.02, // 2% per tick → chaotic markets
     volatilityMultiplier: 1.4, // 40% more volatile

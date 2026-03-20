@@ -2,16 +2,32 @@ import { useEffect, useRef } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { TITLE_LABELS, BADGE_COLORS, SKILL_UNLOCKS } from '../../systems/growthSystem'
 import { soundManager } from '../../systems/soundManager'
+import { showToast } from '../ui/ToastContainer'
 import confetti from 'canvas-confetti'
 
 export function LevelUpOverlay() {
-  const pendingLevelUp = useGameStore((s) => s.pendingLevelUp)
+  const pendingLevelUp = useGameStore((s) => s.pendingLevelUps[0] ?? null)
   const dismissLevelUp = useGameStore((s) => s.dismissLevelUp)
+  const speed = useGameStore((s) => s.time.speed)
   const hasPlayed = useRef(false)
+  const autoDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (pendingLevelUp && !hasPlayed.current) {
       hasPlayed.current = true
+
+      // 16x 이상: 팝업 스킵, 토스트로 대체
+      if (speed >= 16) {
+        showToast({
+          type: 'success',
+          title: 'LEVEL UP!',
+          message: `${pendingLevelUp.employeeName} Lv.${pendingLevelUp.newLevel}`,
+          icon: '⭐',
+        })
+        dismissLevelUp()
+        return
+      }
+
       soundManager.playLevelUp()
 
       // Pixel-style confetti
@@ -36,12 +52,23 @@ export function LevelUpOverlay() {
           })
         }, 600)
       }
+
+      // 8x 이상: 2초 후 자동 dismiss
+      if (speed >= 8) {
+        autoDismissTimer.current = setTimeout(() => {
+          dismissLevelUp()
+        }, 2000)
+      }
     }
 
     return () => {
       hasPlayed.current = false
+      if (autoDismissTimer.current) {
+        clearTimeout(autoDismissTimer.current)
+        autoDismissTimer.current = null
+      }
     }
-  }, [pendingLevelUp])
+  }, [pendingLevelUp, speed, dismissLevelUp])
 
   if (!pendingLevelUp) return null
 

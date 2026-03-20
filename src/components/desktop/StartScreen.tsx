@@ -146,10 +146,11 @@ export function StartScreen({ hasSave, onSaveLoaded }: StartScreenProps) {
     }
   }
 
+  const formatCash = (n: number) => n >= 100_000_000 ? `${(n / 100_000_000).toFixed(0)}억원` : `${(n / 10_000_000).toFixed(0)}천만원`
   const difficulties: { key: Difficulty; label: string; cash: string; desc: string }[] = [
-    { key: 'easy', label: '쉬움', cash: '1억원', desc: '넉넉한 자본, 낮은 변동성' },
-    { key: 'normal', label: '보통', cash: '5천만원', desc: '표준 밸런스' },
-    { key: 'hard', label: '어려움', cash: '2천만원', desc: '높은 변동성, 빠른 스태미너 소모' },
+    { key: 'easy', label: '쉬움', cash: formatCash(DIFFICULTY_TABLE.easy.initialCash), desc: '넉넉한 자본, 낮은 변동성' },
+    { key: 'normal', label: '보통', cash: formatCash(DIFFICULTY_TABLE.normal.initialCash), desc: '표준 밸런스' },
+    { key: 'hard', label: '어려움', cash: formatCash(DIFFICULTY_TABLE.hard.initialCash), desc: '높은 변동성, 빠른 스태미너 소모' },
   ]
 
   const handleKisTest = async () => {

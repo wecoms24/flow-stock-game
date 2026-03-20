@@ -292,8 +292,8 @@ export async function saveDataToSQLite(
           stress, satisfaction, level, xp, xp_to_next_level, title, badge,
           seat_index, desk_id, praise_cooldown, scold_cooldown, mood,
           bonus, traits, skills, badges, assigned_sectors, growth_log, progression, unlocked_skills,
-          burnout_ticks, last_negotiation_month, habits, pity_counters
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+          burnout_ticks, last_negotiation_month, habits, pity_counters, unpaid_months
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `, [
         saveId,
         employee.id,
@@ -328,6 +328,7 @@ export async function saveDataToSQLite(
         employee.lastNegotiationMonth ?? null,
         employee.habits ? JSON.stringify(employee.habits) : null,
         employee.pityCounters ? JSON.stringify(employee.pityCounters) : null,
+        employee.unpaidMonths ?? 0,
       ])
     }
 
@@ -611,6 +612,7 @@ export async function sqliteToSaveData(
       lastNegotiationMonth: (row as any).last_negotiation_month ?? undefined,
       habits: safeParseJSONOptional((row as any).habits),
       pityCounters: safeParseJSONOptional((row as any).pity_counters),
+      unpaidMonths: (row as any).unpaid_months ?? 0,
     }))
 
     // 4. Load competitors

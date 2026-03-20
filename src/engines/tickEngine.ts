@@ -130,6 +130,9 @@ export function startTickLoop() {
     // Hourly processing: salary/tax/stamina/mood/XP (distributed per-hour)
     useGameStore.getState().processHourly()
 
+    // 파산 체크 (매 시간 확인 — isGameOver 가드로 중복 방지)
+    useGameStore.getState().checkEnding()
+
     // Re-read state after time advancement
     const current = useGameStore.getState()
 

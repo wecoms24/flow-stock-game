@@ -114,8 +114,32 @@ export function ProposalListWindow() {
     { label: '만료됨', value: 'EXPIRED' },
   ]
 
+  const hasAnalyst = employees.some((e) => e.role === 'analyst')
+  const hasManager = employees.some((e) => e.role === 'manager')
+  const hasTrader = employees.some((e) => e.role === 'trader')
+
   return (
     <div className="flex flex-col h-full text-xs">
+      {/* 역할 부재 경고 배너 */}
+      {(!hasAnalyst || !hasManager || !hasTrader) && (
+        <div className="win-inset bg-yellow-50 p-1.5 mb-1 space-y-0.5">
+          {!hasAnalyst && (
+            <div className="text-yellow-800 text-[10px]">
+              ⚠️ 애널리스트 부재: 매매 제안 생성 불가
+            </div>
+          )}
+          {!hasManager && (
+            <div className="text-orange-800 text-[10px]">
+              ⚠️ 매니저 부재: 자동 승인 중 (실수율 30%)
+            </div>
+          )}
+          {!hasTrader && (
+            <div className="text-red-800 text-[10px]">
+              ⚠️ 트레이더 부재: 체결 수수료 2배
+            </div>
+          )}
+        </div>
+      )}
       {/* 상단 필터 및 정렬 */}
       <div className="win-inset bg-white p-1.5 mb-1">
         {/* 상태 필터 버튼 */}

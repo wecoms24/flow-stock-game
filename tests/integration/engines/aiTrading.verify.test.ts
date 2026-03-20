@@ -175,12 +175,12 @@ describe('AI 거래 실제 동작 검증', () => {
     expect.fail('500틱 내 buy 액션이 생성되지 않음')
   })
 
-  it('초기 상태(priceHistory 1개)에서 Surfer/Bear는 거래하지 않는다', () => {
+  it('초기 상태(priceHistory 1개)에서 Surfer/Bear도 폴백 매수한다', () => {
     const competitors = generateCompetitors(4, 50_000_000)
     const surfer = competitors.find((c) => c.style === 'trend-follower')!
     const bear = competitors.find((c) => c.style === 'contrarian')!
 
-    // COMPANIES는 초기 priceHistory: [price] (1개)
+    // COMPANIES는 초기 priceHistory: [price] (1개) — 폴백 매수 발동
     let surferCount = 0
     let bearCount = 0
 
@@ -190,9 +190,9 @@ describe('AI 거래 실제 동작 검증', () => {
       bearCount += processAITrading([bear], COMPANIES, tick, ph).length
     }
 
-    console.log(`[초기 상태] Surfer: ${surferCount}건, Bear: ${bearCount}건 (둘 다 0이어야 정상)`)
-    expect(surferCount).toBe(0)
-    expect(bearCount).toBe(0)
+    console.log(`[초기 상태] Surfer: ${surferCount}건, Bear: ${bearCount}건 (폴백 매수 발동)`)
+    // 초기 폴백 매수가 활성화되었으므로 0이 아닐 수 있음
+    expect(surferCount + bearCount).toBeGreaterThan(0)
   })
 
   it('현금 0인 경쟁자는 매수하지 않는다', () => {

@@ -8,7 +8,7 @@ import wasmUrl from '@subframe7536/sqlite-wasm/wasm-async?url'
 let dbInstance: SQLiteDB | null = null
 
 /** Current schema version -- bump this when adding migrations */
-const SCHEMA_VERSION = 15
+const SCHEMA_VERSION = 16
 
 /**
  * Initialize SQLite database with IndexedDB persistence
@@ -829,6 +829,27 @@ async function runMigrations(db: SQLiteDB): Promise<void> {
       console.log('[SQLite] Migration v15 applied: competitor memory, employee habits/pity_counters')
     } catch (error) {
       console.error('[SQLite] Migration v15 failed:', error)
+      throw error
+    }
+  }
+
+  // ─── v16: Employee unpaid_months tracking ───
+  if (currentVersion < 16) {
+    try {
+      try {
+        await db.run('ALTER TABLE employees ADD COLUMN unpaid_months INTEGER DEFAULT 0;')
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e)
+        if (!msg.includes('duplicate column')) throw e
+      }
+
+      await db.run('INSERT OR REPLACE INTO schema_versions (version, applied_at) VALUES (?, ?);', [
+        16,
+        Date.now(),
+      ])
+      console.log('[SQLite] Migration v16 applied: employee unpaid_months')
+    } catch (error) {
+      console.error('[SQLite] Migration v16 failed:', error)
       throw error
     }
   }

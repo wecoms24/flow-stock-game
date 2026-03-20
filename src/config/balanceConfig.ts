@@ -62,6 +62,22 @@ export const STRESS_AI = {
   BURNOUT_SKILL_MULTIPLIER: 0,
 } as const
 
+export const SALARY_BALANCE = {
+  /** 수습 기간 (개월) */
+  PROBATION_MONTHS: 3,
+  /** 수습 중 급여 비율 (50%) */
+  PROBATION_SALARY_RATE: 0.5,
+  /** 채용 시 선지급 급여 배수 (기존 3배 → 2배) */
+  HIRING_COST_MULTIPLIER: 2,
+} as const
+
+export const STRESS_WARNING = {
+  /** 스트레스 경고 시작 레벨 */
+  THRESHOLD: 70,
+  /** 경고 쿨다운 (게임 시간, 시간 단위) */
+  COOLDOWN_HOURS: 200,
+} as const
+
 export const OFFICE_BALANCE = {
   /** 오피스 레벨별 그리드 크기 */
   GRID_SIZES: {

@@ -8,6 +8,7 @@ import type { DeskType, DecorationType, DeskItem, DecorationItem } from '../../t
 import type { EmployeeRole } from '../../types'
 import { EMPLOYEE_ROLE_CONFIG } from '../../types'
 import { TRAIT_DEFINITIONS } from '../../data/traits'
+import { SALARY_BALANCE } from '../../config/balanceConfig'
 import { TITLE_LABELS, BADGE_COLORS, SKILL_UNLOCKS, badgeForLevel, titleForLevel } from '../../systems/growthSystem'
 import { getMoodFace } from '../../data/employeeEmoji'
 import { soundManager } from '../../systems/soundManager'
@@ -84,6 +85,7 @@ export function OfficeDotWindow() {
     player,
     time,
     hireEmployee,
+    hireAndSetup,
     fireEmployee,
     difficultyConfig,
     initializeOfficeLayout,
@@ -1061,7 +1063,7 @@ export function OfficeDotWindow() {
   }
 
   return (
-    <div className="relative text-xs p-2 space-y-2 overflow-y-auto h-full">
+    <div className="relative text-xs p-2 space-y-2 overflow-y-auto h-full pb-10">
       {/* Header */}
       <div className="text-center">
         <div className="flex items-center justify-center gap-2">
@@ -1203,11 +1205,29 @@ export function OfficeDotWindow() {
             )}
           </div>
         )}
-        {layout.desks.length === 0 && player.employees.length > 0 && (
-          <div className="mt-1 bg-orange-100 border border-orange-400 rounded p-1 text-[11px] text-orange-800 font-bold animate-pulse">
-            아래 카탈로그에서 책상을 구매한 후 캔버스를 클릭하여 배치하세요!
-          </div>
-        )}
+        {(() => {
+          const unplacedCount = player.employees.filter((e) => !e.deskId).length
+          if (unplacedCount === 0) return null
+          const needsDesks = layout.desks.length === 0 || layout.desks.every((d) => d.employeeId)
+          return (
+            <div
+              className="mt-1 bg-orange-100 border border-orange-400 rounded p-1.5 text-[11px] text-orange-800 font-bold animate-pulse cursor-pointer hover:bg-orange-200 transition-colors"
+              onClick={() => document.getElementById('office-desk-catalog')?.scrollIntoView({ behavior: 'smooth' })}
+              title="클릭하여 책상 카탈로그로 이동"
+            >
+              {layout.desks.length === 0 ? (
+                <>⚠ 미배치 직원 {unplacedCount}명 — 책상을 먼저 구매하고 배치하세요!</>
+              ) : needsDesks ? (
+                <>⚠ 미배치 직원 {unplacedCount}명 — 책상이 부족합니다. 추가 구매하세요!</>
+              ) : (
+                <>⚠ 미배치 직원 {unplacedCount}명 — 빈 책상에 배치하거나 🤖자동배치를 이용하세요</>
+              )}
+              <div className="text-[10px] font-normal text-orange-600 mt-0.5">
+                미배치 직원은 급여만 소진되고 업무를 수행하지 않습니다
+              </div>
+            </div>
+          )
+        })()}
         {placementMode && (
           <div className="mt-1 bg-yellow-100 border-2 border-yellow-400 rounded p-1">
             <div className="text-[11px] font-bold text-yellow-900">
@@ -1295,7 +1315,7 @@ export function OfficeDotWindow() {
         {/* Left: Catalogs */}
         <div className="space-y-2">
           {/* Desk Purchase Panel */}
-          <div className="space-y-1">
+          <div id="office-desk-catalog" className="space-y-1">
             <div className="font-bold text-[11px]">책상 ({layout.desks.length}/{layout.maxDesks})</div>
             <div className="win-inset bg-white p-1 space-y-0.5 max-h-48 overflow-y-auto">
               {Object.values(DESK_CATALOG).map((desk) => {
@@ -1618,19 +1638,29 @@ export function OfficeDotWindow() {
           {HIRE_ROLES.map((role) => {
             const config = EMPLOYEE_ROLE_CONFIG[role]
             const salary = Math.round(config.baseSalary * difficultyConfig.employeeSalaryMultiplier)
-            const canAfford = player.cash >= salary * 3
+            const hiringCost = salary * SALARY_BALANCE.HIRING_COST_MULTIPLIER
+            const layout = player.officeLayout
+            const hasEmptyDesk = layout?.desks.some((d) => !d.employeeId) ?? false
+            const needsDesk = !hasEmptyDesk
+            const deskCost = needsDesk ? 10000 : 0
+            const totalHireCost = hiringCost + deskCost
+            const canAfford = player.cash >= totalHireCost
 
             return (
               <RetroButton
                 key={role}
                 size="sm"
                 variant="primary"
-                onClick={() => hireEmployee(role)}
+                onClick={() => needsDesk ? hireAndSetup(role) : hireEmployee(role)}
                 disabled={!canAfford}
                 className="text-[10px]"
-                title={canAfford ? `${salary.toLocaleString()}원/월` : `3개월치 필요 (${(salary * 3).toLocaleString()}원)`}
+                title={canAfford
+                  ? needsDesk
+                    ? `책상 ${deskCost.toLocaleString()}원 + 채용비 ${hiringCost.toLocaleString()}원 = ${totalHireCost.toLocaleString()}원`
+                    : `${salary.toLocaleString()}원/월`
+                  : `자금 부족 — 필요: ${totalHireCost.toLocaleString()}원`}
               >
-                {config.title} 고용
+                {config.title} {needsDesk ? '고용+배치' : '고용'}
               </RetroButton>
             )
           })}

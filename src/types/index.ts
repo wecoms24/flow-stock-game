@@ -137,6 +137,7 @@ export interface Employee {
   badge?: BadgeType // 뱃지 등급
   growthLog?: GrowthLogEntry[] // 성장 일지
   praiseCooldown?: number // 칭찬 쿨다운 (게임 일 기준)
+  unpaidMonths?: number // 연속 미지급 월 수 (3개월 연속 시 퇴사)
   scoldCooldown?: number // 꾸짖기 쿨다운 (게임 일 기준)
   mood?: number // 기분 (0-100, default 50)
 

@@ -24,6 +24,7 @@ import { CelebrationManager } from './components/ui/CelebrationManager'
 import { ChapterModal } from './components/tutorial/ChapterModal'
 import { TutorialSpotlight, isTutorialCompleted } from './components/tutorial/TutorialSpotlight'
 import { FastForwardOverlay } from './components/ui/FastForwardOverlay'
+import { FastForwardCheckDialog } from './components/ui/FastForwardCheckDialog'
 import { useScreenShake, registerShakeHandler, triggerScreenShake } from './hooks/useScreenShake'
 import { hasSaveData } from './systems/saveSystem'
 import { migrateIndexedDBToSQLite } from './systems/sqlite/migration'
@@ -284,6 +285,7 @@ export default function App() {
         <TradeAnimationSequence />
         <ChapterModal />
         <FastForwardOverlay />
+        <FastForwardCheckDialog />
 
         {/* Tutorial spotlight overlay */}
         {showTutorial && (

@@ -268,9 +268,8 @@ function surferStrategy(
   if (!shouldTrade(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX, regimeMod.frequencyMod)) return null
 
   // Find stocks in uptrend
-  const trendingStocks = companies.filter((c) => {
-    if (c.status === 'acquired') return false
-
+  const activeCompanies = companies.filter((c) => c.status !== 'acquired')
+  const trendingStocks = activeCompanies.filter((c) => {
     const prices = priceHistory[c.id] || []
     if (prices.length < config.MA_PERIOD) return false
 
@@ -300,6 +299,25 @@ function surferStrategy(
         timestamp: tick,
       }
     }
+  }
+
+  // 초기 폴백: priceHistory 부족 시 랜덤 매수
+  if (trendingStocks.length === 0 && activeCompanies.length > 0) {
+    const hasEnoughHistory = activeCompanies.some((c) => (priceHistory[c.id]?.length ?? 0) >= config.MA_PERIOD)
+    if (!hasEnoughHistory) {
+      const target = activeCompanies[random(0, activeCompanies.length - 1)]
+      if (!competitor.portfolio[target.id]) {
+        const baseSize = config.POSITION_SIZE_MIN + Math.random() * (config.POSITION_SIZE_MAX - config.POSITION_SIZE_MIN)
+        const quantity = Math.floor(competitor.cash * baseSize * 0.5 / target.price) // 초기 보수적
+        if (quantity > 0) {
+          return {
+            competitorId: competitor.id, action: 'buy', companyId: target.id,
+            ticker: target.ticker, quantity, price: target.price, timestamp: tick,
+          }
+        }
+      }
+    }
+    return null
   }
 
   if (trendingStocks.length === 0) return null
@@ -382,15 +400,33 @@ function bearStrategy(
   }
 
   // Find oversold stocks
-  const oversoldStocks = companies.filter((c) => {
-    if (c.status === 'acquired') return false
-
+  const activeCompaniesB = companies.filter((c) => c.status !== 'acquired')
+  const oversoldStocks = activeCompaniesB.filter((c) => {
     const prices = priceHistory[c.id] || []
     if (prices.length < config.RSI_PERIOD + 1) return false
 
     const rsi = calculateRSI(prices, config.RSI_PERIOD)
     return rsi < config.RSI_OVERSOLD
   })
+
+  // 초기 폴백: priceHistory 부족 시 랜덤 매수
+  if (oversoldStocks.length === 0 && activeCompaniesB.length > 0) {
+    const hasEnoughHistory = activeCompaniesB.some((c) => (priceHistory[c.id]?.length ?? 0) >= config.RSI_PERIOD + 1)
+    if (!hasEnoughHistory) {
+      const target = activeCompaniesB[random(0, activeCompaniesB.length - 1)]
+      if (!competitor.portfolio[target.id]) {
+        const baseSize = config.POSITION_SIZE_MIN + Math.random() * (config.POSITION_SIZE_MAX - config.POSITION_SIZE_MIN)
+        const quantity = Math.floor(competitor.cash * baseSize * 0.5 / target.price)
+        if (quantity > 0) {
+          return {
+            competitorId: competitor.id, action: 'buy', companyId: target.id,
+            ticker: target.ticker, quantity, price: target.price, timestamp: tick,
+          }
+        }
+      }
+    }
+    return null
+  }
 
   if (oversoldStocks.length === 0) return null
 

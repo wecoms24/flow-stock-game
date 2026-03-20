@@ -422,8 +422,8 @@ describe('실제 운영 시나리오 E2E', () => {
         { name: 'Test Corp', style: 'aggressive', logo: '🔥' })
 
       const s = useGameStore.getState()
-      // normal 기본 50M * 0.8 = 40M
-      expect(s.player.cash).toBeLessThanOrEqual(50_000_000)
+      // normal 기본 70M * 0.8 = 56M
+      expect(s.player.cash).toBeLessThanOrEqual(70_000_000)
     })
 
     it('stable 스타일: +10% 초기 자금', () => {
@@ -431,8 +431,8 @@ describe('실제 운영 시나리오 E2E', () => {
         { name: 'Test Corp', style: 'stable', logo: '🏢' })
 
       const s = useGameStore.getState()
-      // normal 기본 50M * 1.1 = 55M
-      expect(s.player.cash).toBeGreaterThanOrEqual(50_000_000)
+      // normal 기본 70M * 1.1 = 77M
+      expect(s.player.cash).toBeGreaterThanOrEqual(70_000_000)
     })
   })
 })

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import { isPriceLimitHit } from '../../config/priceLimit'
+import { MNA_CONFIG } from '../../config/mnaConfig'
 import { isVIHalted, getVIRemainingTicks } from '../../engines/viEngine'
 import { triggerScreenShake } from '../../hooks/useScreenShake'
 import { emitFloatingText } from '../../utils/floatingTextEmitter'
@@ -212,6 +213,12 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
     return isLowerHalf && priceDropRatio >= 0.2
   }
 
+  const formatAsset = (n: number) => {
+    if (n >= 1e8) return `${(n / 1e8).toFixed(1)}억`
+    if (n >= 1e4) return `${Math.floor(n / 1e4).toLocaleString()}만`
+    return n.toLocaleString()
+  }
+
   const handleOpenAcquisition = (companyId: string, e: React.MouseEvent) => {
     e.stopPropagation() // 회사 선택 방지
     openWindow('acquisition', { preselectedCompanyId: companyId })
@@ -412,15 +419,27 @@ export function TradingWindow({ companyId }: TradingWindowProps) {
                         보유
                       </span>
                     )}
-                    {canAcquire && !isAcquired && (
-                      <button
-                        className="text-[9px] px-1 py-0.5 bg-purple-600 text-white hover:bg-purple-700 active:bg-purple-800 win-outset"
-                        onClick={(e) => handleOpenAcquisition(c.id, e)}
-                        title="인수 가능 (시총 하위 50% + 20% 하락)"
-                      >
-                        인수
-                      </button>
-                    )}
+                    {canAcquire && !isAcquired && (() => {
+                      const mnaCost = Math.round(c.marketCap * (1 + MNA_CONFIG.PREMIUM_RANGE[0]))
+                      const canAffordMna = player.cash >= mnaCost
+                      return (
+                        <button
+                          className={`text-[9px] px-1 py-0.5 win-outset ${
+                            canAffordMna
+                              ? 'bg-purple-600 text-white hover:bg-purple-700 active:bg-purple-800'
+                              : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                          }`}
+                          onClick={(e) => canAffordMna && handleOpenAcquisition(c.id, e)}
+                          disabled={!canAffordMna}
+                          title={canAffordMna
+                            ? `인수 예상 비용: ${formatAsset(mnaCost)}원 (시총+20%프리미엄)`
+                            : `자금 부족 — 필요: ${formatAsset(mnaCost)}원, 보유: ${formatAsset(player.cash)}원`
+                          }
+                        >
+                          인수 ~{formatAsset(mnaCost)}
+                        </button>
+                      )
+                    })()}
                   </div>
                   <div
                     className={`text-[10px] truncate ${

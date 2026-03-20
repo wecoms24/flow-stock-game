@@ -5,8 +5,15 @@ export function StockTicker() {
   const companies = useGameStore((s) => s.companies)
   const totalAssetValue = useGameStore((s) => s.player.totalAssetValue)
   const initialCash = useGameStore((s) => s.config.initialCash)
+  const cash = useGameStore((s) => s.player.cash)
+  const monthlyExpenses = useGameStore((s) => s.player.monthlyExpenses)
+  const employeeCount = useGameStore((s) => s.player.employees.length)
   const roi = initialCash > 0 ? ((totalAssetValue - initialCash) / initialCash) * 100 : 0
   const isProfit = roi >= 0
+
+  const runway = monthlyExpenses > 0 ? Math.floor(cash / monthlyExpenses) : Infinity
+  const runwayColor = runway >= 12 ? '#44ff44' : runway >= 6 ? '#ffcc00' : '#ff4444'
+  const runwayBlink = runway < 3
 
   // Memoize sort to prevent re-sorting 100 companies every render
   const topCompanies = useMemo(
@@ -74,6 +81,37 @@ export function StockTicker() {
           {formatAsset(totalAssetValue)}원
         </span>
       </div>
+
+      {/* 현금 런웨이 위젯 (직원 1명 이상일 때만) */}
+      {employeeCount > 0 && monthlyExpenses > 0 && (
+        <div
+          className="absolute right-2 px-2 py-0.5 rounded shrink-0 flex items-center gap-1.5"
+          style={{
+            background: 'rgba(0,0,0,0.85)',
+            borderLeft: `2px solid ${runwayColor}`,
+            boxShadow: `0 0 6px ${runwayColor}30`,
+            animation: runwayBlink ? 'pulse 1s ease-in-out infinite' : undefined,
+          }}
+        >
+          <span
+            className="font-mono text-[11px] tabular-nums"
+            style={{ color: runwayColor }}
+          >
+            {formatAsset(cash)}
+          </span>
+          <span className="text-[9px] text-retro-gray/60">|</span>
+          <span className="font-mono text-[10px] tabular-nums text-retro-gray/80">
+            월-{formatAsset(monthlyExpenses)}
+          </span>
+          <span className="text-[9px] text-retro-gray/60">|</span>
+          <span
+            className="font-mono text-[11px] tabular-nums font-bold"
+            style={{ color: runwayColor }}
+          >
+            {runway === Infinity ? '∞' : runway}개월
+          </span>
+        </div>
+      )}
     </div>
   )
 }
