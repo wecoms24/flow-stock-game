@@ -385,16 +385,18 @@ export function Taskbar() {
         </div>
       )}
 
-      {/* Market Regime Indicator */}
+      {/* Market Regime Indicator — 클릭 시 차트 열기 */}
       <div
-        className={`win-inset px-2 py-0.5 text-[10px] shrink-0 flex items-center gap-1 ${
-          marketRegime.current === 'CRISIS' ? 'animate-pulse' : ''
+        className={`win-inset px-2 py-0.5 text-[10px] shrink-0 flex items-center gap-1 cursor-pointer hover:brightness-110 ${
+          marketRegime.current === 'CRISIS' ? 'animate-pulse bg-red-100' :
+          marketRegime.current === 'VOLATILE' ? 'bg-yellow-50' : ''
         }`}
-        title={`시장 레짐: ${marketRegime.current} (${marketRegime.duration}시간)`}
+        title={`시장 레짐: ${marketRegime.current === 'CALM' ? '평온 — 안정적 투자 환경' : marketRegime.current === 'VOLATILE' ? '변동 — 급등/급락 주의!' : '위기 — 방어 전략 필요!'} (${marketRegime.duration}시간 지속)\n클릭하여 차트 확인`}
+        onClick={() => openWindow('chart')}
       >
-        {marketRegime.current === 'CALM' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />}
-        {marketRegime.current === 'VOLATILE' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-500" />}
-        {marketRegime.current === 'CRISIS' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-600" />}
+        {marketRegime.current === 'CALM' && <span className="inline-block w-2 h-2 rounded-full bg-green-500" />}
+        {marketRegime.current === 'VOLATILE' && <span className="inline-block w-2 h-2 rounded-full bg-yellow-500" />}
+        {marketRegime.current === 'CRISIS' && <span className="inline-block w-2 h-2 rounded-full bg-red-600" />}
         <span className="font-bold">
           {marketRegime.current === 'CALM' && '평온'}
           {marketRegime.current === 'VOLATILE' && '변동'}
