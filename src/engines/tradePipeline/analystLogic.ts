@@ -1,10 +1,11 @@
 /* ── Analyst Logic: Signal Detection Pipeline (Pure Functions) ── */
 
-import type { Company, Employee, MarketEvent, PortfolioPosition } from '../../types'
+import type { Company, Employee, MarketEvent, MarketRegime, PortfolioPosition } from '../../types'
 import type { TradeProposal } from '../../types/trade'
 import type { AggregatedCorporateEffects } from '../corporateSkillEngine'
-import { calculateRSI, calculateMA } from '../../utils/technicalIndicators'
-import { TRADE_AI_CONFIG } from '../../config/tradeAIConfig'
+import { calculateRSI, calculateMA, calculateMACD, calculateBollingerBands } from '../../utils/technicalIndicators'
+import { aggregateBadgeEffects } from '../../utils/badgeConverter'
+import { TRADE_AI_CONFIG, INDICATOR_WEIGHTS, COMPOSITE_SIGNAL_THRESHOLD } from '../../config/tradeAIConfig'
 import { SKILL_BALANCE } from '../../config/skillBalance'
 import { generateTradeSignals } from '../signalGenerationEngine' // ✨ 신규 엔진 통합
 import { getPassiveModifiers } from '../../systems/skillSystem' // ✨ RPG Skill Tree
@@ -25,32 +26,51 @@ export function analyzeStock(
   priceHistory: number[],
   analyst: Employee,
   adjacencyBonus: number = 0,
-  marketEvents: MarketEvent[] = [], // ✨ 신규: 이벤트 정보
-  corporateEffects?: AggregatedCorporateEffects | null, // ✨ 회사 스킬 효과
-): { confidence: number; direction: 'buy' | 'sell'; isInsight: boolean } | null {
+  marketEvents: MarketEvent[] = [],
+  corporateEffects?: AggregatedCorporateEffects | null,
+  regime?: MarketRegime,
+): { confidence: number; direction: 'buy' | 'sell'; isInsight: boolean; appliedBadgeEffects: string[] } | null {
   if (priceHistory.length < 15) return null
+
+  const currentRegime = regime ?? 'CALM'
+  const weights = INDICATOR_WEIGHTS[currentRegime]
 
   const rsi = calculateRSI(priceHistory, 14)
   const ma20 = calculateMA(priceHistory, 20)
   const currentPrice = company.price
+  const macd = calculateMACD(priceHistory)
+  const bb = calculateBollingerBands(priceHistory)
 
-  // Determine direction from technical signals
+  // ✨ Phase 3: 4개 지표 복합 스코어 (각 -1 ~ +1 정규화)
+  // RSI signal: <50 = buy(+), >50 = sell(-)
+  const rsiSignal = (50 - rsi) / 50
+
+  // MA signal: price below MA = buy(+), above = sell(-)
+  const maSignal = ma20 > 0 ? (ma20 - currentPrice) / ma20 : 0
+
+  // MACD signal: histogram positive = buy(+), negative = sell(-)
+  const macdSignal = macd ? Math.max(-1, Math.min(1, macd.histogram / (Math.abs(macd.signal) || 1))) : 0
+
+  // BB signal: %B < 0.2 = buy(+), %B > 0.8 = sell(-)
+  const bbSignal = bb ? (0.5 - bb.percentB) * 2 : 0
+
+  // Weighted composite score
+  const compositeScore =
+    rsiSignal * weights.rsi +
+    maSignal * weights.ma +
+    macdSignal * weights.macd +
+    bbSignal * weights.bb
+
+  // Determine direction from composite score
   let direction: 'buy' | 'sell' | null = null
   let technicalSignal = 0
 
-  // ✨ 보수적 완화: RSI 40/60 → 50/50 (더 빈번한 거래 신호)
-  if (rsi < 50 && currentPrice < ma20) {
+  if (compositeScore > COMPOSITE_SIGNAL_THRESHOLD) {
     direction = 'buy'
-    technicalSignal = (50 - rsi) / 50 // 0~1, stronger when more oversold
-  } else if (rsi > 50 && currentPrice > ma20) {
+    technicalSignal = Math.min(1, compositeScore)
+  } else if (compositeScore < -COMPOSITE_SIGNAL_THRESHOLD) {
     direction = 'sell'
-    technicalSignal = (rsi - 50) / 50
-  } else if (rsi < 40) {
-    direction = 'buy'
-    technicalSignal = (40 - rsi) / 40
-  } else if (rsi > 60) {
-    direction = 'sell'
-    technicalSignal = (rsi - 60) / 40
+    technicalSignal = Math.min(1, Math.abs(compositeScore))
   }
 
   if (!direction) return null
@@ -64,8 +84,15 @@ export function analyzeStock(
   const traits = analyst.traits ?? []
   if (traits.includes('perfectionist')) traitBonus += 5
   if (traits.includes('tech_savvy')) traitBonus += 3
-  if (traits.includes('sensitive')) traitBonus += 2 // sensitive analysts pick up subtle signals
+  if (traits.includes('sensitive')) traitBonus += 2
   if (traits.includes('risk_averse')) traitBonus -= 3
+  // ✨ Phase 6: 신규 trait 조건 분기
+  if (traits.includes('contrarian_mind')) {
+    traitBonus += currentRegime === 'CRISIS' ? 8 : currentRegime === 'VOLATILE' ? 3 : -2
+  }
+  if (traits.includes('gambler')) traitBonus += 4 // 과감한 분석
+  if (traits.includes('lucky') && Math.random() < 0.1) traitBonus += 10 // 10% 확률 행운 보너스
+  if (traits.includes('mentor')) traitBonus += 2
   const traitFactor = Math.max(0, Math.min(30, traitBonus + technicalSignal * 20))
 
   // Condition factor (inverse of stress)
@@ -76,6 +103,9 @@ export function analyzeStock(
 
   let confidence = skillFactor + traitFactor + conditionFactor
 
+  // ✨ 적용된 뱃지 효과 기록
+  const appliedBadgeEffects: string[] = []
+
   // ✨ Badge bonus from signal generation engine
   const signalEnhancement = generateTradeSignals(analyst, [company], marketEvents)
   const signalMatch = signalEnhancement.find((s) => s.companyId === company.id)
@@ -83,6 +113,15 @@ export function analyzeStock(
     // 신호 생성 엔진의 신뢰도를 추가 보너스로 활용 (최대 +20)
     const badgeBonus = (signalMatch.confidence / 100) * 20
     confidence += badgeBonus
+  }
+
+  // ✨ 뱃지 집계 효과 기록 (signalAccuracy는 signalGenerationEngine에서 이미 적용됨)
+  const badgeEffects = aggregateBadgeEffects(analyst.badges)
+  if (badgeEffects.signalAccuracy > 0) {
+    appliedBadgeEffects.push(`signalAccuracy +${(badgeEffects.signalAccuracy * 100).toFixed(0)}%`)
+  }
+  if (badgeEffects.riskReduction > 0) {
+    appliedBadgeEffects.push(`riskReduction -${(badgeEffects.riskReduction * 100).toFixed(0)}%`)
   }
 
   // ✨ RPG Skill Tree: Apply signalAccuracy passive modifiers
@@ -115,7 +154,7 @@ export function analyzeStock(
 
   if (confidence < effectiveThreshold) return null
 
-  return { confidence, direction, isInsight }
+  return { confidence, direction, isInsight, appliedBadgeEffects }
 }
 
 /**
@@ -125,7 +164,7 @@ export function analyzeStock(
 export function generateProposal(
   analyst: Employee,
   company: Company,
-  analysis: { confidence: number; direction: 'buy' | 'sell'; isInsight: boolean },
+  analysis: { confidence: number; direction: 'buy' | 'sell'; isInsight: boolean; appliedBadgeEffects?: string[] },
   currentTick: number,
   existingProposals: TradeProposal[],
   playerCash: number, // ✨ 현금 비율 기반 투자 계산용
@@ -186,6 +225,9 @@ export function generateProposal(
     slippage: null,
     isMistake: false,
     rejectReason: null,
+    appliedBadgeEffects: analysis.appliedBadgeEffects?.length
+      ? [...analysis.appliedBadgeEffects]
+      : undefined,
   }
 }
 

@@ -163,5 +163,105 @@ export const TRAIT_DEFINITIONS: Record<EmployeeTrait, TraitConfig> = {
       stressBonus: 0.15, // 야망에 의한 추가 스트레스 +15%
     },
   },
+
+  // ✨ Phase 6: 신규 trait 7종
+  lucky: {
+    name: '행운아',
+    description: '행운이 따르는 사람, XP 잭팟 찬스!',
+    icon: '🍀',
+    rarity: 'rare',
+    effects: {
+      stressGeneration: 0.9,
+      skillGrowth: 1.0,
+    },
+    growthModifier: {
+      allSkills: 1.0, // 기본 성장 (10% 확률 2배는 코드에서 처리)
+    },
+  },
+
+  mentor: {
+    name: '멘토 기질',
+    description: '후배를 이끄는 리더십, 주변 직원 성장 촉진',
+    icon: '👨‍🏫',
+    rarity: 'uncommon',
+    effects: {
+      skillGrowth: 1.05,
+      stressGeneration: 0.95,
+    },
+    growthModifier: {
+      research: 1.15,
+    },
+  },
+
+  contrarian_mind: {
+    name: '역발상',
+    description: '남들이 두려워할 때 기회를 본다',
+    icon: '🔄',
+    rarity: 'uncommon',
+    effects: {
+      stressGeneration: 1.1,
+      skillGrowth: 1.1,
+    },
+    growthModifier: {
+      analysis: 1.15,
+    },
+  },
+
+  early_bird: {
+    name: '아침형 인간',
+    description: '오전에 빛나는 얼리버드',
+    icon: '🌅',
+    rarity: 'common',
+    effects: {
+      stressGeneration: 0.9,
+      staminaRecovery: 1.1,
+    },
+    growthModifier: {
+      allSkills: 1.05,
+    },
+  },
+
+  frugal: {
+    name: '절약가',
+    description: '돈을 아끼는 알뜰족, 연봉 요구가 낮음',
+    icon: '💵',
+    rarity: 'common',
+    effects: {
+      salaryMultiplier: 0.85,
+      stressGeneration: 0.95,
+    },
+    growthModifier: {
+      research: 1.1,
+    },
+  },
+
+  gambler: {
+    name: '도박사',
+    description: '큰 판에 배팅, 리스크도 크지만 리턴도 크다',
+    icon: '🎰',
+    rarity: 'rare',
+    effects: {
+      stressGeneration: 1.2,
+      skillGrowth: 1.1,
+    },
+    growthModifier: {
+      trading: 1.25,
+      stressBonus: 0.1,
+    },
+  },
+
+  empathetic: {
+    name: '공감형',
+    description: '팀 분위기를 살리는 감정 전문가',
+    icon: '💗',
+    rarity: 'uncommon',
+    effects: {
+      stressGeneration: 0.85,
+      skillGrowth: 1.0,
+    },
+    growthModifier: {
+      satisfactionDecay: 0.6,
+    },
+  },
 }
 

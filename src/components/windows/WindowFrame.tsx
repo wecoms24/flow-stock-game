@@ -17,6 +17,7 @@ const TITLE_BAR_COLORS: Partial<Record<WindowType, string>> = {
   settings: '#555555',       // gray
   proposals: '#1a4a5c',      // teal
   dashboard: '#1a3a6b',      // deeper blue
+  negotiation: '#5c1a4a',    // magenta tint
 }
 const DEFAULT_TITLE_COLOR = '#000080'
 const INACTIVE_TITLE_COLOR = '#808080'
@@ -51,6 +52,8 @@ const WINDOW_SIZE_CONSTRAINTS: Record<
   skill_library: { minWidth: 540, minHeight: 440 },
   training_center: { minWidth: 540, minHeight: 440 },
   playstyle_analytics: { minWidth: 360, minHeight: 400 },
+  spy: { minWidth: 400, minHeight: 500 },
+  negotiation: { minWidth: 360, minHeight: 480 },
 }
 
 /* ── Resize Handle Directions ── */

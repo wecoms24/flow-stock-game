@@ -13,6 +13,7 @@ import {
   badgeForLevel,
   titleForLevel,
 } from '../../systems/growthSystem'
+import { aggregateBadgeEffects } from '../../utils/badgeConverter'
 import { SkillTreeTab } from './SkillTreeTab'
 import { EmployeeBioPanel } from './EmployeeBioPanel'
 import { formatActiveEffects } from '../../utils/skillFormatter'
@@ -48,6 +49,49 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
 
   // 🚀 Performance: Memoize active effects calculation (must be before early return)
   const activeEffects = useMemo(() => (emp ? formatActiveEffects(emp) : []), [emp])
+
+  // 뱃지 집계 효과 수치 (must be before early return)
+  const badgeEffectsSummary = useMemo(() => {
+    if (!emp?.badges || emp.badges.length === 0) return null
+    const effects = aggregateBadgeEffects(emp.badges)
+    const lines: Array<{ label: string; value: string; color: string }> = []
+    if (effects.signalAccuracy > 0) {
+      lines.push({
+        label: '분석 정확도',
+        value: `+${(effects.signalAccuracy * 100).toFixed(0)}%`,
+        color: 'text-purple-600',
+      })
+    }
+    if (effects.executionSpeedBonus > 0) {
+      lines.push({
+        label: '실행 속도',
+        value: `+${(effects.executionSpeedBonus * 100).toFixed(0)}%`,
+        color: 'text-blue-600',
+      })
+    }
+    if (effects.slippageReduction > 0) {
+      lines.push({
+        label: '슬리피지',
+        value: `-${(effects.slippageReduction * 100).toFixed(0)}%`,
+        color: 'text-green-600',
+      })
+    }
+    if (effects.riskReduction > 0) {
+      lines.push({
+        label: '리스크',
+        value: `-${(effects.riskReduction * 100).toFixed(0)}%`,
+        color: 'text-orange-600',
+      })
+    }
+    if (effects.positionSizeMultiplier !== 1.0) {
+      lines.push({
+        label: '포지션 크기',
+        value: `x${effects.positionSizeMultiplier.toFixed(1)}`,
+        color: 'text-red-600',
+      })
+    }
+    return lines.length > 0 ? lines : null
+  }, [emp?.badges])
 
   if (!emp) {
     return (
@@ -345,6 +389,20 @@ export function EmployeeDetailWindow({ employeeId }: EmployeeDetailWindowProps) 
                 </div>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Badge Aggregate Effects (수치 요약) */}
+      {badgeEffectsSummary && (
+        <div className="win-inset bg-white p-2">
+          <div className="font-bold text-[10px] mb-1">🏅 뱃지 종합 효과</div>
+          <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+            {badgeEffectsSummary.map((item, idx) => (
+              <div key={idx} className={`text-[9px] ${item.color} font-medium`}>
+                {item.label} {item.value}
+              </div>
+            ))}
           </div>
         </div>
       )}

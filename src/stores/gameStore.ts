@@ -33,6 +33,7 @@ import type { CashFlowEntry, CashFlowCategory, RealizedTrade, MonthlySummary } f
 import { createCashFlowEntry, purgeOldEntries, detectAnomalies, aggregateMonthly } from '../engines/cashFlowTracker'
 import type { PlayerEvent, PlayerProfile } from '../types/personalization'
 import type { MnaDeal } from '../engines/mnaEngine'
+import type { AcquiredCompanyState } from '../types/acquisition'
 import { MAX_EVENT_LOG_SIZE, defaultProfile } from '../types/personalization'
 import { computeProfileFromEvents } from '../systems/personalization/profile'
 import { emitFloatingText } from '../utils/floatingTextEmitter'
@@ -42,7 +43,7 @@ import { drawCards } from '../engines/cardDrawEngine'
 import { createBio, inferEmotion, updateGoals } from '../engines/employeeBioEngine'
 import { checkEmployeeMilestones } from '../engines/employeeMilestoneEngine'
 import { getRandomTaunt as getRandomTauntFn, getContextualTradeTaunt, getBigTradeTaunt, getPlayerResponseMessage } from '../data/taunts'
-import { calculateBonuses } from '../engines/skillPathEngine'
+import { calculateBonuses, canRespec as canRespecFn, executeRespec as executeRespecFn } from '../engines/skillPathEngine'
 import { selectChain, initChainState, advanceChainWeek, getCurrentWeekModifiers, canStartChain } from '../engines/eventChainEngine'
 import { EVENT_CHAIN_TEMPLATES } from '../data/eventChains'
 import { updateTier, calculateMonthlyTax, checkPositionLimit, recordMonthlyPerformance } from '../engines/economicPressureEngine'
@@ -59,6 +60,7 @@ import { generateEmployeeName, resetNamePool, generateRandomTraits, generateInit
 import { calculateMarketSentiment } from '../engines/tickEngine'
 import { generateRandomEvent } from '../engines/newsEngine'
 import { TRAIT_DEFINITIONS } from '../data/traits'
+import { checkTraitUnlock } from '../data/traitUnlocks'
 import { FURNITURE_CATALOG, canBuyFurniture, DESK_CATALOG, DECORATION_CATALOG } from '../data/furniture'
 import { saveGame, loadGame, deleteSave } from '../systems/saveSystem'
 import {
@@ -73,6 +75,8 @@ import {
   processAITrading,
   getPriceHistory,
   computePlayerResponseEffects,
+  initCompetitorMemory,
+  updateCompetitorMemory,
 } from '../engines/competitorEngine'
 import {
   generateInstitutions,
@@ -82,6 +86,7 @@ import { PANIC_SELL_CONFIG, PERFORMANCE_CONFIG } from '../config/aiConfig'
 import { xpForLevel, titleForLevel, badgeForLevel, SKILL_UNLOCKS, XP_AMOUNTS, LEVEL_REWARDS, xpMultiplierForRole } from '../systems/growthSystem'
 import { soundManager } from '../systems/soundManager'
 import { updateOfficeSystem } from '../engines/officeSystem'
+import { createInitialHabits, cleanupBehaviorState, resetBehaviorState } from '../engines/employeeBehavior'
 import { processHRAutomation, type HRAutomationResult } from '../engines/hrAutomation'
 import { cleanupChatterCooldown, getPipelineMessage, resetChatterCooldowns, triggerChatter } from '../data/chatter'
 import { cleanupInteractionCooldowns } from '../engines/employeeInteraction'
@@ -93,6 +98,7 @@ import { createInitialCorporateSkills } from '../data/corporateSkills'
 import { getPrestigeBonuses } from '../systems/prestigeSystem'
 import { dispatchCelebration, setCelebrationSuppressed } from '../components/ui/CelebrationManager'
 import {
+  createCelebration,
   celebrateStreak,
   celebrateMilestone,
   celebrateRivalDefeated,
@@ -139,6 +145,19 @@ import {
   isVIHalted,
   resetVIForNewDay,
 } from '../engines/viEngine'
+import {
+  canStartMission,
+  createMission,
+  getMissionCost,
+  processSpyMissions,
+  cleanExpiredIntel,
+} from '../engines/spyEngine'
+import {
+  createNegotiationState,
+  getEmployeesNeedingNegotiation,
+} from '../engines/negotiationEngine'
+import { NEGOTIATION_CONFIG } from '../config/negotiationConfig'
+import type { NegotiationState } from '../types/negotiation'
 
 /* ── Ending Scenarios ── */
 function getEndingScenarios(config: GameConfig): EndingScenario[] {
@@ -283,6 +302,7 @@ interface GameStore {
   autoSave: () => void
   setSpeed: (speed: GameTime['speed']) => void
   togglePause: () => void
+  autoPauseForEvent: (reason: string) => void
   checkEnding: () => void
 
   // Hourly processing accumulators
@@ -342,6 +362,7 @@ interface GameStore {
   // Actions - RPG Skill Tree System
   unlockEmployeeSkill: (employeeId: string, skillId: string) => { success: boolean; reason?: string }
   resetEmployeeSkillTree: (employeeId: string) => { success: boolean; cost: number; reason?: string }
+  respecSkillPath: (employeeId: string) => { success: boolean; cost: number; reason?: string }
 
   // Actions - Office Grid (Sprint 2, 레거시)
   initializeOfficeGrid: () => void
@@ -380,6 +401,7 @@ interface GameStore {
   playerAcquisitionHistory: import('../types').PlayerAcquisitionHistory[]
   lastPlayerAcquisitionTick: number
   isAcquiring: boolean // 중복 인수 방지 플래그
+  acquiredCompanyStates: AcquiredCompanyState[]
 
   // Actions - M&A
   getActiveCompanies: () => Company[]
@@ -390,6 +412,8 @@ interface GameStore {
   applyAcquisitionExchange: (deal: MnaDeal) => void
   playerAcquireCompany: (targetId: string, premium: number, layoffRate: number) => void
   executeKospiIPO: (companyId: string, ipoPrice: number) => void // KOSPI 모드 IPO 실행
+  processAcquisitionManagement: () => void   // 월간 통합 진행
+  processAcquisitionDividends: () => void     // 분기 배당
 
   // Limit Order System
   limitOrders: LimitOrder[]
@@ -494,6 +518,19 @@ interface GameStore {
   advanceTrainingTick: () => void
   cancelTrainingProgram: (programId: string) => void
 
+  // ✨ Spy System (경쟁사 정탐)
+  spyMissions: import('../types/spy').SpyMission[]
+  spyIntel: import('../types/spy').SpyIntel[]
+  startSpyMission: (targetCompetitorId: string, tier: import('../types/spy').SpyMissionTier) => void
+  processSpyTick: () => void
+
+  // ✨ Salary Negotiation System (연봉 협상)
+  activeNegotiation: NegotiationState | null
+  startNegotiation: (employeeId: string) => void
+  updateNegotiation: (update: Partial<NegotiationState>) => void
+  completeNegotiation: () => void
+  checkNegotiationTriggers: () => void
+
   // Flash
   triggerFlash: () => void
 
@@ -569,6 +606,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   playerAcquisitionHistory: [],
   lastPlayerAcquisitionTick: 0,
   isAcquiring: false,
+  acquiredCompanyStates: [],
   limitOrders: [],
   autoSellEnabled: false,
   autoSellPercent: 10,
@@ -632,6 +670,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   corporateSkills: { skills: createInitialCorporateSkills(), totalUnlocked: 0, totalSpent: 0 },
   training: { programs: [], completedCount: 0, totalTraineesGraduated: 0 },
   hourlyAccumulators: { salaryPaid: 0, taxPaid: 0 },
+
+  // ✨ Spy System
+  spyMissions: [],
+  spyIntel: [],
+
+  // ✨ Salary Negotiation
+  activeNegotiation: null,
 
   /* ── Game Actions ── */
   startGame: (difficulty, targetAsset, customInitialCash, gameMode = 'virtual', kisCredentials, companyProfile) => {
@@ -860,7 +905,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       chapterProgress: defaultChapterProgress(),
       companyProfile: profile,
       realtimeConnection: { ...REALTIME_CONNECTION_INITIAL },
+      activeNegotiation: null,
     })
+
+    // 엔진 내부 상태 리셋 (이전 세션 잔여 데이터 방지)
+    resetNewsEngine()
+    resetSentiment()
+    resetBehaviorState()
+    resetChatterCooldowns()
 
     deleteSave()
 
@@ -890,6 +942,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     resetNewsEngine()
     resetSentiment()
     resetChatterCooldowns()
+    resetBehaviorState()
 
     // Reconstruct companies from save + base data
     const loadedGameMode = (data.config as any).gameMode ?? 'virtual'
@@ -1043,6 +1096,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       chapterProgress: (data as any).chapterProgress ?? { ...defaultChapterProgress(), currentChapter: getChapterNumber(data.time.year) },
       companyProfile: (data as any).companyProfile ?? defaultCompanyProfile(),
       pendingCeremony: (data as any).pendingCeremony ?? null,
+      acquiredCompanyStates: data.acquiredCompanyStates ?? [],
+      spyMissions: data.spyMissions ?? [],
+      spyIntel: data.spyIntel ?? [],
+      activeNegotiation: null, // 협상은 세이브에 포함하지 않음 (transient)
       windows: [],
       nextZIndex: 1,
       windowIdCounter: 0,
@@ -1119,6 +1176,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       chapterProgress: s.chapterProgress,
       companyProfile: s.companyProfile,
       pendingCeremony: s.pendingCeremony ?? undefined,
+      acquiredCompanyStates: s.acquiredCompanyStates,
+      spyMissions: s.spyMissions,
+      spyIntel: s.spyIntel,
     }
     saveGame(data)
   },
@@ -1250,12 +1310,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const s = get()
     if (!s.player.officeLayout) return
 
-    // Check if ALL pipeline employees are stressed out (stress >= 100)
+    // Check if ALL pipeline employees are stressed out (stress >= 100) or in burnout
     const pipelineRoles = ['analyst', 'manager', 'trader'] as const
     const pipelineEmployees = s.player.employees.filter(
       (e) => pipelineRoles.includes(e.role as typeof pipelineRoles[number]) && e.deskId != null,
     )
-    if (pipelineEmployees.length > 0 && pipelineEmployees.every((e) => (e.stress ?? 0) >= 100)) {
+    if (pipelineEmployees.length > 0 && pipelineEmployees.every((e) => (e.stress ?? 0) >= 100 || (e.burnoutTicks ?? 0) > 0)) {
       // Cooldown: only warn once per 100 ticks to prevent spam
       const tick = getAbsoluteTimestamp(s.time, s.config.startYear)
       const lastStressWarning = s.officeEvents
@@ -1277,7 +1337,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     const analysts = s.player.employees.filter(
-      (e) => e.role === 'analyst' && e.deskId != null && (e.stress ?? 0) < 100,
+      (e) => e.role === 'analyst' && e.deskId != null && (e.stress ?? 0) < 100 && (e.burnoutTicks ?? 0) === 0,
     )
     if (analysts.length === 0) return
 
@@ -1315,14 +1375,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const sectors = analyst.assignedSectors ?? []
       const targetCompanies = sectors.length > 0
         ? s.companies.filter((c) => c.status !== 'acquired' && sectors.includes(c.sector))
-        : s.companies.filter((c) => c.status !== 'acquired').slice(0, 5) // fallback: first 5 if no sector assigned
+        : s.companies.filter((c) => c.status !== 'acquired')
+            .sort(() => Math.random() - 0.5) // 랜덤 셔플로 종목 다양성 확보
+            .slice(0, 5)
 
       for (const company of targetCompanies) {
-        const result = analyzeStock(company, company.priceHistory, analyst, adjBonus, [], corpEffects)
+        const result = analyzeStock(company, company.priceHistory, analyst, adjBonus, [], corpEffects, s.marketRegime?.current)
         if (!result) continue
 
         const proposal = generateProposal(analyst, company, result, absoluteTick, newProposals, s.player.cash, corpEffects)
         if (!proposal) continue
+
+        // Filter out sell proposals for stocks not in portfolio
+        if (proposal.direction === 'sell' && !s.player.portfolio[company.id]) continue
 
         // Check max pending (corporate skill bonus applied)
         const maxPending = TRADE_AI_CONFIG.MAX_PENDING_PROPOSALS + corpEffects.maxPendingProposals
@@ -1421,7 +1486,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (pendingProposals.length === 0) return
 
     const manager = s.player.employees.find(
-      (e) => e.role === 'manager' && e.deskId != null && (e.stress ?? 0) < 100,
+      (e) => e.role === 'manager' && e.deskId != null && (e.stress ?? 0) < 100 && (e.burnoutTicks ?? 0) === 0,
     ) ?? null
 
     const absoluteTick = getAbsoluteTimestamp(s.time, s.config.startYear)
@@ -1445,6 +1510,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         s.player.portfolio,
         s.playerProfile,
         s.personalizationEnabled,
+        s.player.totalAssetValue,
+        s.marketRegime?.current,
       )
 
       updatedProposals = updatedProposals.map((p) => {
@@ -1555,8 +1622,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       s = get() // ✨ 리셋 후 최신 상태로 업데이트
     }
 
-    // ✨ 하루 거래 제한: 최대 3회 체크
-    if (s.player.dailyTradeCount >= 3) {
+    // ✨ 하루 거래 제한: 트레이더 수 기반 동적 한도
+    const traderCount = s.player.employees.filter(
+      (e) => e.role === 'trader' && e.deskId != null && (e.stress ?? 0) < 100 && (e.burnoutTicks ?? 0) === 0,
+    ).length
+    const dailyTradeLimit = Math.max(3, traderCount * 2)
+    if (s.player.dailyTradeCount >= dailyTradeLimit) {
       // Cooldown: 하루에 한 번만 경고 (스팸 방지)
       const lastLimitWarning = s.officeEvents
         .filter((ev) => ev.type === 'warning' && ev.message.includes('하루 거래 한도'))
@@ -1568,7 +1639,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             timestamp: absoluteTick,
             type: 'warning',
             emoji: '⏸️',
-            message: '하루 거래 한도 도달 (3회). 내일 다시 시도하세요.',
+            message: `하루 거래 한도 도달 (${dailyTradeLimit}회). 내일 다시 시도하세요.`,
             employeeIds: [],
             hour: s.time.hour,
           }].slice(-200),
@@ -1581,7 +1652,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (approvedProposals.length === 0) return
 
     const trader = s.player.employees.find(
-      (e) => e.role === 'trader' && e.deskId != null && (e.stress ?? 0) < 100,
+      (e) => e.role === 'trader' && e.deskId != null && (e.stress ?? 0) < 100 && (e.burnoutTicks ?? 0) === 0,
     ) ?? null
 
     const absoluteTick = getAbsoluteTimestamp(s.time, s.config.startYear)
@@ -1658,7 +1729,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     const corpEffectsForTrade = s.getCorporateEffects()
-    const result = executeProposal(proposal, trader, company.price, s.player.cash, adjBonus, company.volatility ?? 0.2, corpEffectsForTrade)
+    const result = executeProposal(proposal, trader, company.price, s.player.cash, adjBonus, company.volatility ?? 0.2, corpEffectsForTrade, s.marketRegime?.current, s.player.totalAssetValue)
 
     if (result.success) {
       // Compute toast significance
@@ -1721,6 +1792,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
                   executedAt: absoluteTick,
                   executedPrice: result.executedPrice,
                   slippage: result.slippage,
+                  appliedBadgeEffects: [
+                    ...(p.appliedBadgeEffects ?? []),
+                    ...(result.appliedBadgeEffects ?? []),
+                  ].length > 0
+                    ? [...(p.appliedBadgeEffects ?? []), ...(result.appliedBadgeEffects ?? [])]
+                    : undefined,
                 }
               : p,
           ),
@@ -1736,10 +1813,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 e.id === proposal.reviewedByEmployeeId ||
                 e.id === trader?.id
               ) {
-                return {
+                const updated: typeof e = {
                   ...e,
                   satisfaction: Math.min(100, (e.satisfaction ?? 50) + TRADE_AI_CONFIG.SUCCESS_SATISFACTION_GAIN),
                 }
+                // ✨ Phase 8: 거래 성공 시 pityCounters.successfulTrades 증가
+                if (e.id === proposal.createdByEmployeeId) {
+                  const counters = updated.pityCounters ?? {
+                    rareTrait: 0, highBadge: 0, crisisSurvivals: 0,
+                    successfulTrades: 0, highStressMonths: 0,
+                  }
+                  updated.pityCounters = {
+                    ...counters,
+                    successfulTrades: (counters.successfulTrades ?? 0) + 1,
+                  }
+                }
+                return updated
               }
               return e
             }),
@@ -1841,10 +1930,63 @@ export const useGameStore = create<GameStore>((set, get) => ({
               }
             }
           }
+
+          // MI-4: 거래 규모별 축하 스케일링
+          const pnlRatio = totalAssets > 0 ? Math.abs(tradePnl) / totalAssets : 0
+          if (pnlRatio >= 0.01) {
+            const isProfit = tradePnl > 0
+            const formattedPnl = `${isProfit ? '+' : ''}${(tradePnl / 10000).toFixed(0)}만원`
+            if (pnlRatio >= 0.10) {
+              // >10%: Level 3 세레모니 + 컨페티
+              dispatchCelebration(createCelebration(
+                3,
+                isProfit ? `역대급 거래! ${formattedPnl}` : `대형 손실 경고! ${formattedPnl}`,
+                `${proposal.ticker} 매도 — 자산 대비 ${(pnlRatio * 100).toFixed(1)}%`,
+                isProfit ? '🎉' : '💀',
+                { color: isProfit ? 'gold' : 'red', confetti: isProfit },
+              ))
+            } else if (pnlRatio >= 0.05) {
+              // 5~10%: Level 2 배너
+              dispatchCelebration(createCelebration(
+                2,
+                isProfit ? `대형 수익! ${formattedPnl}` : `큰 손실... ${formattedPnl}`,
+                `${proposal.ticker} 매도`,
+                isProfit ? '💰' : '📉',
+                { color: isProfit ? 'green' : 'red' },
+              ))
+            } else {
+              // 1~5%: Level 1 토스트
+              dispatchCelebration(createCelebration(
+                1,
+                `${isProfit ? '+' : ''}${formattedPnl} ${isProfit ? '수익' : '손실'}`,
+                `${proposal.ticker}`,
+                isProfit ? '💵' : '📊',
+                { color: isProfit ? 'green' : 'red' },
+              ))
+            }
+          }
         }
       }
       if (result.fee > 0) {
         get().recordCashFlow('TRADE_FEE', -result.fee, `${proposal.ticker} 거래 수수료`, tradeMeta)
+      }
+
+      // ✨ Phase 4: 부분체결 미체결 물량 → 새 APPROVED 제안으로 재시도
+      if (result.partialFillRemaining && result.partialFillRemaining > 0) {
+        const remainingProposal = {
+          ...proposal,
+          id: `${proposal.id}-partial-${absoluteTick}`,
+          quantity: result.partialFillRemaining,
+          status: 'APPROVED' as ProposalStatus,
+          createdAt: absoluteTick,
+          reviewedAt: absoluteTick,
+          executedAt: null,
+          executedPrice: null,
+          slippage: null,
+        }
+        set((st) => ({
+          proposals: [...st.proposals, remainingProposal],
+        }))
       }
     } else {
       // Compute toast significance for failure
@@ -1913,6 +2055,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((s) => ({ time: { ...s.time, isPaused: !s.time.isPaused } }))
     // Personalization: Log settings change
     get().logPlayerEvent('SETTINGS', { isPaused: !wasPaused })
+  },
+
+  autoPauseForEvent: (reason: string) => {
+    const s = get()
+    if (s.time.isPaused && !s.isFastForwarding) return
+    // Stop fast-forward if active
+    if (s.isFastForwarding) {
+      setCelebrationSuppressed(false)
+      set({
+        isFastForwarding: false,
+        fastForwardProgress: null,
+      })
+    }
+    set((st) => ({ time: { ...st.time, isPaused: true } }))
+    // Dispatch auto-pause banner (bypasses fast-forward suppression)
+    window.dispatchEvent(new CustomEvent('celebration', {
+      detail: createCelebration(
+        2,
+        `⏸ ${reason}`,
+        '게임이 자동으로 일시정지되었습니다.',
+        '⚠️',
+        { color: 'gold', duration: 8000 },
+      ),
+    }))
   },
 
   dismissCeremony: () => {
@@ -2424,6 +2590,58 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (get().personalizationEnabled) {
       get().updateProfileOnMonthEnd()
     }
+
+    // ✨ Phase 8: 동적 trait 해금 + pityCounters 갱신
+    {
+      const currentRegime = get().marketRegime?.current
+
+      set((st) => ({
+        player: {
+          ...st.player,
+          employees: st.player.employees.map((emp) => {
+            // pityCounters 초기화 (기존 세이브 호환)
+            const counters = emp.pityCounters ?? {
+              rareTrait: 0, highBadge: 0, crisisSurvivals: 0,
+              successfulTrades: 0, highStressMonths: 0,
+            }
+
+            // 월간 카운터 갱신
+            const updatedCounters = { ...counters }
+            if (currentRegime === 'CRISIS') {
+              updatedCounters.crisisSurvivals += 1
+            }
+            if ((emp.stress ?? 0) > 60) {
+              updatedCounters.highStressMonths += 1
+            } else {
+              updatedCounters.highStressMonths = 0
+            }
+
+            // trait 해금 체크
+            const empWithCounters = { ...emp, pityCounters: updatedCounters }
+            const newTrait = checkTraitUnlock(empWithCounters)
+            if (newTrait) {
+              const currentTraits = emp.traits ?? []
+              updatedCounters.rareTrait = 0 // 리셋
+              return {
+                ...emp,
+                traits: [...currentTraits, newTrait],
+                pityCounters: updatedCounters,
+              }
+            }
+
+            // trait 미획득 시 피티 카운터 증가
+            if ((emp.level ?? 1) >= 10) {
+              updatedCounters.rareTrait += 1
+            }
+
+            return { ...emp, pityCounters: updatedCounters }
+          }),
+        },
+      }))
+    }
+
+    // ✨ 연봉 협상 트리거 (6개월 주기)
+    get().checkNegotiationTriggers()
   },
 
   /* ── Trading ── */
@@ -2750,7 +2968,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   updateSessionOpenPrices: (historicalOpens) =>
     set((s) => {
       // Calculate KOSPI index at session open
-      const kospiIndex = calculateKOSPIIndex(s.companies)
+      const kospiIndex = calculateKOSPIIndex(s.companies.filter((c) => c.status !== 'acquired'))
 
       return {
         companies: s.companies.map((c) => {
@@ -2781,13 +2999,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   /* ── Market Regime Detection ── */
   calculateMarketIndex: () => {
     const state = get()
-    return calculateMarketIndex(state.companies)
+    return calculateMarketIndex(state.companies.filter((c) => c.status !== 'acquired'))
   },
 
   detectAndUpdateRegime: () =>
     set((s) => {
-      // Calculate current market index
-      const currentIndex = calculateMarketIndex(s.companies)
+      // Calculate current market index (exclude acquired companies)
+      const currentIndex = calculateMarketIndex(s.companies.filter((c) => c.status !== 'acquired'))
 
       // Update index history (keep last 20)
       const newIndexHistory = [...s.marketIndexHistory, currentIndex].slice(-20)
@@ -2837,8 +3055,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   updateCircuitBreaker: () =>
     set((s) => {
-      // Calculate KOSPI index
-      const kospiIndex = calculateKOSPIIndex(s.companies)
+      // Calculate KOSPI index (exclude acquired companies)
+      const kospiIndex = calculateKOSPIIndex(s.companies.filter((c) => c.status !== 'acquired'))
 
       // Check circuit breaker
       const newCircuitBreaker = checkCircuitBreaker(
@@ -2914,11 +3132,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       if (s.player.cash < adjustedSalary * 3) return s // Must afford 3 months upfront (adjusted)
 
-      // ✨ 뱃지 생성 (스킬 기반)
-      const badges = generateBadgesFromSkills(skills)
+      const employeeId = `emp-${++employeeIdCounter}`
+
+      // ✨ 뱃지 생성 (스킬 기반 + 시드/trait 기반 랜덤화)
+      const badges = generateBadgesFromSkills(skills, employeeId, traits)
 
       const employee: Employee = {
-        id: `emp-${++employeeIdCounter}`,
+        id: employeeId,
         name: generateEmployeeName(),
         role,
         salary: adjustedSalary,
@@ -2951,6 +3171,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         level: 1,
         xp: 0,
         xpToNextLevel: 1000,
+
+        // ✨ Phase 5: 습관 초기화 (trait 기반)
+        habits: createInitialHabits(traits),
       }
 
       // ✨ RPG Skill Tree: Initialize progression system
@@ -3012,6 +3235,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   fireEmployee: (id) => {
     cleanupChatterCooldown(id)
     cleanupInteractionCooldowns(id)
+    cleanupBehaviorState(id)
     set((s) => {
       const emp = s.player.employees.find((e) => e.id === id)
       if (!emp) return s
@@ -3101,9 +3325,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const emp = s.player.employees[empIdx]
       if (!emp.skills) return s
 
-      const newBadges = generateBadgesFromSkills(emp.skills)
+      const newBadges = generateBadgesFromSkills(emp.skills, emp.id, emp.traits)
+
+      // R6: highBadge 피티 카운터 — 상위 뱃지(level 4+) 없으면 카운터 증가, 8 도달 시 보장
+      const hasHighBadge = newBadges.some((b) => b.level >= 4)
+      let pityCounters = emp.pityCounters ? { ...emp.pityCounters } : { rareTrait: 0, highBadge: 0, crisisSurvivals: 0, successfulTrades: 0, highStressMonths: 0 }
+      if (hasHighBadge) {
+        pityCounters = { ...pityCounters, highBadge: 0 }
+      } else {
+        pityCounters = { ...pityCounters, highBadge: (pityCounters.highBadge ?? 0) + 1 }
+        if (pityCounters.highBadge >= 8 && newBadges.length > 0) {
+          // 최고 레벨 뱃지를 level 4로 승격
+          newBadges[0] = { ...newBadges[0], level: 4 as 1 | 2 | 3 | 4 | 5 }
+          pityCounters = { ...pityCounters, highBadge: 0 }
+        }
+      }
+
       const updatedEmployees = [...s.player.employees]
-      updatedEmployees[empIdx] = { ...emp, badges: newBadges }
+      updatedEmployees[empIdx] = { ...emp, badges: newBadges, pityCounters }
 
       return {
         player: { ...s.player, employees: updatedEmployees },
@@ -3236,6 +3475,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         skill_library: '스킬 도감',
         training_center: '교육 센터',
         playstyle_analytics: '플레이스타일 분석',
+        spy: '스파이',
+        negotiation: '연봉 협상',
       }
 
       const windowSizes: Record<string, { width: number; height: number }> = {
@@ -3257,6 +3498,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         achievement_log: { width: 500, height: 440 },
         settings: { width: 420, height: 360 },
         dashboard: { width: 900, height: 680 },
+        negotiation: { width: 380, height: 520 },
+        spy: { width: 480, height: 560 },
       }
       const windowSize = windowSizes[type] ?? { width: 420, height: 340 }
 
@@ -3315,6 +3558,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
               achievement_log: { width: 500, height: 440 },
               settings: { width: 420, height: 360 },
               dashboard: { width: 900, height: 680 },
+              negotiation: { width: 380, height: 520 },
+              spy: { width: 480, height: 560 },
             }
             const defaults = defaultSizes[w.type] ?? { width: 420, height: 340 }
             const prev = w.preMaximize ?? { x: 50, y: 50, ...defaults }
@@ -4045,6 +4290,35 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const totalAssets = s.player.cash + calcPortfolioValue(s.player.portfolio, s.companies)
     const updated = updateTier(s.economicPressure, totalAssets)
     if (updated !== s.economicPressure) {
+      // 등급 전환 감지
+      if (updated.currentTier !== s.economicPressure.currentTier) {
+        const tierOrder = ['beginner', 'growing', 'established', 'wealthy', 'rich', 'tycoon']
+        const tierLabels: Record<string, string> = {
+          beginner: '초보 투자자', growing: '성장하는 투자자',
+          established: '안정된 투자자', wealthy: '부유한 투자자',
+          rich: '거부', tycoon: '타이쿤',
+        }
+        const label = tierLabels[updated.currentTier] ?? updated.currentTier
+        const isPromotion = tierOrder.indexOf(updated.currentTier) > tierOrder.indexOf(s.economicPressure.currentTier)
+        if (isPromotion) {
+          dispatchCelebration(createCelebration(
+            2,
+            `${label} 등극!`,
+            `부의 등급이 "${label}"(으)로 상승했습니다!`,
+            '🏆',
+            { color: 'gold', sound: 'achievement' },
+          ))
+          soundManager.playMilestone()
+        } else {
+          dispatchCelebration(createCelebration(
+            1,
+            `등급 하락: ${label}`,
+            `자산 감소로 "${label}" 등급으로 변경되었습니다.`,
+            '📉',
+            { color: 'red' },
+          ))
+        }
+      }
       set({ economicPressure: updated })
     }
   },
@@ -4162,6 +4436,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
             })
           )
           dispatchCelebration(celebrateMilestone(milestone.title, milestone.description, milestone.icon))
+
+          // MI-1: Auto-pause on major financial milestones
+          if (milestone.category === 'financial') {
+            get().autoPauseForEvent(`마일스톤 달성: ${milestone.title}`)
+          }
         }
       } catch (err) {
         console.error(`[Milestone] checkFn failed for ${def.id}:`, err)
@@ -4348,6 +4627,145 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ),
       },
     }))
+  },
+
+  /* ── Spy System ── */
+  startSpyMission: (targetCompetitorId, tier) => {
+    const s = get()
+    const check = canStartMission(s.spyMissions, targetCompetitorId, s.currentTick)
+    if (!check.canStart) return
+
+    const cost = getMissionCost(tier)
+    if (s.player.cash < cost) return
+
+    const mission = createMission(targetCompetitorId, tier, s.currentTick)
+    set({
+      spyMissions: [...s.spyMissions, mission],
+      player: { ...s.player, cash: s.player.cash - cost },
+    })
+  },
+
+  processSpyTick: () => {
+    const s = get()
+    if (s.spyMissions.length === 0) return
+
+    const activeMissions = s.spyMissions.filter((m) => m.status === 'in_progress')
+    if (activeMissions.length === 0) {
+      // 만료된 인텔 정리만 수행
+      const cleaned = cleanExpiredIntel(s.spyIntel, s.currentTick)
+      if (cleaned.length !== s.spyIntel.length) {
+        set({ spyIntel: cleaned })
+      }
+      return
+    }
+
+    const result = processSpyMissions(s.spyMissions, s.competitors, s.currentTick)
+
+    // 소송 패널티 적용
+    let cashPenalty = 0
+    if (result.lawsuitPenalty > 0) {
+      cashPenalty = Math.floor(s.player.totalAssetValue * result.lawsuitPenalty)
+    }
+
+    // 만료된 인텔 정리
+    const mergedIntel = [...s.spyIntel, ...result.newIntel]
+    const cleanedIntel = cleanExpiredIntel(mergedIntel, s.currentTick)
+
+    set({
+      spyMissions: result.updatedMissions,
+      spyIntel: cleanedIntel,
+      player: cashPenalty > 0
+        ? { ...s.player, cash: Math.max(0, s.player.cash - cashPenalty) }
+        : s.player,
+    })
+  },
+
+  /* ── Salary Negotiation System ── */
+  startNegotiation: (employeeId) => {
+    const s = get()
+    if (s.activeNegotiation) return // 이미 협상 진행 중
+
+    const employee = s.player.employees.find((e) => e.id === employeeId)
+    if (!employee) return
+
+    const negotiationState = createNegotiationState(employee)
+    set({ activeNegotiation: negotiationState })
+    get().openWindow('negotiation')
+  },
+
+  updateNegotiation: (update) => {
+    set((s) => ({
+      activeNegotiation: s.activeNegotiation
+        ? { ...s.activeNegotiation, ...update }
+        : null,
+    }))
+  },
+
+  completeNegotiation: () => {
+    const s = get()
+    const neg = s.activeNegotiation
+    if (!neg || !neg.result) return
+
+    const monthNum = (s.time.year - s.config.startYear) * 12 + s.time.month
+
+    set((st) => {
+      const updatedEmployees = st.player.employees.map((emp) => {
+        if (emp.id !== neg.employeeId) return emp
+
+        let newSalary = emp.salary
+        let newSatisfaction = emp.satisfaction ?? 50
+
+        if (neg.result === 'full') {
+          newSalary = Math.round(emp.salary * (1 + neg.demandedRaise))
+          newSatisfaction = Math.min(100, newSatisfaction + NEGOTIATION_CONFIG.FULL_APPROVE_SATISFACTION_BONUS)
+        } else if (neg.result === 'partial') {
+          newSalary = Math.round(emp.salary * (1 + (neg.finalRaise ?? 0)))
+          // 절충은 만족도 변화 없음
+        } else {
+          // rejected
+          newSatisfaction = Math.max(0, newSatisfaction + NEGOTIATION_CONFIG.REJECTION_SATISFACTION_PENALTY)
+        }
+
+        return {
+          ...emp,
+          salary: newSalary,
+          satisfaction: newSatisfaction,
+          lastNegotiationMonth: monthNum,
+        }
+      })
+
+      // 월비용 재계산
+      const newMonthlyExpenses = updatedEmployees.reduce((sum, e) => sum + e.salary, 0)
+
+      return {
+        player: {
+          ...st.player,
+          employees: updatedEmployees,
+          monthlyExpenses: newMonthlyExpenses,
+        },
+        activeNegotiation: null,
+      }
+    })
+
+    // 협상 창 닫기
+    const negotiationWindow = get().windows.find((w) => w.type === 'negotiation')
+    if (negotiationWindow) {
+      get().closeWindow(negotiationWindow.id)
+    }
+  },
+
+  checkNegotiationTriggers: () => {
+    const s = get()
+    if (s.activeNegotiation) return // 이미 협상 진행 중
+    if (s.player.employees.length === 0) return
+
+    const monthNum = (s.time.year - s.config.startYear) * 12 + s.time.month
+    const candidates = getEmployeesNeedingNegotiation(s.player.employees, monthNum)
+
+    if (candidates.length > 0) {
+      // 첫 번째 대상 직원부터 협상 시작
+      get().startNegotiation(candidates[0].id)
+    }
   },
 
   /* ── Flash ── */
@@ -4650,6 +5068,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // 포트폴리오 교환
     get().applyAcquisitionExchange(deal)
+
+    // 인수 후 관리 상태 생성 (플레이어가 타깃 주식 보유 시)
+    {
+      const postState = get()
+      const playerShares = postState.player.portfolio[targetId]?.shares ?? 0
+      if (playerShares > 0) {
+        import('../engines/acquisitionManagementEngine').then(({ createAcquiredCompanyState }) => {
+          const acqState = createAcquiredCompanyState(
+            targetId, acquirerId, deal.dealPrice, playerShares, postState.currentTick,
+          )
+          set((s) => ({
+            acquiredCompanyStates: [...s.acquiredCompanyStates, acqState],
+          }))
+        }).catch((err) => console.error('[M&A] Failed to create acquisition state:', err))
+      }
+    }
   },
 
   scheduleIPO: (slotIndex, delayTicks, newCompany) => {
@@ -4923,6 +5357,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     soundManager.playClick()
 
+    // 인수 후 관리 상태 생성
+    {
+      const postState = get()
+      // 플레이어 인수의 경우 보유 주식은 인수 전 포트폴리오 기준 (이미 정산됨)
+      // dealPrice * 총시가총액 / price = 주식 수 근사치
+      const playerShares = Math.max(1, Math.round(totalCost / deal.dealPrice))
+      import('../engines/acquisitionManagementEngine').then(({ createAcquiredCompanyState }) => {
+        const acqState = createAcquiredCompanyState(
+          targetId, 'PLAYER', deal.dealPrice, playerShares, postState.currentTick,
+        )
+        set((s) => ({
+          acquiredCompanyStates: [...s.acquiredCompanyStates, acqState],
+        }))
+      }).catch((err) => console.error('[Player M&A] Failed to create acquisition state:', err))
+    }
+
     // 인수 처리 완료
     set({ isAcquiring: false })
   },
@@ -4956,6 +5406,179 @@ export const useGameStore = create<GameStore>((set, get) => ({
       unreadNewsCount: s.unreadNewsCount + 1,
     }))
     console.log(`[KOSPI IPO] ${companyId} 상장 @ ${ipoPrice.toLocaleString()}원`)
+  },
+
+  /* ── Acquisition Management Actions ── */
+  processAcquisitionManagement: () => {
+    const s = get()
+    if (s.acquiredCompanyStates.length === 0) return
+
+    import('../engines/acquisitionManagementEngine').then(({ advanceIntegration, generateAcquisitionEvent, applyEventEffect, calculateDividend }) => {
+      import('../config/acquisitionConfig').then(({ ACQUISITION_MGMT_CONFIG }) => {
+        const currentState = get()
+        const isQuarter = [3, 6, 9, 12].includes(currentState.time.month)
+
+        const pendingNews: any[] = []
+        const pendingDriftUpdates: Array<{ companyId: string; driftDelta: number }> = []
+        let pendingDividends = 0
+        const pendingDividendDescriptions: string[] = []
+
+        const phaseLabels: Record<string, string> = {
+          restructuring: '구조조정',
+          integration: '통합',
+          synergy: '시너지',
+          complete: '완료',
+        }
+
+        const updatedStates = currentState.acquiredCompanyStates.map((acqState) => {
+          // 월간 통합 진행
+          let updated = advanceIntegration(acqState)
+          const prevPhase = acqState.phase
+          const newPhase = updated.phase
+
+          // 단계 전환 시 뉴스 생성
+          if (prevPhase !== newPhase) {
+            const target = currentState.companies.find((c) => c.id === acqState.companyId)
+            if (target) {
+              pendingNews.push({
+                id: `acq-phase-${acqState.companyId}-${currentState.currentTick}`,
+                timestamp: { ...currentState.time },
+                headline: `[인수] ${target.name} 통합 ${phaseLabels[newPhase]} 단계 진입`,
+                body: `${target.name}의 인수 후 통합이 ${updated.integrationProgress}% 진행되었습니다. 현재 ${phaseLabels[newPhase]} 단계입니다.`,
+                isBreaking: newPhase === 'complete',
+                sentiment: (newPhase === 'complete' ? 'positive' : 'neutral') as 'positive' | 'neutral',
+                relatedCompanies: [acqState.companyId, acqState.acquirerId],
+              })
+            }
+
+            // 통합 완료 시 인수자 drift 보너스
+            if (newPhase === 'complete') {
+              pendingDriftUpdates.push({
+                companyId: acqState.acquirerId,
+                driftDelta: ACQUISITION_MGMT_CONFIG.COMPLETE_SYNERGY_DRIFT_BONUS,
+              })
+            }
+          }
+
+          // 분기 처리: 이벤트 + 배당
+          if (isQuarter) {
+            // 랜덤 이벤트
+            const event = generateAcquisitionEvent(updated, currentState.currentTick)
+            if (event) {
+              updated = applyEventEffect(updated, event)
+
+              // 이벤트 뉴스
+              const target = currentState.companies.find((c) => c.id === acqState.companyId)
+              if (target) {
+                pendingNews.push({
+                  id: `acq-evt-news-${event.id}`,
+                  timestamp: { ...currentState.time },
+                  headline: `[인수] ${target.name}: ${event.title}`,
+                  body: event.description,
+                  isBreaking: false,
+                  sentiment: ((event.effect.integrationDelta ?? 0) >= 0 ? 'neutral' : 'negative') as 'neutral' | 'negative',
+                  relatedCompanies: [acqState.companyId, acqState.acquirerId],
+                })
+              }
+
+              // 인수자 drift 변화
+              if (event.effect.acquirerDriftDelta) {
+                pendingDriftUpdates.push({
+                  companyId: acqState.acquirerId,
+                  driftDelta: event.effect.acquirerDriftDelta,
+                })
+              }
+            }
+
+            // 배당 지급
+            const dividend = calculateDividend(updated)
+            if (dividend > 0) {
+              updated = {
+                ...updated,
+                totalDividendsReceived: updated.totalDividendsReceived + dividend,
+              }
+              pendingDividends += dividend
+              const target = currentState.companies.find((c) => c.id === acqState.companyId)
+              pendingDividendDescriptions.push(
+                `${target?.name ?? acqState.companyId} 배당 ${Math.round(dividend).toLocaleString()}원`,
+              )
+            }
+          }
+
+          return updated
+        })
+
+        // 상태 업데이트
+        set({ acquiredCompanyStates: updatedStates })
+
+        // 뉴스 추가
+        if (pendingNews.length > 0) {
+          set((st) => ({
+            news: [...pendingNews, ...st.news],
+            unreadNewsCount: st.unreadNewsCount + pendingNews.length,
+          }))
+        }
+
+        // drift 업데이트
+        if (pendingDriftUpdates.length > 0) {
+          set((st) => ({
+            companies: st.companies.map((c) => {
+              const update = pendingDriftUpdates.find((u) => u.companyId === c.id)
+              if (update) {
+                return { ...c, drift: c.drift + update.driftDelta }
+              }
+              return c
+            }),
+          }))
+        }
+
+        // 배당금 지급
+        if (pendingDividends > 0) {
+          set((st) => ({
+            player: { ...st.player, cash: st.player.cash + pendingDividends },
+          }))
+          const desc = pendingDividendDescriptions.join(', ')
+          get().recordCashFlow('MNA_DIVIDEND', pendingDividends, `인수 배당: ${desc}`)
+        }
+      })
+    }).catch((err) => console.error('[Acquisition Management] Error:', err))
+  },
+
+  processAcquisitionDividends: () => {
+    // 분기 배당은 processAcquisitionManagement 내부에서 처리됨
+    // 이 액션은 외부에서 명시적으로 배당만 처리할 때 사용
+    const s = get()
+    if (s.acquiredCompanyStates.length === 0) return
+
+    import('../engines/acquisitionManagementEngine').then(({ calculateDividend }) => {
+      let totalDividend = 0
+      const descriptions: string[] = []
+
+      for (const acqState of s.acquiredCompanyStates) {
+        const dividend = calculateDividend(acqState)
+        if (dividend > 0) {
+          totalDividend += dividend
+          const target = s.companies.find((c) => c.id === acqState.companyId)
+          descriptions.push(`${target?.name ?? acqState.companyId} ${Math.round(dividend).toLocaleString()}원`)
+
+          // 누적 배당 업데이트
+          set((st) => ({
+            acquiredCompanyStates: st.acquiredCompanyStates.map((a) =>
+              a.companyId === acqState.companyId
+                ? { ...a, totalDividendsReceived: a.totalDividendsReceived + dividend }
+                : a,
+            ),
+          }))
+        }
+      }
+
+      if (totalDividend > 0) {
+        set((st) => ({
+          player: { ...st.player, cash: st.player.cash + totalDividend },
+        }))
+        get().recordCashFlow('MNA_DIVIDEND', totalDividend, `인수 배당: ${descriptions.join(', ')}`)
+      }
+    }).catch((err) => console.error('[Acquisition Dividends] Error:', err))
   },
 
   /* ── Auto-sell (Profit-Taking) Actions ── */
@@ -5112,7 +5735,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const currentTick = getAbsoluteTimestamp(time, updatedState.config.startYear)
     const responseEffects = computePlayerResponseEffects(updatedState.taunts, currentTick)
 
-    // Process AI trading (with Mirror Rival personalization + player response effects)
+    // Process AI trading (with regime awareness + Mirror Rival personalization + player response effects)
     const actions = processAITrading(
       updatedState.competitors,
       companies,
@@ -5121,6 +5744,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       playerProfile,
       personalizationEnabled,
       responseEffects,
+      updatedState.marketRegime?.current,
     )
 
     // Filter out actions targeting VI-halted companies
@@ -5192,6 +5816,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
           const proceeds = action.quantity * action.price
           competitor.cash += proceeds
+
+          // ✨ Phase 2: 트레이드 메모리 업데이트
+          const company = state.companies.find((c) => c.id === action.companyId)
+          if (company) {
+            const mem = competitor.memory ?? initCompetitorMemory()
+            competitor.memory = updateCompetitorMemory(mem, {
+              companyId: action.companyId,
+              sector: company.sector,
+              buyPrice: position.avgBuyPrice,
+              sellPrice: action.price,
+              timestamp: batchTick,
+            })
+          }
+
           position.shares -= action.quantity
 
           if (position.shares <= 0) {
@@ -5505,9 +6143,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // Apply role-based XP multiplier for direct XP grants
     const empForMult = get().player.employees.find((e) => e.id === employeeId)
-    const scaledAmount = empForMult
+    let scaledAmount = empForMult
       ? amount * xpMultiplierForRole(empForMult.role, empForMult.level ?? 1)
       : amount
+
+    // ✨ Phase 8: lucky trait — 10% 확률로 XP 2배
+    if (empForMult?.traits?.includes('lucky') && Math.random() < 0.1) {
+      scaledAmount *= 2
+    }
 
     soundManager.playXPGain()
     set((s) => {
@@ -5753,6 +6396,38 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return result
   },
 
+  respecSkillPath: (employeeId) => {
+    const s = get()
+    const emp = s.player.employees.find((e) => e.id === employeeId)
+    if (!emp) return { success: false, cost: 0, reason: '직원을 찾을 수 없습니다' }
+
+    const pathState = s.employeeSkillPaths?.[employeeId]
+    const monthNum = (s.time.year - s.config.startYear) * 12 + s.time.month
+    const check = canRespecFn(pathState, emp.level ?? 1, s.player.cash, undefined, monthNum)
+
+    if (!check.allowed) {
+      return { success: false, cost: check.cost, reason: check.reason }
+    }
+
+    // ✨ Fix 7: 리스펙 디버프 3개월 (스킬 성장 -10%)
+    const respecDebuffUntilMonth = monthNum + 3
+
+    set((st) => ({
+      player: {
+        ...st.player,
+        cash: st.player.cash - check.cost,
+        totalAssetValue: (st.player.cash - check.cost) + calcPortfolioValue(st.player.portfolio, st.companies),
+      },
+      employeeSkillPaths: {
+        ...st.employeeSkillPaths,
+        [employeeId]: { ...executeRespecFn(), respecDebuffUntilMonth },
+      },
+    }))
+
+    get().recordCashFlow('SKILL_RESET', -check.cost, `스킬 경로 리스펙`, { employeeId })
+    return { success: true, cost: check.cost }
+  },
+
   /* ── Office Grid (Sprint 2) ── */
   initializeOfficeGrid: () => {
     set((s) => {
@@ -5943,10 +6618,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const state = get()
     if (state.player.employees.length === 0) return
 
+    // ✨ Fix 7: 리스펙 디버프 맵 생성
+    const respecDebuffs: Record<string, number | undefined> = {}
+    if (state.employeeSkillPaths) {
+      for (const [empId, pathState] of Object.entries(state.employeeSkillPaths)) {
+        if (pathState?.respecDebuffUntilMonth) {
+          respecDebuffs[empId] = pathState.respecDebuffUntilMonth
+        }
+      }
+    }
+
     const { updatedEmployees, resignedIds, warnings, officeEvents, behaviors, interactions } = updateOfficeSystem(
       state.player.employees,
       state.player.officeGrid,
       state.time,
+      state.marketRegime?.current,
+      state.companies,
+      state.player.portfolio,
+      respecDebuffs,
+      state.config.startYear,
     )
 
     // 퇴사 경고 뉴스
@@ -5982,6 +6672,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const emp = state.player.employees.find((e) => e.id === id)
       cleanupChatterCooldown(id)
       cleanupInteractionCooldowns(id)
+      cleanupBehaviorState(id)
       if (emp) {
         // 좌석 정리
         if (emp.seatIndex != null && state.player.officeGrid) {
@@ -6082,14 +6773,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const behaviorMap: Record<string, string> = {}
     behaviors.forEach((b) => { behaviorMap[b.employeeId] = b.action })
 
-    // ✨ 스킬 변경 직후 뱃지 업데이트 (배치 처리)
+    // ✨ 스킬 변경 직후 뱃지 업데이트 (배치 처리) + 피티 카운터 추적
     const processedMap = new Map<string, Employee>()
     hrResult.updatedEmployees.forEach((emp) => {
       if (!emp.skills) {
         processedMap.set(emp.id, emp)
       } else {
-        const newBadges = generateBadgesFromSkills(emp.skills)
-        processedMap.set(emp.id, { ...emp, badges: newBadges })
+        const newBadges = generateBadgesFromSkills(emp.skills, emp.id, emp.traits)
+        const hasHighBadge = newBadges.some((b) => b.level >= 4)
+        let pityCounters = emp.pityCounters ? { ...emp.pityCounters } : { rareTrait: 0, highBadge: 0, crisisSurvivals: 0, successfulTrades: 0, highStressMonths: 0 }
+        if (hasHighBadge) {
+          pityCounters = { ...pityCounters, highBadge: 0 }
+        } else {
+          pityCounters = { ...pityCounters, highBadge: (pityCounters.highBadge ?? 0) + 1 }
+          if (pityCounters.highBadge >= 8 && newBadges.length > 0) {
+            newBadges[0] = { ...newBadges[0], level: 4 as 1 | 2 | 3 | 4 | 5 }
+            pityCounters = { ...pityCounters, highBadge: 0 }
+          }
+        }
+        processedMap.set(emp.id, { ...emp, badges: newBadges, pityCounters })
       }
     })
 
@@ -6143,6 +6845,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             skills: processed.skills,
             badges: processed.badges,
             sprite: processed.sprite,
+            burnoutTicks: processed.burnoutTicks,
           }
         }),
         cash: Math.max(0, s.player.cash - hrResult.cashSpent),
@@ -6150,6 +6853,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       officeEvents: [...s.officeEvents, ...officeEvents].slice(-200), // Keep last 200
       employeeBehaviors: behaviorMap,
     }))
+
+    // MI-1: Auto-pause on employee burnout
+    const burnoutEvents = officeEvents.filter((e) => e.message?.includes('번아웃 상태에 진입'))
+    if (burnoutEvents.length > 0) {
+      const names = burnoutEvents.map((e) => e.message.split(':')[0]).join(', ')
+      get().autoPauseForEvent(`${names} 번아웃 진입!`)
+    }
 
     // Record HR cash flow
     if (hrResult.cashSpent > 0) {

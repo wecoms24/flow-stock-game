@@ -38,21 +38,21 @@ export const BADGE_COLORS: Record<BadgeType, string> = {
 
 /* ── Skill Unlock Descriptions ── */
 export const SKILL_UNLOCKS: Record<number, { name: string; description: string }> = {
-  10: { name: 'Auto-Analysis', description: '매일 자동으로 시장 분석 1회 수행' },
-  20: { name: 'Deep Insight', description: '예측 정확도 +10% 향상' },
-  30: { name: 'Market Sense', description: '시장 변동성 사전 감지' },
+  5: { name: 'Auto-Analysis', description: '매일 자동으로 시장 분석 1회 수행' },
+  12: { name: 'Deep Insight', description: '예측 정확도 +10% 향상' },
+  22: { name: 'Market Sense', description: '시장 변동성 사전 감지' },
 }
 
 /* ── XP Sources ── */
 export const XP_AMOUNTS = {
   MONTHLY_WORK: 15, // 월간 총 XP (processHourly에서 /300 시간당 지급)
-  TRADE_SUCCESS: 10, // 거래 성공 시
+  TRADE_SUCCESS: 20, // 거래 성공 시
   PRAISE: 5, // 칭찬 받기
   PERFECT_STAMINA: 5, // 스태미너 50% 이상 유지
   INTERACTION_MENTORING: 8, // 멘토링 상호작용 시
   INTERACTION_COLLABORATION: 5, // 협업 상호작용 시
   PROPOSAL_APPROVED: 7, // 매매 제안 승인 시
-  PROPOSAL_PROFITABLE: 15, // 수익 낸 거래 완료 시
+  PROPOSAL_PROFITABLE: 25, // 수익 낸 거래 완료 시
   CRISIS_SURVIVAL: 12, // 위기 레짐에서 버티기
   SKILL_USAGE: 3, // 스킬 뱃지 효과 발동 시
   TRAINING_COMPLETE: 20, // 교육 프로그램 수료
@@ -66,24 +66,39 @@ export const LEVEL_REWARDS: Record<number, {
   statBoost?: { stress?: number; satisfaction?: number; stamina?: number }
   salaryMultiplier?: number
 }> = {
-  5: { title: '숙련', bonus: '기본 스킬 +5', statBoost: { satisfaction: 5 } },
+  5: {
+    title: '숙련',
+    bonus: 'Auto-Analysis 해금',
+    statBoost: { satisfaction: 5, stamina: 3 },
+    salaryMultiplier: 1.1,
+  },
   10: {
     title: '전문가',
-    bonus: 'Auto-Analysis 해금',
+    bonus: '분석 정확도 +5%',
     statBoost: { satisfaction: 10, stamina: 5 },
     salaryMultiplier: 1.2,
+  },
+  12: {
+    title: '통찰자',
+    bonus: 'Deep Insight 해금',
+    statBoost: { satisfaction: 8, stamina: 5 },
   },
   15: { title: '베테랑', bonus: '시너지 보너스 +10%', statBoost: { satisfaction: 5 } },
   20: {
     title: '달인',
-    bonus: 'Deep Insight 해금',
+    bonus: '매매 슬리피지 -10%',
     statBoost: { satisfaction: 15, stamina: 10 },
     salaryMultiplier: 1.5,
+  },
+  22: {
+    title: '선각자',
+    bonus: 'Market Sense 해금',
+    statBoost: { satisfaction: 10, stamina: 5 },
   },
   25: { title: '전설', bonus: '매매 수수료 -20%', statBoost: { satisfaction: 10 } },
   30: {
     title: '마스터',
-    bonus: 'Market Sense 해금 + 전체 보너스',
+    bonus: '전체 보너스 + 최종 승급',
     statBoost: { satisfaction: 20, stamina: 15 },
     salaryMultiplier: 2.0,
   },

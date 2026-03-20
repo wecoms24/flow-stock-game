@@ -220,6 +220,13 @@ function ProposalItem({
 
           {/* 신뢰도 */}
           <span className="text-retro-gray">신뢰도 {proposal.confidence.toFixed(0)}%</span>
+
+          {/* 뱃지 효과 적용 표시 */}
+          {proposal.appliedBadgeEffects && proposal.appliedBadgeEffects.length > 0 && (
+            <span className="bg-purple-100 text-purple-700 px-1 py-0.5 rounded text-[9px] font-medium">
+              🏅 {proposal.appliedBadgeEffects.length}
+            </span>
+          )}
         </div>
 
         {/* 확장 아이콘 */}
@@ -262,6 +269,21 @@ function ProposalItem({
           )}
           {proposal.isMistake && (
             <div className="text-yellow-700">⚠️ 시스템 자동 처리 (Manager 부재)</div>
+          )}
+          {proposal.appliedBadgeEffects && proposal.appliedBadgeEffects.length > 0 && (
+            <div className="mt-0.5">
+              <span className="text-retro-gray">뱃지 효과:</span>
+              <div className="flex gap-1 flex-wrap mt-0.5">
+                {proposal.appliedBadgeEffects.map((effect, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center px-1 py-0.5 rounded bg-purple-50 border border-purple-200 text-[9px] text-purple-700"
+                  >
+                    🏅 {effect}
+                  </span>
+                ))}
+              </div>
+            </div>
           )}
           <div className="flex justify-between">
             <span className="text-retro-gray">생성 시각:</span>

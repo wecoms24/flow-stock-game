@@ -23,6 +23,7 @@ export interface TradeProposal {
   slippage: number | null // 0-0.01
   isMistake: boolean
   rejectReason: string | null
+  appliedBadgeEffects?: string[] // 적용된 뱃지 효과 이름 목록
 }
 
 export interface TradeResult {

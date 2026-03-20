@@ -63,6 +63,9 @@ export async function saveDataToSQLite(
     const chapterProgressJson = (data as any).chapterProgress ? JSON.stringify((data as any).chapterProgress) : null
     const companyProfileJson = (data as any).companyProfile ? JSON.stringify((data as any).companyProfile) : null
     const playerProfileJson = data.playerProfile ? JSON.stringify(data.playerProfile) : null
+    const acquiredCompanyStatesJson = data.acquiredCompanyStates ? JSON.stringify(data.acquiredCompanyStates) : null
+    const spyMissionsJson = data.spyMissions ? JSON.stringify(data.spyMissions) : null
+    const spyIntelJson = data.spyIntel ? JSON.stringify(data.spyIntel) : null
     const autoHREnabledVal = data.autoHREnabled ? 1 : 0
     const autoHRThresholdVal = data.autoHRThreshold ?? 80
 
@@ -83,8 +86,10 @@ export async function saveDataToSQLite(
         monthly_cards_json, event_chains_json, employee_bios_json, employee_skill_paths_json,
         corporate_skills_json, training_json, milestones_json, economic_pressure_json,
         chapter_progress_json, company_profile_json, player_profile_json,
+        acquired_company_states_json,
+        spy_missions_json, spy_intel_json,
         auto_hr_enabled, auto_hr_threshold
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(slot_name) DO UPDATE SET
         updated_at = ?,
         current_tick = ?,
@@ -103,6 +108,8 @@ export async function saveDataToSQLite(
         monthly_cards_json = ?, event_chains_json = ?, employee_bios_json = ?, employee_skill_paths_json = ?,
         corporate_skills_json = ?, training_json = ?, milestones_json = ?, economic_pressure_json = ?,
         chapter_progress_json = ?, company_profile_json = ?, player_profile_json = ?,
+        acquired_company_states_json = ?,
+        spy_missions_json = ?, spy_intel_json = ?,
         auto_hr_enabled = ?, auto_hr_threshold = ?
       RETURNING id;
     `, [
@@ -157,6 +164,9 @@ export async function saveDataToSQLite(
       chapterProgressJson,
       companyProfileJson,
       playerProfileJson,
+      acquiredCompanyStatesJson,
+      spyMissionsJson,
+      spyIntelJson,
       autoHREnabledVal,
       autoHRThresholdVal,
       // ON CONFLICT UPDATE parameters
@@ -204,6 +214,9 @@ export async function saveDataToSQLite(
       chapterProgressJson,
       companyProfileJson,
       playerProfileJson,
+      acquiredCompanyStatesJson,
+      spyMissionsJson,
+      spyIntelJson,
       autoHREnabledVal,
       autoHRThresholdVal,
     ])
@@ -278,8 +291,9 @@ export async function saveDataToSQLite(
           save_id, employee_id, name, role, salary, stamina, max_stamina, sprite, hired_month,
           stress, satisfaction, level, xp, xp_to_next_level, title, badge,
           seat_index, desk_id, praise_cooldown, scold_cooldown, mood,
-          bonus, traits, skills, badges, assigned_sectors, growth_log, progression, unlocked_skills
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+          bonus, traits, skills, badges, assigned_sectors, growth_log, progression, unlocked_skills,
+          burnout_ticks, last_negotiation_month, habits, pity_counters
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `, [
         saveId,
         employee.id,
@@ -310,6 +324,10 @@ export async function saveDataToSQLite(
         employee.growthLog ? JSON.stringify(employee.growthLog) : null,
         employee.progression ? JSON.stringify(employee.progression) : null,
         employee.unlockedSkills ? JSON.stringify(employee.unlockedSkills) : null,
+        employee.burnoutTicks ?? 0,
+        employee.lastNegotiationMonth ?? null,
+        employee.habits ? JSON.stringify(employee.habits) : null,
+        employee.pityCounters ? JSON.stringify(employee.pityCounters) : null,
       ])
     }
 
@@ -320,8 +338,8 @@ export async function saveDataToSQLite(
           INSERT INTO competitors (
             save_id, competitor_id, name, avatar, style, cash, total_asset_value,
             roi, initial_assets, last_day_change, panic_sell_cooldown, is_mirror_rival, portfolio,
-            head_to_head_wins, head_to_head_losses
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            head_to_head_wins, head_to_head_losses, memory
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         `, [
           saveId,
           competitor.id,
@@ -338,6 +356,7 @@ export async function saveDataToSQLite(
           JSON.stringify(competitor.portfolio),
           competitor.headToHeadWins ?? 0,
           competitor.headToHeadLosses ?? 0,
+          competitor.memory ? JSON.stringify(competitor.memory) : null,
         ])
       }
     }
@@ -588,6 +607,10 @@ export async function sqliteToSaveData(
       mood: row.mood,
       progression: safeParseJSONOptional(row.progression),
       unlockedSkills: safeParseJSONOptional(row.unlocked_skills),
+      burnoutTicks: (row as any).burnout_ticks ?? 0,
+      lastNegotiationMonth: (row as any).last_negotiation_month ?? undefined,
+      habits: safeParseJSONOptional((row as any).habits),
+      pityCounters: safeParseJSONOptional((row as any).pity_counters),
     }))
 
     // 4. Load competitors
@@ -610,6 +633,7 @@ export async function sqliteToSaveData(
       isMirrorRival: row.is_mirror_rival === 1,
       headToHeadWins: (row as any).head_to_head_wins ?? 0,
       headToHeadLosses: (row as any).head_to_head_losses ?? 0,
+      memory: safeParseJSONOptional((row as any).memory),
     }))
 
     // 5. Load market events
@@ -862,6 +886,9 @@ export async function sqliteToSaveData(
       chapterProgress: safeParseJSONOptional(save.chapter_progress_json),
       companyProfile: safeParseJSONOptional(save.company_profile_json),
       playerProfile: safeParseJSONOptional(save.player_profile_json),
+      acquiredCompanyStates: safeParseJSONOptional((save as any).acquired_company_states_json),
+      spyMissions: safeParseJSONOptional((save as any).spy_missions_json),
+      spyIntel: safeParseJSONOptional((save as any).spy_intel_json),
       autoHREnabled: save.auto_hr_enabled === 1,
       autoHRThreshold: save.auto_hr_threshold ?? 80,
     }

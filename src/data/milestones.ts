@@ -46,6 +46,15 @@ export const MILESTONE_DEFINITIONS: MilestoneDefinition[] = [
     checkFn: (ctx) => ctx.totalAssets,
   },
   {
+    id: 'assets_200m',
+    title: '2억 돌파',
+    description: '총 자산 2억 원 달성! 순조로운 출발!',
+    icon: '📈',
+    category: 'financial',
+    targetValue: 200_000_000,
+    checkFn: (ctx) => ctx.totalAssets,
+  },
+  {
     id: 'assets_500m',
     title: '5억 돌파',
     description: '총 자산 5억 원 달성',
@@ -61,6 +70,15 @@ export const MILESTONE_DEFINITIONS: MilestoneDefinition[] = [
     icon: '🏆',
     category: 'financial',
     targetValue: 1_000_000_000,
+    checkFn: (ctx) => ctx.totalAssets,
+  },
+  {
+    id: 'assets_2b',
+    title: '20억 돌파',
+    description: '총 자산 20억 원 달성! 큰 손 반열에 진입!',
+    icon: '💫',
+    category: 'financial',
+    targetValue: 2_000_000_000,
     checkFn: (ctx) => ctx.totalAssets,
   },
   {

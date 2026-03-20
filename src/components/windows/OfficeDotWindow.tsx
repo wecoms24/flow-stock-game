@@ -592,6 +592,70 @@ export function OfficeDotWindow() {
             ctx.fillRect(barX, barY2, barWidth, barHeight)
             ctx.fillStyle = empSat > 60 ? '#22c55e' : empSat > 30 ? '#fa4' : '#f44'
             ctx.fillRect(barX, barY2, (barWidth * empSat) / 100, barHeight)
+
+            // 미니 말풍선: 행동 상태 표시
+            const empBehavior = employeeBehaviors[employee.id]
+            if (empBehavior) {
+              const behaviorMap: Record<string, string> = {
+                WORKING: '💼 작업중',
+                IDLE: '😐 대기',
+                BREAK: '☕ 휴식',
+                SOCIALIZING: '💬 수다',
+                PANIC: '😱 패닉!',
+                BURNOUT: '🔥 번아웃',
+                COFFEE: '☕ 커피',
+                MEETING: '📋 회의',
+                STRESSED_OUT: '😫 스트레스',
+                COUNSELING: '💬 상담',
+                CELEBRATING: '🎉 축하',
+                STUDYING: '📖 공부',
+                PHONE_CALL: '📱 통화',
+              }
+              const bubbleText = behaviorMap[empBehavior]
+              if (bubbleText) {
+                const bubbleW = 40
+                const bubbleH = 16
+                const bubbleX = desk.position.x - bubbleW / 2
+                const bubbleY = desk.position.y - 56
+                const bubbleR = 4
+
+                // 말풍선 배경 (다크 모드 대응)
+                ctx.fillStyle = isDark ? 'rgba(30, 30, 50, 0.85)' : 'rgba(255, 255, 255, 0.85)'
+                ctx.beginPath()
+                ctx.moveTo(bubbleX + bubbleR, bubbleY)
+                ctx.lineTo(bubbleX + bubbleW - bubbleR, bubbleY)
+                ctx.arcTo(bubbleX + bubbleW, bubbleY, bubbleX + bubbleW, bubbleY + bubbleR, bubbleR)
+                ctx.lineTo(bubbleX + bubbleW, bubbleY + bubbleH - bubbleR)
+                ctx.arcTo(bubbleX + bubbleW, bubbleY + bubbleH, bubbleX + bubbleW - bubbleR, bubbleY + bubbleH, bubbleR)
+                ctx.lineTo(bubbleX + bubbleR, bubbleY + bubbleH)
+                ctx.arcTo(bubbleX, bubbleY + bubbleH, bubbleX, bubbleY + bubbleH - bubbleR, bubbleR)
+                ctx.lineTo(bubbleX, bubbleY + bubbleR)
+                ctx.arcTo(bubbleX, bubbleY, bubbleX + bubbleR, bubbleY, bubbleR)
+                ctx.closePath()
+                ctx.fill()
+
+                // 말풍선 테두리
+                ctx.strokeStyle = isDark ? 'rgba(100, 100, 140, 0.6)' : 'rgba(0, 0, 0, 0.15)'
+                ctx.lineWidth = 0.5
+                ctx.stroke()
+
+                // 꼬리 삼각형
+                ctx.fillStyle = isDark ? 'rgba(30, 30, 50, 0.85)' : 'rgba(255, 255, 255, 0.85)'
+                ctx.beginPath()
+                ctx.moveTo(desk.position.x - 3, bubbleY + bubbleH)
+                ctx.lineTo(desk.position.x + 3, bubbleY + bubbleH)
+                ctx.lineTo(desk.position.x, bubbleY + bubbleH + 4)
+                ctx.closePath()
+                ctx.fill()
+
+                // 텍스트
+                ctx.font = '7px sans-serif'
+                ctx.fillStyle = isDark ? '#ddd' : '#333'
+                ctx.textAlign = 'center'
+                ctx.fillText(bubbleText, desk.position.x, bubbleY + bubbleH - 4)
+                ctx.textAlign = 'start'
+              }
+            }
           }
         }
       }

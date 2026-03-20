@@ -6,7 +6,7 @@ describe('데이터: 직원 성격(Traits)', () => {
   describe('성격 데이터 구조 검증', () => {
     it('10개의 성격이 정의되어 있다', () => {
       const traitKeys = Object.keys(TRAIT_DEFINITIONS)
-      expect(traitKeys).toHaveLength(10)
+      expect(traitKeys).toHaveLength(17)
     })
 
     it('모든 성격이 필수 필드를 가진다', () => {
@@ -60,7 +60,7 @@ describe('데이터: 직원 성격(Traits)', () => {
       expect(commonCount).toBeGreaterThanOrEqual(4) // 약 40-50%
       expect(uncommonCount).toBeGreaterThanOrEqual(3) // 약 30-40%
       expect(rareCount).toBeGreaterThanOrEqual(1) // 약 10%
-      expect(commonCount + uncommonCount + rareCount).toBe(10)
+      expect(commonCount + uncommonCount + rareCount).toBe(17)
     })
   })
 
@@ -182,7 +182,7 @@ describe('데이터: 직원 성격(Traits)', () => {
   describe('데이터 일관성', () => {
     it('모든 성격 키가 타입스크립트 EmployeeTrait 타입과 일치한다', () => {
       const traitKeys = Object.keys(TRAIT_DEFINITIONS) as EmployeeTrait[]
-      expect(traitKeys.length).toBe(10)
+      expect(traitKeys.length).toBe(17)
 
       // 키들이 유효한 형식인지 확인 (영문자, 언더스코어만 사용)
       traitKeys.forEach(key => {

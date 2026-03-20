@@ -37,6 +37,31 @@ export const EMPLOYEE_BALANCE = {
   DEFAULT_SATISFACTION: 80,
 } as const
 
+export const STRESS_AI = {
+  /** 기본 스트레스 축적률 (기존값) */
+  BASE_RATE: 0.03,
+  /** CRISIS 레짐 시 스트레스 배율 */
+  MARKET_CRISIS_MULTIPLIER: 2.5,
+  /** VOLATILE 레짐 시 스트레스 배율 */
+  MARKET_VOLATILE_MULTIPLIER: 1.5,
+  /** 포지션 손실 10% 이상 시 추가 스트레스 발생 기준 */
+  POSITION_LOSS_THRESHOLD: -0.10,
+  /** 포지션 손실 시 추가 스트레스 */
+  POSITION_LOSS_STRESS: 0.05,
+  /** 팀 사기 전파율 (주변 직원 영향) */
+  TEAM_MORALE_SPREAD: 0.3,
+  /** 번아웃 진입 스트레스 임계값 */
+  BURNOUT_THRESHOLD: 90,
+  /** 최소 번아웃 지속 시간 (24시간 = ~2.5일) */
+  BURNOUT_MIN_TICKS: 24,
+  /** 번아웃 해제 시 스트레스 설정값 */
+  BURNOUT_RECOVERY_STRESS: 50,
+  /** 번아웃 시 스태미나 추가 감소 */
+  BURNOUT_STAMINA_DRAIN: 0.10,
+  /** 번아웃 시 스킬 성장 배율 (0 = 성장 없음) */
+  BURNOUT_SKILL_MULTIPLIER: 0,
+} as const
+
 export const OFFICE_BALANCE = {
   /** 오피스 레벨별 그리드 크기 */
   GRID_SIZES: {

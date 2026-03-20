@@ -191,9 +191,13 @@ export const ANALYSIS_SKILLS: SkillNode[] = [
     prerequisites: { level: 25, skills: ['deep_value'], stats: { analysis: 90 } },
     effect: {
       type: 'passive',
-      effects: [{ target: 'signalAccuracy', modifier: 0.5, operation: 'add' }],
+      // ✨ Phase 9: Tier 5 리밸런스 — 과분석 패널티
+      effects: [
+        { target: 'signalAccuracy', modifier: 0.4, operation: 'add' },
+        { target: 'executionDelay', modifier: 1.15, operation: 'multiply' }, // 과분석 지연
+      ],
     },
-    description: 'AI 신호 생성으로 신뢰도 50% 향상',
+    description: 'AI 신호 생성 (신뢰도 +40%, 체결 지연 +15%)',
     position: { row: 4, col: 1 },
     children: [],
   },
@@ -363,12 +367,14 @@ export const TRADING_SKILLS: SkillNode[] = [
     prerequisites: { level: 25, skills: ['market_maker'], stats: { trading: 90 } },
     effect: {
       type: 'passive',
+      // ✨ Phase 9: Tier 5 리밸런스 — 절대 우위 제거
       effects: [
-        { target: 'executionDelay', modifier: 0, operation: 'add' },
-        { target: 'slippage', modifier: 0, operation: 'add' },
+        { target: 'executionDelay', modifier: 0.1, operation: 'multiply' },
+        { target: 'slippage', modifier: 0.1, operation: 'multiply' },
+        { target: 'signalAccuracy', modifier: -0.1, operation: 'add' }, // 과속 트레이딩 정확도 패널티
       ],
     },
-    description: '초고속 매매 (지연 0%, 슬리피지 0%)',
+    description: '초고속 매매 (지연 -90%, 슬리피지 -90%, 정확도 -10%)',
     position: { row: 4, col: 1 },
     children: [],
   },
@@ -542,13 +548,133 @@ export const RESEARCH_SKILLS: SkillNode[] = [
   },
 ]
 
+/* ── Phase 9: Cross-Category Bridge Nodes ── */
+
+export const BRIDGE_SKILLS: SkillNode[] = [
+  {
+    id: 'quant_analyst_bridge',
+    name: '퀀트 분석 브릿지',
+    emoji: '🔗',
+    tier: 3,
+    category: 'analysis',
+    cost: 4,
+    prerequisites: { skills: ['pattern_recognition'], stats: { analysis: 50, research: 30 } },
+    effect: {
+      type: 'passive',
+      effects: [
+        { target: 'signalAccuracy', modifier: 0.1, operation: 'add' },
+        { target: 'riskReduction', modifier: 0.1, operation: 'add' },
+      ],
+    },
+    description: 'Analysis → Research 브릿지 (정확도 +10%, 리스크 -10%)',
+    position: { row: 2, col: 2 },
+    children: [],
+  },
+  {
+    id: 'technical_trader_bridge',
+    name: '기술적 매매 브릿지',
+    emoji: '🔗',
+    tier: 3,
+    category: 'analysis',
+    cost: 4,
+    prerequisites: { skills: ['value_investor'], stats: { analysis: 50, trading: 30 } },
+    effect: {
+      type: 'passive',
+      effects: [
+        { target: 'signalAccuracy', modifier: 0.05, operation: 'add' },
+        { target: 'executionDelay', modifier: 0.85, operation: 'multiply' },
+      ],
+    },
+    description: 'Analysis → Trading 브릿지 (정확도 +5%, 체결지연 -15%)',
+    position: { row: 2, col: 3 },
+    children: [],
+  },
+  {
+    id: 'risk_trader_bridge',
+    name: '리스크 매매 브릿지',
+    emoji: '🔗',
+    tier: 3,
+    category: 'research',
+    cost: 4,
+    prerequisites: { skills: ['kelly_criterion'], stats: { research: 50, trading: 30 } },
+    effect: {
+      type: 'passive',
+      effects: [
+        { target: 'riskReduction', modifier: 0.05, operation: 'add' },
+        { target: 'slippage', modifier: 0.85, operation: 'multiply' },
+      ],
+    },
+    description: 'Research → Trading 브릿지 (리스크 -5%, 슬리피지 -15%)',
+    position: { row: 2, col: 2 },
+    children: [],
+  },
+  {
+    id: 'macro_analyst_bridge',
+    name: '거시 분석 브릿지',
+    emoji: '🔗',
+    tier: 3,
+    category: 'research',
+    cost: 4,
+    prerequisites: { skills: ['stop_loss_master'], stats: { research: 50, analysis: 30 } },
+    effect: {
+      type: 'passive',
+      effects: [
+        { target: 'riskReduction', modifier: 0.05, operation: 'add' },
+        { target: 'signalAccuracy', modifier: 0.1, operation: 'add' },
+      ],
+    },
+    description: 'Research → Analysis 브릿지 (리스크 -5%, 정확도 +10%)',
+    position: { row: 2, col: 3 },
+    children: [],
+  },
+  {
+    id: 'algo_execution_bridge',
+    name: '알고 실행 브릿지',
+    emoji: '🔗',
+    tier: 3,
+    category: 'trading',
+    cost: 4,
+    prerequisites: { skills: ['flash_trader'], stats: { trading: 50, analysis: 30 } },
+    effect: {
+      type: 'passive',
+      effects: [
+        { target: 'executionDelay', modifier: 0.8, operation: 'multiply' },
+        { target: 'signalAccuracy', modifier: 0.05, operation: 'add' },
+      ],
+    },
+    description: 'Trading → Analysis 브릿지 (체결지연 -20%, 정확도 +5%)',
+    position: { row: 2, col: 2 },
+    children: [],
+  },
+  {
+    id: 'hedged_execution_bridge',
+    name: '헤지 실행 브릿지',
+    emoji: '🔗',
+    tier: 3,
+    category: 'trading',
+    cost: 4,
+    prerequisites: { skills: ['scalper'], stats: { trading: 50, research: 30 } },
+    effect: {
+      type: 'passive',
+      effects: [
+        { target: 'slippage', modifier: 0.9, operation: 'multiply' },
+        { target: 'riskReduction', modifier: 0.1, operation: 'add' },
+      ],
+    },
+    description: 'Trading → Research 브릿지 (슬리피지 -10%, 리스크 -10%)',
+    position: { row: 2, col: 3 },
+    children: [],
+  },
+]
+
 /**
- * 전체 스킬 트리 (30개 노드)
+ * 전체 스킬 트리 (36개 노드: 30 기본 + 6 브릿지)
  */
 export const SKILL_TREE: Record<string, SkillNode> = [
   ...ANALYSIS_SKILLS,
   ...TRADING_SKILLS,
   ...RESEARCH_SKILLS,
+  ...BRIDGE_SKILLS,
 ].reduce(
   (acc, skill) => {
     acc[skill.id] = skill

@@ -8,7 +8,7 @@ import wasmUrl from '@subframe7536/sqlite-wasm/wasm-async?url'
 let dbInstance: SQLiteDB | null = null
 
 /** Current schema version -- bump this when adding migrations */
-const SCHEMA_VERSION = 11
+const SCHEMA_VERSION = 15
 
 /**
  * Initialize SQLite database with IndexedDB persistence
@@ -703,6 +703,132 @@ async function runMigrations(db: SQLiteDB): Promise<void> {
       console.log('[SQLite] Migration v11 applied: complex game state JSON columns')
     } catch (error) {
       console.error('[SQLite] Migration v11 failed:', error)
+      throw error
+    }
+  }
+
+  // ─── v12: Acquisition Management System ───
+  if (currentVersion < 12) {
+    try {
+      const v12Columns = [
+        'acquired_company_states_json TEXT',
+      ]
+
+      for (const col of v12Columns) {
+        try {
+          await db.run(`ALTER TABLE saves ADD COLUMN ${col};`)
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e)
+          if (!msg.includes('duplicate column')) {
+            throw e
+          }
+          // Column already exists — idempotent
+        }
+      }
+
+      await db.run('INSERT OR REPLACE INTO schema_versions (version, applied_at) VALUES (?, ?);', [
+        12,
+        Date.now(),
+      ])
+      console.log('[SQLite] Migration v12 applied: acquired_company_states_json column')
+    } catch (error) {
+      console.error('[SQLite] Migration v12 failed:', error)
+      throw error
+    }
+  }
+
+  // ─── v13: Spy System ───
+  if (currentVersion < 13) {
+    try {
+      const v13Columns = [
+        'spy_missions_json TEXT',
+        'spy_intel_json TEXT',
+      ]
+
+      for (const col of v13Columns) {
+        try {
+          await db.run(`ALTER TABLE saves ADD COLUMN ${col};`)
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e)
+          if (!msg.includes('duplicate column')) {
+            throw e
+          }
+        }
+      }
+
+      await db.run('INSERT OR REPLACE INTO schema_versions (version, applied_at) VALUES (?, ?);', [
+        13,
+        Date.now(),
+      ])
+      console.log('[SQLite] Migration v13 applied: spy_missions_json, spy_intel_json columns')
+    } catch (error) {
+      console.error('[SQLite] Migration v13 failed:', error)
+      throw error
+    }
+  }
+
+  // ─── v14: Employee burnout & negotiation fields ───
+  if (currentVersion < 14) {
+    try {
+      const v14Columns = [
+        'burnout_ticks INTEGER DEFAULT 0',
+        'last_negotiation_month INTEGER',
+      ]
+
+      for (const col of v14Columns) {
+        try {
+          await db.run(`ALTER TABLE employees ADD COLUMN ${col};`)
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e)
+          if (!msg.includes('duplicate column')) {
+            throw e
+          }
+        }
+      }
+
+      await db.run('INSERT OR REPLACE INTO schema_versions (version, applied_at) VALUES (?, ?);', [
+        14,
+        Date.now(),
+      ])
+      console.log('[SQLite] Migration v14 applied: burnout_ticks, last_negotiation_month columns')
+    } catch (error) {
+      console.error('[SQLite] Migration v14 failed:', error)
+      throw error
+    }
+  }
+
+  // ─── v15: AI intelligence + RPG diversity fields ───
+  if (currentVersion < 15) {
+    try {
+      // Competitor memory (JSON blob)
+      try {
+        await db.run('ALTER TABLE competitors ADD COLUMN memory TEXT;')
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e)
+        if (!msg.includes('duplicate column')) throw e
+      }
+
+      // Employee habits + pity counters (JSON blobs)
+      const v15EmployeeCols = [
+        'habits TEXT',
+        'pity_counters TEXT',
+      ]
+      for (const col of v15EmployeeCols) {
+        try {
+          await db.run(`ALTER TABLE employees ADD COLUMN ${col};`)
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e)
+          if (!msg.includes('duplicate column')) throw e
+        }
+      }
+
+      await db.run('INSERT OR REPLACE INTO schema_versions (version, applied_at) VALUES (?, ?);', [
+        15,
+        Date.now(),
+      ])
+      console.log('[SQLite] Migration v15 applied: competitor memory, employee habits/pity_counters')
+    } catch (error) {
+      console.error('[SQLite] Migration v15 failed:', error)
       throw error
     }
   }

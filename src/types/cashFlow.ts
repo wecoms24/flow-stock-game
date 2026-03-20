@@ -13,6 +13,7 @@ export type CashFlowCategory =
   | 'SKILL_RESET'
   | 'MNA_ACQUISITION'
   | 'MNA_CASHOUT'
+  | 'MNA_DIVIDEND'
   | 'TAX'
 
 export interface CashFlowEntry {
@@ -54,6 +55,7 @@ export interface MonthlySummary {
   skillResets: number
   mnaCosts: number
   mnaCashOuts: number
+  mnaDividends: number // 인수 배당 수입
   taxes: number  // ✨ 부유세 추가
   openingCash: number
   closingCash: number

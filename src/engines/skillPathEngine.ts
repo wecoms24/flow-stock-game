@@ -5,7 +5,7 @@
  */
 
 import type { EmployeeSkillPathState, SkillBonusEffect } from '../types/skillPath'
-import { SKILL_PATHS } from '../data/skillPaths'
+import { SKILL_PATHS, RESPEC_CONFIG } from '../data/skillPaths'
 
 /** 직원 레벨 기반으로 해금된 보너스 효과 목록 반환 */
 export function calculateBonuses(
@@ -68,5 +68,43 @@ export function checkBonusUnlocks(
     ...state,
     pathLevel: newUnlocked.length,
     unlockedBonuses: newUnlocked,
+  }
+}
+
+/** ✨ Phase 10: 리스펙 비용 계산 */
+export function calculateRespecCost(employeeLevel: number): number {
+  return RESPEC_CONFIG.BASE_COST + employeeLevel * RESPEC_CONFIG.PER_LEVEL_COST
+}
+
+/** ✨ Phase 10: 리스펙 가능 여부 체크 */
+export function canRespec(
+  state: EmployeeSkillPathState | undefined,
+  employeeLevel: number,
+  cash: number,
+  lastRespecMonth?: number,
+  currentMonth?: number,
+): { allowed: boolean; reason?: string; cost: number } {
+  const cost = calculateRespecCost(employeeLevel)
+
+  if (!state?.selectedPath) {
+    return { allowed: false, reason: 'no_path_selected', cost }
+  }
+  if (cash < cost) {
+    return { allowed: false, reason: 'insufficient_funds', cost }
+  }
+  if (lastRespecMonth != null && currentMonth != null) {
+    if (currentMonth - lastRespecMonth < RESPEC_CONFIG.COOLDOWN_MONTHS) {
+      return { allowed: false, reason: 'cooldown_active', cost }
+    }
+  }
+  return { allowed: true, cost }
+}
+
+/** ✨ Phase 10: 리스펙 실행 — 경로 초기화 */
+export function executeRespec(): EmployeeSkillPathState {
+  return {
+    selectedPath: null,
+    pathLevel: 0,
+    unlockedBonuses: [],
   }
 }

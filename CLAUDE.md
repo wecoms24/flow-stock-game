@@ -79,6 +79,10 @@ Single store at `src/stores/gameStore.ts` (~5600 LOC). All state mutations go th
 - `employeeBios: Record<string, EmployeeBio>` — Employee personality/life events
 - `employeeBehaviors: Record<string, string>` — Employee behavior FSM states
 - `aiProposal: LayoutProposal | null` — AI Architect office layout proposal
+- `spyMissions: SpyMission[]` — Active competitor spy missions
+- `spyIntel: SpyIntel[]` — Gathered competitor intelligence (with expiry)
+- `activeNegotiation: NegotiationState | null` — In-progress salary negotiation (transient)
+- `acquiredCompanyStates: AcquiredCompanyState[]` — Post-M&A integration tracking
 
 **10 Sectors**: `tech`, `finance`, `energy`, `healthcare`, `consumer`, `industrial`, `telecom`, `materials`, `utilities`, `realestate` — with inter-sector correlation matrix (`src/data/sectorCorrelation.ts`)
 
@@ -117,7 +121,10 @@ Each hour:
 16. processCompetitorTick() — AI trading (every 5 hours)
 17. Monthly Card system — effect expiry + auto-selection timeout
 18. Event Chains — weekly advancement (day 1/8/15/22/29 at 10:00)
-19. Auto-save (every 300 hours)
+19. processSpyTick() — spy mission progress (hourIndex%10===7)
+20. processAcquisitionManagement() — monthly integration + quarterly dividends (day 1, hour 9)
+21. checkNegotiationTriggers() — salary negotiation check (monthly)
+22. Auto-save (every 300 hours)
 ```
 
 Worker initialization happens in `App.tsx` useEffect. Speed changes trigger interval recalculation.
@@ -143,7 +150,7 @@ Worker initialization happens in `App.tsx` useEffect. Speed changes trigger inte
 | `animationEngine.ts` | Trade animation sequence execution (card flip/counter/particle) | On trade completion |
 | `cardDrawEngine.ts` | Monthly card weighted random selection + effect application | Monthly processing |
 | `employeeBioEngine.ts` | Employee personality/goals/life events/emotion management | Monthly + on events |
-| `employeeBehavior.ts` | Employee behavior FSM (WORKING/IDLE/BREAK/SOCIALIZING/PANIC) | Per employee tick |
+| `employeeBehavior.ts` | Employee behavior FSM (WORKING/IDLE/BREAK/SOCIALIZING/PANIC/BURNOUT) | Per employee tick |
 | `employeeInteraction.ts` | Adjacent employee auto-interaction with cooldowns | Per employee tick |
 | `skillPathEngine.ts` | Skill path branching (Trading/Analysis) + bonus calculation | On level-up + pipeline |
 | `eventChainEngine.ts` | Multi-week event FSM (state transitions/branching/resolution) | Weekly |
@@ -156,6 +163,9 @@ Worker initialization happens in `App.tsx` useEffect. Speed changes trigger inte
 | `newsEngine.ts` | Historical event processing (1995-2025), chain events, M&A news | Every hour |
 | `sentimentEngine.ts` | Global + per-sector sentiment index with decay | Every hour |
 | `cashFlowTracker.ts` | Cash flow entries, monthly aggregation, anomaly detection | On transactions |
+| `spyEngine.ts` | Competitor spy missions (basic/advanced/deep) + intel generation | Every 10 hours |
+| `negotiationEngine.ts` | Salary negotiation demand calc + rhythm game note generation | On negotiation trigger |
+| `acquisitionManagementEngine.ts` | Post-M&A integration progress, dividends, random events | Monthly + quarterly |
 
 ### Market Systems
 
@@ -305,6 +315,66 @@ Corporate mergers and acquisitions system with quarterly evaluation, automatic I
 
 **Company Status**: `'active'` (normal) or `'acquired'` (delisted). Worker filters out acquired companies.
 
+### Post-M&A Management System (`src/engines/acquisitionManagementEngine.ts`)
+
+4-phase integration after M&A completion: restructuring (0-24%) → integration (25-49%) → synergy (50-74%) → complete (75-100%).
+
+- **Monthly**: Integration progress +4%, phase transition news generation
+- **Quarterly**: Random events (40% probability, 6 types: layoff/incentive/marketing/scandal/innovation/merger_bonus), dividend payments
+- **Dividends**: `dealPrice × playerShares × (yield + phaseBonus) / 4` — base 2%, +1% synergy, +2% complete
+- **Synergy**: Complete phase grants acquirer drift +3% bonus
+- **Config**: `src/config/acquisitionConfig.ts` — integration rates, yields, event definitions
+- **State**: `acquiredCompanyStates: AcquiredCompanyState[]` in Zustand store
+- **UI**: AcquisitionWindow "인수 후 관리" tab — progress bars, dividend info, event history
+
+### Competitor Spy System (`src/engines/spyEngine.ts`)
+
+3-tier intelligence gathering on AI competitors:
+
+| Tier | Cost | Duration | Fail Rate | Reveals |
+|------|------|----------|-----------|---------|
+| Basic | 500K | 48h | 10% | Portfolio only |
+| Advanced | 2M | 96h | 25% | Portfolio + trades + assets |
+| Deep | 5M | 168h | 40% | All + strategy |
+
+- **Failure**: Lawsuit risk (5-15% of assets as penalty)
+- **Cooldown**: 720h per target, max 2 concurrent missions
+- **Intel expiry**: 240-720h depending on tier
+- **Config**: `src/config/spyConfig.ts`
+- **State**: `spyMissions[]`, `spyIntel[]` in Zustand store
+- **UI**: SpyWindow — target selection, mission management, intel viewer
+
+### Salary Negotiation + Rhythm Minigame (`src/engines/negotiationEngine.ts`)
+
+Every 6 months, employees demand raises. Player resolves via rhythm game:
+
+- **Demand calculation**: Base 5% + level bonus (2%/lv) + performance bonus, max 25%
+- **Rhythm game**: Canvas 4-lane note drop (20s, 15-35 notes), arrow key input
+- **Scoring**: Perfect (±50ms) = 100, Good (±120ms) = 60, Miss = 0
+- **Results**: 80+ → full raise, 50-79 → partial (50%), <50 → rejected (-15 satisfaction)
+- **Config**: `src/config/negotiationConfig.ts`
+- **State**: `activeNegotiation: NegotiationState | null` (transient, not saved)
+- **UI**: NegotiationWindow — intro → rhythm game → result
+
+### Enhanced Stress & Burnout System
+
+Market-aware stress with burnout state in `officeSystem.ts`:
+
+- **Market stress**: CRISIS ×2.5, VOLATILE ×1.5 base rate
+- **Position loss stress**: Scales with severity beyond -10% threshold
+- **Team morale spread**: Adjacent employees (Manhattan dist ≤2) spread stress at 30% rate
+- **Burnout**: Enters at stress ≥90, minimum 48 ticks, blocks pipeline processing
+- **Recovery**: After 48+ ticks AND stress <90, resets to stress=50
+- **Config**: `STRESS_AI` in `src/config/balanceConfig.ts`
+
+### Skill Badge System Enhancement
+
+Badges per category increased from 1 to 3, with pipeline integration:
+
+- **Badge effects**: `signalAccuracy`, `executionSpeedBonus`, `slippageReduction`, `riskReduction`, `positionSizeMultiplier`
+- **Pipeline tracking**: `TradeProposal.appliedBadgeEffects` records which effects were applied
+- **UI**: ProposalListWindow shows badge tags, EmployeeDetailWindow shows numerical effect summary
+
 ### Config Layer (`src/config/`)
 
 | Config | Purpose |
@@ -320,6 +390,9 @@ Corporate mergers and acquisitions system with quarterly evaluation, automatic I
 | `skillBalance.ts` | SP per level, reset costs |
 | `economicPressureConfig.ts` | Wealth tier configs, tax discounts |
 | `aiArchitectConfig.ts` | AI office layout proposal frequency and balance |
+| `spyConfig.ts` | Spy mission tiers, costs, durations, fail/lawsuit rates, cooldowns |
+| `negotiationConfig.ts` | Salary negotiation triggers, rhythm game params, score thresholds |
+| `acquisitionConfig.ts` | Post-M&A integration rates, dividend yields, event definitions |
 
 ### Data Layer (`src/data/`)
 
@@ -378,7 +451,7 @@ Corporate mergers and acquisitions system with quarterly evaluation, automatic I
 
 All windows use `WindowFrame` for consistent drag/resize/close behavior. `windowId` (unique per instance) vs `windowType` (e.g., 'trading', 'chart'). Window state managed in Zustand store. Multiple instances of same type supported.
 
-**Window Types** (20): `portfolio`, `chart`, `trading`, `news`, `office`, `office_dot`, `office_history`, `employee_detail`, `ranking`, `settings`, `ending`, `institutional`, `proposals`, `acquisition`, `dashboard`, `achievement_log`, `monthly_cards`, `event_chain_tracker`, `skill_library`, `training_center`
+**Window Types** (23): `portfolio`, `chart`, `trading`, `news`, `office`, `office_dot`, `office_history`, `employee_detail`, `ranking`, `settings`, `ending`, `institutional`, `proposals`, `acquisition`, `dashboard`, `achievement_log`, `monthly_cards`, `event_chain_tracker`, `skill_library`, `training_center`, `spy`, `negotiation`, `playstyle_analytics`
 
 **Window Layout Presets**: `trading`, `analysis`, `dashboard`, `ai-trading`, `institutional`, `comprehensive`
 
@@ -445,6 +518,13 @@ SQLite WASM (`@subframe7536/sqlite-wasm`) is the default storage backend. Indexe
 22. **Acquired company filtering**: Worker, trading, and all UI must filter `companies.filter(c => c.status !== 'acquired')`. Forgetting this causes ghost price updates
 23. **Event aftereffects (여진)**: Expiring events spawn aftereffect events at 10% drift / 15% volatility for 50 hours. Already-aftereffect events don't spawn more
 24. **formatMoney duplication**: `formatMoney` is defined inline in multiple portfolio components (CashFlowTab, PnLTab, PortfolioWindow) — not centralized. Changes must be made in all locations
+25. **Burnout stress isolation**: During burnout (`burnoutTicks > 0`), external stress sources (market/position/team) are blocked — only behavior effect (-0.01) applies for gradual recovery
+26. **Spy mission cooldown**: 720h per target. `canStartMission()` checks concurrent limit (2), cooldown, and in-progress duplicates
+27. **Negotiation transient state**: `activeNegotiation` is NOT saved to DB — it resets to null on load. Rhythm game is session-only
+28. **Badge effect deduplication**: `signalAccuracy` is applied in `signalGenerationEngine.ts` — do NOT double-apply in `analystLogic.ts`. `appliedBadgeEffects` in analystLogic is for recording only
+29. **Post-M&A state creation**: Both `executeAcquisition` (AI M&A) and `playerAcquireCompany` (player M&A) must call `createAcquiredCompanyState()` to track integration
+30. **Employee burnoutTicks persistence**: Stored in SQLite `employees` table (v14 migration). Must be included in INSERT/SELECT in `transformers.ts`
+31. **MNA_DIVIDEND cashflow**: Post-M&A dividends use `recordCashFlow('MNA_DIVIDEND')` — category must exist in `CashFlowCategory` union and `aggregateMonthly()`
 
 ## Performance Considerations
 

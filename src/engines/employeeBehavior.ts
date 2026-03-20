@@ -1,4 +1,6 @@
 import type { Employee, EmployeeRole, EmployeeSkills, EmployeeTrait, GameTime, MarketRegime } from '../types'
+import { STRESS_AI } from '../config/balanceConfig'
+import { fbm1D } from '../utils/randomSystems'
 
 /* ── Employee Behavior FSM ── */
 /* 직원 행동 상태 머신: 스트레스/만족도/성격/시장상황에 따라 행동 결정
@@ -26,6 +28,7 @@ export type EmployeeActionType =
   | 'CELEBRATING'
   | 'STUDYING'
   | 'PHONE_CALL'
+  | 'BURNOUT'
 
 export interface EmployeeBehavior {
   employeeId: string
@@ -248,6 +251,19 @@ const ACTION_CONFIG: Record<
       '해외 지사 통화',
     ],
   },
+  BURNOUT: {
+    emoji: '🔥',
+    messages: [
+      '번아웃 상태...',
+      '아무것도 할 수 없어...',
+      '완전히 지쳤다...',
+      '회복이 필요해...',
+      '한계를 넘어버렸어...',
+      '몸도 마음도 바닥이야...',
+      '더 이상 못 하겠어...',
+      '쉬어야 해...',
+    ],
+  },
 }
 
 /* ── 행동 가중치 ── */
@@ -264,6 +280,7 @@ interface ActionWeights {
   CELEBRATING: number
   STUDYING: number
   PHONE_CALL: number
+  BURNOUT: number
 }
 
 function getBaseWeights(stress: number, satisfaction: number): ActionWeights {
@@ -271,21 +288,21 @@ function getBaseWeights(stress: number, satisfaction: number): ActionWeights {
     return {
       WORKING: 60, IDLE: 4, BREAK: 4, SOCIALIZING: 8,
       COFFEE: 4, MEETING: 4, STRESSED_OUT: 0, COUNSELING: 0,
-      CELEBRATING: 5, STUDYING: 6, PHONE_CALL: 5,
+      CELEBRATING: 5, STUDYING: 6, PHONE_CALL: 5, BURNOUT: 0,
     }
   }
   if (stress < 60) {
     return {
       WORKING: 42, IDLE: 4, BREAK: 12, SOCIALIZING: 8,
       COFFEE: 6, MEETING: 4, STRESSED_OUT: 4, COUNSELING: 2,
-      CELEBRATING: 3, STUDYING: 8, PHONE_CALL: 7,
+      CELEBRATING: 3, STUDYING: 8, PHONE_CALL: 7, BURNOUT: 0,
     }
   }
   // 고스트레스
   return {
     WORKING: 16, IDLE: 8, BREAK: 16, SOCIALIZING: 4,
     COFFEE: 8, MEETING: 3, STRESSED_OUT: 22, COUNSELING: 6,
-    CELEBRATING: 1, STUDYING: 5, PHONE_CALL: 11,
+    CELEBRATING: 1, STUDYING: 5, PHONE_CALL: 11, BURNOUT: 0,
   }
 }
 
@@ -302,6 +319,14 @@ const TRAIT_MODIFIERS: Partial<Record<EmployeeTrait, Partial<ActionWeights>>> = 
   nocturnal: {},
   tech_savvy: { WORKING: 5, STUDYING: 5 },
   risk_averse: { WORKING: 5, STRESSED_OUT: -5, BREAK: 5, STUDYING: 3 },
+  // ✨ Phase 6: 신규 trait 가중치
+  lucky: { CELEBRATING: 8, WORKING: 3 },
+  mentor: { SOCIALIZING: 10, MEETING: 8, WORKING: 5, STUDYING: 5 },
+  contrarian_mind: { WORKING: 8, STUDYING: 10, SOCIALIZING: -5 },
+  early_bird: { WORKING: 10, IDLE: -5 }, // 오전 보너스는 applyTimeModifiers에서 처리
+  frugal: { WORKING: 8, COFFEE: -5, CELEBRATING: -3 },
+  gambler: { WORKING: 5, CELEBRATING: 8, STRESSED_OUT: 5 },
+  empathetic: { SOCIALIZING: 15, COUNSELING: 8, STRESSED_OUT: -8, PHONE_CALL: 5 },
 }
 
 /* ── 시간대 보정 ── */
@@ -455,6 +480,17 @@ export function decideAction(
   const stress = employee.stress ?? 0
   const satisfaction = employee.satisfaction ?? 80
 
+  // 번아웃 상태인 직원은 강제 BURNOUT 행동
+  if ((employee.burnoutTicks ?? 0) > 0) {
+    const config = ACTION_CONFIG.BURNOUT
+    return {
+      employeeId: employee.id,
+      action: 'BURNOUT',
+      emoji: config.emoji,
+      message: config.messages[Math.floor(Math.random() * config.messages.length)],
+    }
+  }
+
   const weights = getBaseWeights(stress, satisfaction)
 
   // Trait 보정
@@ -498,8 +534,69 @@ export function decideAction(
     weights.CELEBRATING += 5
   }
 
+  // ✨ Phase 5: 습관 시스템 적용
+  if (employee.habits) {
+    const habits = employee.habits
+    // 시간대별 선호
+    const hourPref = habits.hourlyPreferences[time.hour]
+    if (hourPref && weights[hourPref as keyof ActionWeights] !== undefined) {
+      weights[hourPref as keyof ActionWeights] += 20
+    }
+    // 요일별 패턴
+    const dayOfWeek = time.day % 7
+    const dayPref = habits.weeklyPatterns[dayOfWeek]
+    if (dayPref && weights[dayPref as keyof ActionWeights] !== undefined) {
+      weights[dayPref as keyof ActionWeights] += 10
+    }
+    // 학습된 친화도
+    if (habits.actionAffinities) {
+      for (const [actionKey, affinity] of Object.entries(habits.actionAffinities)) {
+        if (weights[actionKey as keyof ActionWeights] !== undefined && affinity) {
+          weights[actionKey as keyof ActionWeights] += affinity
+        }
+      }
+    }
+  }
+
+  // ✨ Phase 11: Perlin 기분 미세 변동 (30일 주기)
+  {
+    // 직원 ID 해시로 시드 오프셋 (각 직원마다 다른 위상)
+    let idSeed = 0
+    for (let i = 0; i < employee.id.length; i++) {
+      idSeed = ((idSeed << 5) - idSeed) + employee.id.charCodeAt(i)
+    }
+    const dayIndex = (time.year - 1995) * 360 + (time.month - 1) * 30 + time.day
+    const moodNoise = fbm1D(dayIndex + Math.abs(idSeed % 1000), 2, 1 / 30, 5)
+    // 기분이 양수면 사교/축하 증가, 음수면 스트레스/휴식 증가
+    if (moodNoise > 0) {
+      weights.CELEBRATING += moodNoise
+      weights.SOCIALIZING += moodNoise * 0.5
+    } else {
+      weights.BREAK += Math.abs(moodNoise)
+      weights.STRESSED_OUT += Math.abs(moodNoise) * 0.3
+    }
+  }
+
   const action = weightedRandomSelect(weights)
   const config = ACTION_CONFIG[action]
+
+  // ✨ Phase 5: 습관 학습 (최근 행동 기록 + 친화도 업데이트)
+  if (employee.habits) {
+    const habits = employee.habits
+    habits.recentActions = [...habits.recentActions, action].slice(-10)
+    // 최근 5개 중 3회 이상 같은 행동 → 친화도 +1
+    const recent5 = habits.recentActions.slice(-5)
+    const counts: Record<string, number> = {}
+    for (const a of recent5) {
+      counts[a] = (counts[a] ?? 0) + 1
+    }
+    for (const [a, count] of Object.entries(counts)) {
+      if (count >= 3) {
+        const current = habits.actionAffinities[a] ?? 0
+        habits.actionAffinities[a] = Math.min(10, Math.max(-10, current + 1))
+      }
+    }
+  }
 
   // WORKING일 때 역할별 메시지 선택
   const message = action === 'WORKING'
@@ -547,6 +644,13 @@ export function getActionEffects(action: EmployeeActionType): {
       return { staminaDelta: -0.03, stressDelta: 0.01, satisfactionDelta: 0.02, skillMultiplier: 0.8 }
     case 'PHONE_CALL':
       return { staminaDelta: -0.01, stressDelta: 0.01, satisfactionDelta: 0.0, skillMultiplier: 0.2 }
+    case 'BURNOUT':
+      return {
+        staminaDelta: -STRESS_AI.BURNOUT_STAMINA_DRAIN,
+        stressDelta: -0.01, // 번아웃 중 스트레스 미세 감소 (회복 유도)
+        satisfactionDelta: -0.03,
+        skillMultiplier: STRESS_AI.BURNOUT_SKILL_MULTIPLIER,
+      }
   }
 }
 
@@ -648,4 +752,85 @@ export function cleanupBehaviorState(employeeId: string): void {
  */
 export function resetBehaviorState(): void {
   stressStreakMap.clear()
+}
+
+/**
+ * ✨ Phase 5: trait 기반 초기 습관 생성
+ */
+export function createInitialHabits(traits: EmployeeTrait[]): import('../types').EmployeeHabits {
+  const hourlyPreferences: Partial<Record<number, string>> = {}
+  const weeklyPatterns: Partial<Record<number, string>> = {}
+  const actionAffinities: Partial<Record<string, number>> = {}
+
+  for (const trait of traits) {
+    switch (trait) {
+      case 'caffeine_addict':
+        hourlyPreferences[13] = 'COFFEE' // 점심 후 커피
+        hourlyPreferences[16] = 'COFFEE' // 오후 슬럼프 커피
+        actionAffinities['COFFEE'] = 3
+        break
+      case 'workaholic':
+        hourlyPreferences[9] = 'WORKING'
+        hourlyPreferences[10] = 'WORKING'
+        actionAffinities['WORKING'] = 3
+        break
+      case 'social':
+        hourlyPreferences[12] = 'SOCIALIZING'
+        weeklyPatterns[5] = 'SOCIALIZING' // 금요일 소셜
+        actionAffinities['SOCIALIZING'] = 2
+        break
+      case 'introvert':
+        actionAffinities['STUDYING'] = 2
+        actionAffinities['SOCIALIZING'] = -2
+        break
+      case 'early_bird':
+        hourlyPreferences[9] = 'WORKING'
+        hourlyPreferences[10] = 'WORKING'
+        break
+      case 'nocturnal':
+        hourlyPreferences[17] = 'WORKING'
+        hourlyPreferences[18] = 'WORKING'
+        break
+      case 'ambitious':
+        actionAffinities['STUDYING'] = 2
+        actionAffinities['MEETING'] = 1
+        break
+      case 'perfectionist':
+        actionAffinities['WORKING'] = 2
+        actionAffinities['STUDYING'] = 1
+        break
+      case 'gambler':
+        actionAffinities['WORKING'] = 2
+        actionAffinities['CELEBRATING'] = 2
+        break
+      case 'frugal':
+        actionAffinities['WORKING'] = 2
+        actionAffinities['COFFEE'] = -2
+        break
+      case 'empathetic':
+        hourlyPreferences[12] = 'SOCIALIZING'
+        actionAffinities['SOCIALIZING'] = 2
+        actionAffinities['COUNSELING'] = 2
+        break
+      case 'lucky':
+        actionAffinities['CELEBRATING'] = 2
+        break
+      case 'mentor':
+        hourlyPreferences[14] = 'MEETING'
+        actionAffinities['MEETING'] = 2
+        actionAffinities['SOCIALIZING'] = 1
+        break
+      case 'contrarian_mind':
+        actionAffinities['STUDYING'] = 3
+        actionAffinities['WORKING'] = 2
+        break
+    }
+  }
+
+  return {
+    hourlyPreferences,
+    weeklyPatterns,
+    actionAffinities,
+    recentActions: [],
+  }
 }

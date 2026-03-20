@@ -17,6 +17,7 @@ import { EmptyState } from '../ui/EmptyState'
 import { getFearGreedIndex, isSentimentActive } from '../../engines/sentimentEngine'
 import { getAbsoluteTimestamp } from '../../config/timeConfig'
 import type { TradeProposal } from '../../types/trade'
+import { EVENT_CHAIN_TEMPLATES } from '../../data/eventChains'
 
 /* ── Event Marker + Band Plugin ── */
 interface EventMarkerOptions {
@@ -285,6 +286,86 @@ const tradeAnnotationPlugin: Plugin<'line', TradeAnnotationOptions> = {
   },
 }
 
+/* ── Event Chain Band Plugin: diagonal-stripe bands for active event chains ── */
+interface EventChainBandOptions {
+  bands: Array<{
+    startIndex: number
+    endIndex: number
+    title: string
+    icon: string
+  }>
+}
+
+const eventChainBandPlugin: Plugin<'line', EventChainBandOptions> = {
+  id: 'eventChainBands',
+  beforeDraw(chart, _args, options) {
+    const bands = options.bands
+    if (!bands || !bands.length) return
+
+    const ctx = chart.ctx
+    const xAxis = chart.scales.x
+    const yAxis = chart.scales.y
+
+    // 대각선 줄무늬 패턴 생성
+    const patternCanvas = document.createElement('canvas')
+    patternCanvas.width = 8
+    patternCanvas.height = 8
+    const pctx = patternCanvas.getContext('2d')
+    if (!pctx) return
+    pctx.strokeStyle = 'rgba(128, 0, 128, 0.2)'
+    pctx.lineWidth = 1
+    pctx.beginPath()
+    pctx.moveTo(0, 8)
+    pctx.lineTo(8, 0)
+    pctx.stroke()
+    const pattern = ctx.createPattern(patternCanvas, 'repeat')
+
+    bands.forEach((band) => {
+      const startX = xAxis.getPixelForValue(band.startIndex)
+      const endX = xAxis.getPixelForValue(band.endIndex)
+      const topY = yAxis.top
+      const bottomY = yAxis.bottom
+      const width = Math.max(2, endX - startX)
+
+      ctx.save()
+
+      // 배경색
+      ctx.fillStyle = 'rgba(128, 0, 128, 0.1)'
+      ctx.fillRect(startX, topY, width, bottomY - topY)
+
+      // 대각선 줄무늬 오버레이
+      if (pattern) {
+        ctx.fillStyle = pattern
+        ctx.fillRect(startX, topY, width, bottomY - topY)
+      }
+
+      // 테두리
+      ctx.strokeStyle = 'rgba(128, 0, 128, 0.3)'
+      ctx.lineWidth = 1
+      ctx.setLineDash([4, 4])
+      ctx.strokeRect(startX, topY, width, bottomY - topY)
+      ctx.setLineDash([])
+
+      // 체인 제목 텍스트
+      ctx.font = '10px DungGeunMo, monospace'
+      ctx.textAlign = 'center'
+      const centerX = startX + width / 2
+      const labelText = `${band.icon} ${band.title}`
+      const textWidth = ctx.measureText(labelText).width + 8
+
+      // 라벨 배경
+      ctx.fillStyle = 'rgba(128, 0, 128, 0.7)'
+      ctx.fillRect(centerX - textWidth / 2, topY + 4, textWidth, 14)
+
+      // 라벨 텍스트
+      ctx.fillStyle = '#FFFFFF'
+      ctx.fillText(labelText, centerX, topY + 14)
+
+      ctx.restore()
+    })
+  },
+}
+
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -295,6 +376,7 @@ ChartJS.register(
   ScatterController,
   eventMarkerPlugin,
   tradeAnnotationPlugin,
+  eventChainBandPlugin,
 )
 
 const PERIOD_OPTIONS = [
@@ -324,6 +406,7 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
   const employees = useGameStore((s) => s.player.employees)
   const [selectedId, setSelectedIdLocal] = useState(companyId ?? companies[0]?.id ?? '')
   const orderFlowByCompany = useGameStore((s) => s.orderFlowByCompany)
+  const eventChains = useGameStore((s) => s.eventChains)
 
   // 매매 창에서 기업 변경 시 동기화 (외부 prop 변경만 추적)
   // 조건문으로 무한 루프 방지됨 - controlled component 패턴
@@ -621,6 +704,46 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
     return getFearGreedIndex()
   }, [currentTime.hour])
 
+  // Event chain bands
+  const eventChainBands = useMemo(() => {
+    if (!selected || !eventChains?.chains.length) return []
+
+    const historyLength =
+      periodTicks > 0
+        ? Math.min(periodTicks, selected.priceHistory.length)
+        : selected.priceHistory.length
+    const currentAbsTick = getAbsoluteTimestamp(currentTime)
+
+    return eventChains.chains
+      .filter((chain) => chain.status === 'active' || chain.status === 'completed')
+      .map((chain) => {
+        const template = EVENT_CHAIN_TEMPLATES.find((t) => t.id === chain.chainId)
+        if (!template) return null
+
+        // 체인 시작~끝을 차트 인덱스로 변환
+        // 1주 = 7일 × 10시간 = 70틱
+        const chainStartTick = chain.startedAtTick
+        const chainEndTick = chainStartTick + chain.totalWeeks * 70
+
+        const startOffset = currentAbsTick - chainStartTick
+        const endOffset = currentAbsTick - chainEndTick
+
+        const startIndex = historyLength - 1 - startOffset
+        const endIndex = historyLength - 1 - endOffset
+
+        // 표시 범위 내에 없으면 제외
+        if (endIndex < 0 || startIndex >= historyLength) return null
+
+        return {
+          startIndex: Math.max(0, startIndex),
+          endIndex: Math.min(historyLength - 1, endIndex),
+          title: template.title,
+          icon: template.icon,
+        }
+      })
+      .filter((b): b is NonNullable<typeof b> => b !== null)
+  }, [selected, eventChains, periodTicks, currentTime])
+
   const chartOptions = useMemo(
     () => ({
       responsive: true,
@@ -714,9 +837,12 @@ export function ChartWindow({ companyId }: ChartWindowProps) {
         tradeAnnotations: {
           employeeMap,
         },
+        eventChainBands: {
+          bands: eventChainBands,
+        },
       },
     }),
-    [eventMarkers, fearGreedIdx, periodTicks, chartData, employeeMap],
+    [eventMarkers, fearGreedIdx, periodTicks, chartData, employeeMap, eventChainBands],
   )
 
   if (!selected || !chartData) {

@@ -25,6 +25,9 @@ import { computePlayerResponseEffects } from './competitorEngine'
 import { getBusinessHourIndex, getAbsoluteTimestamp } from '../config/timeConfig'
 import { MARKET_IMPACT_CONFIG } from '../config/marketImpactConfig'
 import { autoSelectCards } from './cardDrawEngine'
+import { soundManager } from '../systems/soundManager'
+import { dispatchCelebration } from '../components/ui/CelebrationManager'
+import { createCelebration } from '../systems/celebrationSystem'
 import { REALTIME_TICK_INTERVAL } from '../config/kisConfig'
 import { kisWebSocket } from '../services/kisWebSocketService'
 import { startPriceAggregator, stopPriceAggregator } from '../services/kisPriceAggregator'
@@ -115,6 +118,7 @@ export function startTickLoop() {
   const isRealtime = useGameStore.getState().config.gameMode === 'realtime'
 
   const tick = () => {
+    try {
     const state = useGameStore.getState()
     if (state.time.isPaused || !state.isGameStarted) return
     // 실시간 모드에서는 worker 없이 동작
@@ -133,7 +137,13 @@ export function startTickLoop() {
     current.detectAndUpdateRegime()
 
     // Update circuit breaker every hour
+    const prevCBActive = current.circuitBreaker.isActive
     current.updateCircuitBreaker()
+    // MI-1: Auto-pause on circuit breaker activation
+    const afterCB = useGameStore.getState()
+    if (afterCB.circuitBreaker.isActive && !prevCBActive) {
+      afterCB.autoPauseForEvent(`서킷브레이커 Level ${afterCB.circuitBreaker.level} 발동!`)
+    }
 
     // Update VI states every hour
     current.updateVIStates()
@@ -161,11 +171,38 @@ export function startTickLoop() {
       } else {
         current.updateSessionOpenPrices()
       }
+
+      // Market open bell (suppressed at 4x+ speed)
+      if (current.time.speed <= 2) soundManager.playMarketBell('open')
+    }
+
+    // Market close: bell + daily P&L summary toast (suppressed at 4x+ speed)
+    if (current.time.hour === 18) {
+      const speed = current.time.speed
+      if (speed <= 2) soundManager.playMarketBell('close')
+      // Calculate today's change directly (lastDayChange is stale until next day's advanceHour)
+      if (speed <= 4) {
+        const todayAssets = current.player.totalAssetValue
+        const openAssets = current.player.previousDayAssets
+        const change = openAssets > 0 ? ((todayAssets - openAssets) / openAssets) * 100 : 0
+        if (Math.abs(change) > 0.01) {
+          dispatchCelebration(createCelebration(
+            1,
+            `오늘의 수익률: ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`,
+            change >= 0 ? '수고하셨습니다!' : '내일은 더 좋은 하루가 될 거예요.',
+            change >= 0 ? '📈' : '📉',
+            { color: change >= 0 ? 'green' : 'red', duration: 5000 },
+          ))
+        }
+      }
     }
 
     // Monthly processing (salary, stamina) on day 1 at market open
     if (current.time.day === 1 && current.time.hour === 9) {
       current.processMonthly()
+
+      // Acquisition Management: 월간 통합 진행 + 분기 이벤트/배당
+      current.processAcquisitionManagement()
 
       // KOSPI 모드: IPO 체크 (매월 1일)
       if (current.config.gameMode === 'kospi' && historicalDataService.isReady) {
@@ -221,6 +258,9 @@ export function startTickLoop() {
 
           // Update sentiment
           onMnaOccurred(target.sector, deal.layoffRate > 0.4)
+
+          // MI-1: Auto-pause on M&A
+          useGameStore.getState().autoPauseForEvent(`M&A: ${acquirer.name}이(가) ${target.name}을(를) 인수!`)
         }
       }
     }
@@ -530,6 +570,11 @@ export function startTickLoop() {
       }
     }
 
+    // Spy System: 10시간마다 미션 진행 처리
+    if (hourIndex % 10 === 7) {
+      useGameStore.getState().processSpyTick()
+    }
+
     // Monthly Card System: 효과 만료 + 타임아웃 자동 선택
     {
       const cardState = useGameStore.getState().monthlyCards
@@ -561,6 +606,9 @@ export function startTickLoop() {
     if (autoSaveCounter >= AUTO_SAVE_INTERVAL) {
       autoSaveCounter = 0
       current.autoSave()
+    }
+    } catch (err) {
+      console.error('[TickEngine] Error in tick loop, continuing:', err)
     }
   }
 

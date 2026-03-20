@@ -153,6 +153,70 @@ export const DIFFICULTY_MULTIPLIERS = {
   },
 } as const
 
+// ===== Regime-Aware AI Modifiers =====
+
+import type { MarketRegime, TradingStyle } from '../types'
+
+/**
+ * 시장 레짐별 AI 전략 수정자
+ * - frequencyMod: 거래 빈도 배율 (1.0 = 정상)
+ * - positionMod: 포지션 크기 배율
+ */
+export const REGIME_MODIFIERS: Record<
+  TradingStyle,
+  Record<MarketRegime, { frequencyMod: number; positionMod: number }>
+> = {
+  aggressive: {
+    CALM: { frequencyMod: 1.0, positionMod: 1.0 },
+    VOLATILE: { frequencyMod: 0.7, positionMod: 1.3 },
+    CRISIS: { frequencyMod: 0.5, positionMod: 0.6 },
+  },
+  conservative: {
+    CALM: { frequencyMod: 1.0, positionMod: 1.0 },
+    VOLATILE: { frequencyMod: 0.5, positionMod: 0.8 },
+    CRISIS: { frequencyMod: 0.3, positionMod: 0.5 },
+  },
+  'trend-follower': {
+    CALM: { frequencyMod: 0.8, positionMod: 0.9 },
+    VOLATILE: { frequencyMod: 1.3, positionMod: 1.2 },
+    CRISIS: { frequencyMod: 1.5, positionMod: 0.7 },
+  },
+  contrarian: {
+    CALM: { frequencyMod: 0.5, positionMod: 0.8 },
+    VOLATILE: { frequencyMod: 1.0, positionMod: 1.0 },
+    CRISIS: { frequencyMod: 1.5, positionMod: 1.5 },
+  },
+} as const
+
+/**
+ * 레짐별 패닉셀 확률 배수
+ */
+export const REGIME_PANIC_MULTIPLIER: Record<MarketRegime, number> = {
+  CALM: 0.6,
+  VOLATILE: 1.6,
+  CRISIS: 3.0,
+} as const
+
+// ===== Competitor Memory Configuration =====
+
+export const COMPETITOR_MEMORY_CONFIG = {
+  /** 최대 보관 거래 기록 수 (링 버퍼) */
+  MAX_TRADE_RECORDS: 20,
+  /** 수익 시 adaptationBias 증가 */
+  WIN_BIAS_DELTA: 0.05,
+  /** 손실 시 adaptationBias 감소 (비대칭 — 손실에 더 민감) */
+  LOSS_BIAS_DELTA: -0.08,
+  /** adaptationBias 범위 */
+  BIAS_MIN: -1.0,
+  BIAS_MAX: 1.0,
+  /** 낮은 섹터 승률 임계값 → 선택 확률 0.5배 */
+  LOW_WINRATE_THRESHOLD: 0.3,
+  /** 높은 섹터 승률 임계값 → 선택 확률 1.5배 */
+  HIGH_WINRATE_THRESHOLD: 0.7,
+  /** adaptationBias가 포지션에 미치는 최대 영향 (±30%) */
+  POSITION_BIAS_SCALE: 0.3,
+} as const
+
 // Type exports for TypeScript inference
 export type AIDifficulty = keyof typeof DIFFICULTY_MULTIPLIERS
 

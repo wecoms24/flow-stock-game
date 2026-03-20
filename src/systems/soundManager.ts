@@ -206,4 +206,21 @@ export const soundManager = {
       { freq: 1100, dur: 0.06 },
     ], 'triangle')
   },
+
+  // Market bell: open = ascending C5→E5→G5, close = descending G5→E5→C5
+  playMarketBell(type: 'open' | 'close') {
+    if (type === 'open') {
+      playSequence([
+        { freq: 523, dur: 0.15 },
+        { freq: 659, dur: 0.15 },
+        { freq: 784, dur: 0.25 },
+      ], 'triangle')
+    } else {
+      playSequence([
+        { freq: 784, dur: 0.15 },
+        { freq: 659, dur: 0.15 },
+        { freq: 523, dur: 0.25 },
+      ], 'triangle')
+    }
+  },
 }

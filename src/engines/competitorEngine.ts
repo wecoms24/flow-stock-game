@@ -1,6 +1,13 @@
-import type { Competitor, Company, TradingStyle, CompetitorAction, TauntMessage } from '../types'
+import type { Competitor, Company, TradingStyle, CompetitorAction, TauntMessage, MarketRegime } from '../types'
 import type { PlayerProfile } from '../types/personalization'
-import { PANIC_SELL_CONFIG, AI_STRATEGY_CONFIG, PERFORMANCE_CONFIG } from '../config/aiConfig'
+import {
+  PANIC_SELL_CONFIG,
+  AI_STRATEGY_CONFIG,
+  PERFORMANCE_CONFIG,
+  REGIME_MODIFIERS,
+  REGIME_PANIC_MULTIPLIER,
+  COMPETITOR_MEMORY_CONFIG,
+} from '../config/aiConfig'
 import { calculateMA, calculateRSI } from '../utils/technicalIndicators'
 import { PLAYER_RESPONSE_EFFECT_DURATION } from '../data/taunts'
 
@@ -52,12 +59,48 @@ function random(min: number, max: number): number {
 
 /**
  * 확률 기반 거래 시점 결정
- * 기존 `tick % random(min, max)` 방식은 작은 수의 배수 tick에 거래가 집중되는 불균일 분포 문제가 있음.
- * 매 호출마다 균일한 확률로 거래 여부를 결정하여 자연스러운 간격 제공.
+ * 레짐 수정자를 반영하여 빈도를 조절
  */
-function shouldTrade(freqMin: number, freqMax: number): boolean {
-  const targetInterval = freqMin + Math.random() * (freqMax - freqMin)
+function shouldTrade(freqMin: number, freqMax: number, frequencyMod: number = 1.0): boolean {
+  const targetInterval = (freqMin + Math.random() * (freqMax - freqMin)) / Math.max(0.1, frequencyMod)
   return Math.random() < PERFORMANCE_CONFIG.HOUR_DISTRIBUTION / targetInterval
+}
+
+/**
+ * 메모리 기반 종목 선택 가중치 적용
+ * 섹터 승률이 낮으면 선택 확률 감소, 높으면 증가
+ */
+function applyMemoryWeight(companies: Company[], memory?: Competitor['memory']): Company[] {
+  if (!memory || Object.keys(memory.sectorWinRate).length === 0) return companies
+
+  // 승률 기반 가중치 적용: 낮으면 제외, 높으면 복제(선택 확률 증가)
+  const weighted: Company[] = []
+  for (const c of companies) {
+    const sectorStats = memory.sectorWinRate[c.sector]
+    if (!sectorStats || sectorStats.total < 3) {
+      weighted.push(c)
+      continue
+    }
+
+    const winRate = sectorStats.wins / sectorStats.total
+    if (winRate < COMPETITOR_MEMORY_CONFIG.LOW_WINRATE_THRESHOLD) {
+      if (Math.random() < 0.5) weighted.push(c) // 50% 확률로 제외
+    } else if (winRate > COMPETITOR_MEMORY_CONFIG.HIGH_WINRATE_THRESHOLD) {
+      weighted.push(c)
+      if (Math.random() < 0.5) weighted.push(c) // 1.5x 선택 확률 (복제)
+    } else {
+      weighted.push(c)
+    }
+  }
+  return weighted.length > 0 ? weighted : companies
+}
+
+/**
+ * 메모리 기반 포지션 크기 조정
+ */
+function applyMemoryPositionBias(positionSize: number, memory?: Competitor['memory']): number {
+  if (!memory) return positionSize
+  return positionSize * (1.0 + memory.adaptationBias * COMPETITOR_MEMORY_CONFIG.POSITION_BIAS_SCALE)
 }
 
 // ===== AI Strategies =====
@@ -68,98 +111,35 @@ function shouldTrade(freqMin: number, freqMax: number): boolean {
  * - Frequent trading (every 10-30 ticks)
  * - Large positions (15-30% of cash)
  * - Stop loss: -15%, Take profit: +25%
+ * ✨ Phase 1: 레짐별 빈도/포지션 조정
+ * ✨ Phase 2: 메모리 기반 종목 선택
  */
 function sharkStrategy(
   competitor: Competitor,
   companies: Company[],
   tick: number,
   _priceHistory: Record<string, number[]>,
+  regime: MarketRegime = 'CALM',
 ): CompetitorAction | null {
   const config = AI_STRATEGY_CONFIG.SHARK
+  const regimeMod = REGIME_MODIFIERS.aggressive[regime]
 
-  if (!shouldTrade(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX)) return null
+  if (!shouldTrade(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX, regimeMod.frequencyMod)) return null
 
-  // Find high volatility stocks
-  const highVolStocks = companies
+  // Find high volatility stocks (with memory filter)
+  let highVolStocks = companies
     .filter((c) => c.status !== 'acquired')
     .filter((c) => c.volatility > config.MIN_VOLATILITY)
     .filter((c) => config.PREFERRED_SECTORS.includes(c.sector as any))
     .sort((a, b) => b.volatility - a.volatility)
 
+  highVolStocks = applyMemoryWeight(highVolStocks, competitor.memory)
   if (highVolStocks.length === 0) return null
 
   // Select top volatility stock
   const target = highVolStocks[0]
 
   // Check if already holding - take profit/stop loss
-  const position = competitor.portfolio[target.id]
-  if (position) {
-    const profitPercent = ((target.price - position.avgBuyPrice) / position.avgBuyPrice) * 100
-
-    if (
-      profitPercent > config.TAKE_PROFIT_PERCENT * 100 ||
-      profitPercent < config.STOP_LOSS_PERCENT * 100
-    ) {
-      // Sell entire position
-      return {
-        competitorId: competitor.id,
-        action: 'sell',
-        companyId: target.id,
-        ticker: target.ticker,
-        quantity: position.shares,
-        price: target.price,
-        timestamp: tick,
-      }
-    }
-    return null // Hold
-  }
-
-  // Buy with configurable position size
-  const positionSize =
-    competitor.cash *
-    (config.POSITION_SIZE_MIN + Math.random() * (config.POSITION_SIZE_MAX - config.POSITION_SIZE_MIN))
-  const quantity = Math.floor(positionSize / target.price)
-
-  if (quantity <= 0) return null
-
-  return {
-    competitorId: competitor.id,
-    action: 'buy',
-    companyId: target.id,
-    ticker: target.ticker,
-    quantity,
-    price: target.price,
-    timestamp: tick,
-  }
-}
-
-/**
- * 🐢 The Turtle (Conservative)
- * - Low volatility blue chips
- * - Long-term holding (every 100-200 ticks)
- * - Small positions (5-10% of cash)
- * - Stop loss: -5%, Take profit: +10%
- */
-function turtleStrategy(
-  competitor: Competitor,
-  companies: Company[],
-  tick: number,
-  _priceHistory: Record<string, number[]>,
-): CompetitorAction | null {
-  const config = AI_STRATEGY_CONFIG.TURTLE
-
-  if (!shouldTrade(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX)) return null
-
-  const safeStocks = companies
-    .filter((c) => c.status !== 'acquired')
-    .filter((c) => config.BLUE_CHIPS.some((chip) => c.ticker.includes(chip)))
-    .filter((c) => c.volatility < config.MAX_VOLATILITY)
-
-  if (safeStocks.length === 0) return null
-
-  const target = safeStocks[random(0, safeStocks.length - 1)]
-
-  // Check existing position
   const position = competitor.portfolio[target.id]
   if (position) {
     const profitPercent = ((target.price - position.avgBuyPrice) / position.avgBuyPrice) * 100
@@ -181,10 +161,81 @@ function turtleStrategy(
     return null
   }
 
-  // Buy with configurable position size
-  const positionSize =
-    competitor.cash *
-    (config.POSITION_SIZE_MIN + Math.random() * (config.POSITION_SIZE_MAX - config.POSITION_SIZE_MIN))
+  // Buy with regime-adjusted position size
+  const baseSize =
+    config.POSITION_SIZE_MIN + Math.random() * (config.POSITION_SIZE_MAX - config.POSITION_SIZE_MIN)
+  const positionSize = applyMemoryPositionBias(
+    competitor.cash * baseSize * regimeMod.positionMod,
+    competitor.memory,
+  )
+  const quantity = Math.floor(positionSize / target.price)
+
+  if (quantity <= 0) return null
+
+  return {
+    competitorId: competitor.id,
+    action: 'buy',
+    companyId: target.id,
+    ticker: target.ticker,
+    quantity,
+    price: target.price,
+    timestamp: tick,
+  }
+}
+
+/**
+ * 🐢 The Turtle (Conservative)
+ * ✨ Phase 1: CRISIS 시 극단적 방어 (빈도 70% 감소)
+ */
+function turtleStrategy(
+  competitor: Competitor,
+  companies: Company[],
+  tick: number,
+  _priceHistory: Record<string, number[]>,
+  regime: MarketRegime = 'CALM',
+): CompetitorAction | null {
+  const config = AI_STRATEGY_CONFIG.TURTLE
+  const regimeMod = REGIME_MODIFIERS.conservative[regime]
+
+  if (!shouldTrade(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX, regimeMod.frequencyMod)) return null
+
+  let safeStocks = companies
+    .filter((c) => c.status !== 'acquired')
+    .filter((c) => config.BLUE_CHIPS.some((chip) => c.ticker.includes(chip)))
+    .filter((c) => c.volatility < config.MAX_VOLATILITY)
+
+  safeStocks = applyMemoryWeight(safeStocks, competitor.memory)
+  if (safeStocks.length === 0) return null
+
+  const target = safeStocks[random(0, safeStocks.length - 1)]
+
+  const position = competitor.portfolio[target.id]
+  if (position) {
+    const profitPercent = ((target.price - position.avgBuyPrice) / position.avgBuyPrice) * 100
+
+    if (
+      profitPercent > config.TAKE_PROFIT_PERCENT * 100 ||
+      profitPercent < config.STOP_LOSS_PERCENT * 100
+    ) {
+      return {
+        competitorId: competitor.id,
+        action: 'sell',
+        companyId: target.id,
+        ticker: target.ticker,
+        quantity: position.shares,
+        price: target.price,
+        timestamp: tick,
+      }
+    }
+    return null
+  }
+
+  const baseSize =
+    config.POSITION_SIZE_MIN + Math.random() * (config.POSITION_SIZE_MAX - config.POSITION_SIZE_MIN)
+  const positionSize = applyMemoryPositionBias(
+    competitor.cash * baseSize * regimeMod.positionMod,
+    competitor.memory,
+  )
   const quantity = Math.floor(positionSize / target.price)
 
   if (quantity <= 0) return null
@@ -202,20 +253,19 @@ function turtleStrategy(
 
 /**
  * 🌊 The Surfer (Trend Follower)
- * - Buys above MA20 (uptrend)
- * - Sells below MA20 (downtrend)
- * - Medium frequency (every 20-50 ticks)
- * - Medium positions (10-20% of cash)
+ * ✨ Phase 1: 변동성을 기회로 활용 (VOLATILE/CRISIS에서 빈도 증가)
  */
 function surferStrategy(
   competitor: Competitor,
   companies: Company[],
   tick: number,
   priceHistory: Record<string, number[]>,
+  regime: MarketRegime = 'CALM',
 ): CompetitorAction | null {
   const config = AI_STRATEGY_CONFIG.SURFER
+  const regimeMod = REGIME_MODIFIERS['trend-follower'][regime]
 
-  if (!shouldTrade(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX)) return null
+  if (!shouldTrade(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX, regimeMod.frequencyMod)) return null
 
   // Find stocks in uptrend
   const trendingStocks = companies.filter((c) => {
@@ -271,9 +321,12 @@ function surferStrategy(
   // Don't buy if already holding
   if (competitor.portfolio[target.id]) return null
 
-  const positionSize =
-    competitor.cash *
-    (config.POSITION_SIZE_MIN + Math.random() * (config.POSITION_SIZE_MAX - config.POSITION_SIZE_MIN))
+  const baseSize =
+    config.POSITION_SIZE_MIN + Math.random() * (config.POSITION_SIZE_MAX - config.POSITION_SIZE_MIN)
+  const positionSize = applyMemoryPositionBias(
+    competitor.cash * baseSize * regimeMod.positionMod,
+    competitor.memory,
+  )
   const quantity = Math.floor(positionSize / target.price)
 
   if (quantity <= 0) return null
@@ -291,20 +344,19 @@ function surferStrategy(
 
 /**
  * 🐻 The Bear (Contrarian)
- * - Buys oversold (RSI < 30)
- * - Sells overbought (RSI > 70)
- * - Medium frequency (every 30-70 ticks)
- * - Medium-large positions (12-25% of cash)
+ * ✨ Phase 1: CRISIS에서 공격적 역발상 매수 (빈도/포지션 모두 1.5배)
  */
 function bearStrategy(
   competitor: Competitor,
   companies: Company[],
   tick: number,
   priceHistory: Record<string, number[]>,
+  regime: MarketRegime = 'CALM',
 ): CompetitorAction | null {
   const config = AI_STRATEGY_CONFIG.BEAR
+  const regimeMod = REGIME_MODIFIERS.contrarian[regime]
 
-  if (!shouldTrade(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX)) return null
+  if (!shouldTrade(config.TRADE_FREQ_MIN, config.TRADE_FREQ_MAX, regimeMod.frequencyMod)) return null
 
   // Check holdings - sell if overbought
   for (const [companyId, position] of Object.entries(competitor.portfolio)) {
@@ -347,9 +399,12 @@ function bearStrategy(
   // Don't buy if already holding
   if (competitor.portfolio[target.id]) return null
 
-  const positionSize =
-    competitor.cash *
-    (config.POSITION_SIZE_MIN + Math.random() * (config.POSITION_SIZE_MAX - config.POSITION_SIZE_MIN))
+  const baseSize =
+    config.POSITION_SIZE_MIN + Math.random() * (config.POSITION_SIZE_MAX - config.POSITION_SIZE_MIN)
+  const positionSize = applyMemoryPositionBias(
+    competitor.cash * baseSize * regimeMod.positionMod,
+    competitor.memory,
+  )
   const quantity = Math.floor(positionSize / target.price)
 
   if (quantity <= 0) return null
@@ -367,33 +422,30 @@ function bearStrategy(
 
 /**
  * 😱 Panic Sell Logic
- * - Triggers when position is down > 8%
- * - 5% probability when condition met
- * - 300 tick cooldown (prevents spam)
+ * ✨ Phase 1: 레짐별 패닉 확률 차등 (CALM 0.6x → CRISIS 3.0x)
  */
 function checkPanicSell(
   competitor: Competitor,
   companies: Company[],
   _tick: number,
+  regime: MarketRegime = 'CALM',
 ): CompetitorAction | null {
-  // Check cooldown (managed by gameStore now)
   if (competitor.panicSellCooldown > 0) {
     return null
   }
 
-  // Check all holdings for losses
+  const panicMul = REGIME_PANIC_MULTIPLIER[regime]
+
   for (const [companyId, position] of Object.entries(competitor.portfolio)) {
     const company = companies.find((c) => c.id === companyId)
     if (!company) continue
 
     const lossPercent = ((company.price - position.avgBuyPrice) / position.avgBuyPrice) * 100
 
-    // Panic sell threshold + random probability
     if (
       lossPercent < PANIC_SELL_CONFIG.LOSS_THRESHOLD_PERCENT * 100 &&
-      Math.random() < PANIC_SELL_CONFIG.TRIGGER_PROBABILITY
+      Math.random() < PANIC_SELL_CONFIG.TRIGGER_PROBABILITY * panicMul
     ) {
-      // Cooldown will be set by gameStore after this action is executed
       return {
         competitorId: competitor.id,
         action: 'panic_sell',
@@ -411,7 +463,15 @@ function checkPanicSell(
 
 // ===== Strategy Map =====
 
-const STRATEGIES: Record<TradingStyle, typeof sharkStrategy> = {
+type StrategyFn = (
+  competitor: Competitor,
+  companies: Company[],
+  tick: number,
+  priceHistory: Record<string, number[]>,
+  regime?: MarketRegime,
+) => CompetitorAction | null
+
+const STRATEGIES: Record<TradingStyle, StrategyFn> = {
   aggressive: sharkStrategy,
   conservative: turtleStrategy,
   'trend-follower': surferStrategy,
@@ -428,27 +488,28 @@ export function processAITrading(
   playerProfile?: PlayerProfile,
   personalizationEnabled?: boolean,
   responseEffects?: Record<string, PlayerResponseEffect>,
+  regime?: MarketRegime,
 ): CompetitorAction[] {
   const actions: CompetitorAction[] = []
+  const currentRegime = regime ?? 'CALM'
 
   competitors.forEach((competitor) => {
 
     // 1. Check panic sell first (priority)
-    const panicAction = checkPanicSell(competitor, companies, tick)
+    const panicAction = checkPanicSell(competitor, companies, tick, currentRegime)
     if (panicAction) {
       actions.push(panicAction)
       return
     }
 
-    // 2. Execute normal strategy
+    // 2. Execute normal strategy (with regime awareness)
     const strategy = STRATEGIES[competitor.style]
-    const action = strategy(competitor, companies, tick, priceHistory)
+    const action = strategy(competitor, companies, tick, priceHistory, currentRegime)
 
     // 2.5. Player "confident" response → 20% extra trade attempt
-    // If normal strategy returned null, give a bonus chance to trade
     if (!action && responseEffects?.[competitor.id]?.tradeFrequencyBoost) {
       if (Math.random() < 0.20) {
-        const bonusAction = strategy(competitor, companies, tick, priceHistory)
+        const bonusAction = strategy(competitor, companies, tick, priceHistory, currentRegime)
         if (bonusAction) {
           actions.push(bonusAction)
           return
@@ -523,6 +584,7 @@ export function generateCompetitors(count: number, startingCash: number): Compet
     isMirrorRival: false,
     headToHeadWins: 0,
     headToHeadLosses: 0,
+    memory: { recentTrades: [], sectorWinRate: {}, adaptationBias: 0 },
   }))
 
   // Designate one competitor as Mirror Rival (personalization feature)
@@ -556,4 +618,63 @@ export function getPriceHistory(companies: Company[]): Record<string, number[]> 
   })
 
   return history
+}
+
+// ===== Competitor Memory Helpers =====
+
+/**
+ * 경쟁자 메모리 초기화 (기존 세이브 호환용)
+ */
+export function initCompetitorMemory(): NonNullable<Competitor['memory']> {
+  return { recentTrades: [], sectorWinRate: {}, adaptationBias: 0 }
+}
+
+/**
+ * 매도 완료 시 경쟁자 트레이드 메모리 업데이트
+ */
+export function updateCompetitorMemory(
+  memory: NonNullable<Competitor['memory']>,
+  record: { companyId: string; sector: string; buyPrice: number; sellPrice: number; timestamp: number },
+): NonNullable<Competitor['memory']> {
+  const pnl = record.sellPrice - record.buyPrice
+  const isWin = pnl > 0
+
+  // 링 버퍼: 최대 20개
+  const newTrades = [
+    ...memory.recentTrades,
+    {
+      companyId: record.companyId,
+      sector: record.sector,
+      direction: 'sell' as const,
+      buyPrice: record.buyPrice,
+      sellPrice: record.sellPrice,
+      pnl,
+      timestamp: record.timestamp,
+    },
+  ].slice(-COMPETITOR_MEMORY_CONFIG.MAX_TRADE_RECORDS)
+
+  // 섹터 승률 업데이트
+  const sectorWinRate = { ...memory.sectorWinRate }
+  if (!sectorWinRate[record.sector]) {
+    sectorWinRate[record.sector] = { wins: 0, total: 0 }
+  }
+  sectorWinRate[record.sector] = {
+    wins: sectorWinRate[record.sector].wins + (isWin ? 1 : 0),
+    total: sectorWinRate[record.sector].total + 1,
+  }
+
+  // adaptationBias 업데이트 (비대칭)
+  const biasDelta = isWin
+    ? COMPETITOR_MEMORY_CONFIG.WIN_BIAS_DELTA
+    : COMPETITOR_MEMORY_CONFIG.LOSS_BIAS_DELTA
+  const newBias = Math.max(
+    COMPETITOR_MEMORY_CONFIG.BIAS_MIN,
+    Math.min(COMPETITOR_MEMORY_CONFIG.BIAS_MAX, memory.adaptationBias + biasDelta),
+  )
+
+  return {
+    recentTrades: newTrades,
+    sectorWinRate,
+    adaptationBias: newBias,
+  }
 }

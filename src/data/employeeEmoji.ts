@@ -25,6 +25,7 @@ export const BEHAVIOR_EMOJI: Record<EmployeeActionType, string> = {
   CELEBRATING: '🎉',
   STUDYING: '📖',
   PHONE_CALL: '📱',
+  BURNOUT: '🔥',
 }
 
 export const MOOD_FACE: Record<string, string> = {

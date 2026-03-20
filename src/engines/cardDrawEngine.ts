@@ -1,11 +1,12 @@
 /**
  * Card Draw Engine
  *
- * 가중 랜덤 선택, 배타성 검증, 10% 강제 이벤트 로직
+ * 가중 랜덤 선택, 배타성 검증, 25% 강제 이벤트 로직
  */
 
 import type { NewsCard, NewsCardTemplate } from '../types/newsCard'
 import { NEWS_CARD_TEMPLATES } from '../data/newsCards'
+import { ShuffleBag } from '../utils/randomSystems'
 
 /** 카드 3장 뽑기 (가중 랜덤) */
 export function drawCards(currentYear: number): NewsCard[] {
@@ -19,8 +20,8 @@ export function drawCards(currentYear: number): NewsCard[] {
   const result: NewsCard[] = []
   const usedIds = new Set<string>()
 
-  // 10% 확률로 강제 이벤트 카드 1장 포함
-  if (Math.random() < 0.1) {
+  // 25% 확률로 강제 이벤트 카드 1장 포함
+  if (Math.random() < 0.25) {
     const forcedTemplates = eligible.filter((t) => t.isForced)
     if (forcedTemplates.length > 0) {
       const forced = weightedPick(forcedTemplates)
@@ -57,18 +58,24 @@ export function drawCards(currentYear: number): NewsCard[] {
   return result
 }
 
-/** 가중 랜덤 선택 */
+/** ✨ Phase 11: ShuffleBag 기반 가중 랜덤 선택 (클러스터링 방지) */
+let cardShuffleBag: ShuffleBag<string> | null = null
+let lastBagTemplateKey = ''
+
 function weightedPick(templates: NewsCardTemplate[]): NewsCardTemplate | null {
   if (templates.length === 0) return null
-  const totalWeight = templates.reduce((sum, t) => sum + t.weight, 0)
-  let roll = Math.random() * totalWeight
 
-  for (const t of templates) {
-    roll -= t.weight
-    if (roll <= 0) return t
+  // ShuffleBag 재생성 (템플릿 풀 구성 변경 시 — ID 기반 비교)
+  const templateKey = templates.map((t) => t.id).join(',')
+  if (!cardShuffleBag || templateKey !== lastBagTemplateKey) {
+    cardShuffleBag = new ShuffleBag(
+      templates.map((t) => ({ item: t.id, weight: t.weight })),
+    )
+    lastBagTemplateKey = templateKey
   }
 
-  return templates[templates.length - 1]
+  const pickedId = cardShuffleBag.next()
+  return templates.find((t) => t.id === pickedId) ?? templates[0]
 }
 
 /** 템플릿 → 카드 인스턴스 변환 */

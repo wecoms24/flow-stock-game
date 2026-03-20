@@ -413,6 +413,99 @@ export const SKILL_BADGES_CATALOG: Record<string, SkillBadge> = {
   },
 }
 
+/* ── Phase 7: 뱃지 시너지 ── */
+
+export interface BadgeSynergyRule {
+  badges: [string, string]
+  name: string
+  icon: string
+  description: string
+  effects: {
+    executionSpeedBonus?: number
+    signalAccuracy?: number
+    slippageReduction?: number
+    riskReduction?: number
+    positionSizeMultiplier?: number
+  }
+}
+
+export const BADGE_SYNERGIES: BadgeSynergyRule[] = [
+  {
+    badges: ['flash_trader', 'chart_master'],
+    name: '스피드 리더',
+    icon: '⚡📊',
+    description: '빠른 체결 + 정확한 차트 읽기',
+    effects: { executionSpeedBonus: 0.2, signalAccuracy: 0.1 },
+  },
+  {
+    badges: ['risk_manager', 'contrarian'],
+    name: '위기 알파',
+    icon: '🛡️🔄',
+    description: 'VOLATILE/CRISIS에서 리스크 최소화',
+    effects: { riskReduction: 0.15 },
+  },
+  {
+    badges: ['kelly_criterion_expert', 'market_maker'],
+    name: '최적 실행',
+    icon: '📐🏦',
+    description: '최적 포지션 + 대량 체결',
+    effects: { positionSizeMultiplier: 1.2, slippageReduction: 0.2 },
+  },
+  {
+    badges: ['momentum_trader', 'trend_follower'],
+    name: '추세 라이더',
+    icon: '🚀📈',
+    description: '추세 추종 극대화',
+    effects: { signalAccuracy: 0.15, executionSpeedBonus: 0.15 },
+  },
+  {
+    badges: ['zen_trader', 'risk_manager'],
+    name: '철벽 방어',
+    icon: '🧘🛡️',
+    description: '침착한 리스크 관리',
+    effects: { riskReduction: 0.2, slippageReduction: 0.1 },
+  },
+  {
+    badges: ['fibonacci_wizard', 'pattern_hunter'],
+    name: '패턴 마스터',
+    icon: '🌀🎯',
+    description: '피보나치 + 패턴 분석의 시너지',
+    effects: { signalAccuracy: 0.2 },
+  },
+  {
+    badges: ['macro_economist', 'sentiment_analyst'],
+    name: '시장 독심술',
+    icon: '🌍🧠',
+    description: '거시 경제 + 시장 심리의 통합 분석',
+    effects: { signalAccuracy: 0.15, riskReduction: 0.1 },
+  },
+  {
+    badges: ['arbitrage_master', 'smart_router'],
+    name: '극한 효율',
+    icon: '⚖️🎯',
+    description: '차익 거래 + 스마트 라우팅',
+    effects: { slippageReduction: 0.25, executionSpeedBonus: 0.2 },
+  },
+]
+
+/**
+ * 뱃지 시너지 탐지 및 보너스 반환
+ */
+export function findBadgeSynergies(badges: import('../types/skills').SkillBadge[] | undefined): BadgeSynergyRule[] {
+  if (!badges || badges.length < 2) return []
+
+  const badgeIds = new Set(badges.map((b) => b.id))
+  const active: BadgeSynergyRule[] = []
+
+  for (const rule of BADGE_SYNERGIES) {
+    if (badgeIds.has(rule.badges[0]) && badgeIds.has(rule.badges[1])) {
+      active.push(rule)
+    }
+  }
+
+  return active
+}
+
 /**
  * 스킬 수치(0-100) → 뱃지 레벨(1-5) 변환
  */

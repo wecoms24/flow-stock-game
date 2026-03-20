@@ -13,7 +13,7 @@ export const EVENT_CHAIN_TEMPLATES: EventChain[] = [
     description: 'AI 열풍이 과열되고 있다. 3주 후 결과가 결정된다.',
     icon: '🫧',
     category: 'sector',
-    weight: 12,
+    weight: 18,
     branchAtWeek: 1,
     weeks: [
       { week: 1, title: 'AI 열풍 시작', description: '기술주 일제히 상승', driftModifier: 0.03, volatilityModifier: 0.01, affectedSectors: ['tech'] },
@@ -32,7 +32,7 @@ export const EVENT_CHAIN_TEMPLATES: EventChain[] = [
     description: '중동 지정학적 긴장이 고조되고 있다.',
     icon: '🛢️',
     category: 'sector',
-    weight: 10,
+    weight: 15,
     branchAtWeek: 2,
     weeks: [
       { week: 1, title: '지정학적 긴장', description: '유가 상승 시작', driftModifier: 0.02, volatilityModifier: 0.015, affectedSectors: ['energy'] },
@@ -50,7 +50,7 @@ export const EVENT_CHAIN_TEMPLATES: EventChain[] = [
     description: '주요 은행의 재무 건전성에 우려가 제기됐다.',
     icon: '🏦',
     category: 'sector',
-    weight: 8,
+    weight: 12,
     branchAtWeek: 1,
     weeks: [
       { week: 1, title: '건전성 우려', description: '금융주 하락', driftModifier: -0.02, volatilityModifier: 0.02, affectedSectors: ['finance'] },
@@ -68,7 +68,7 @@ export const EVENT_CHAIN_TEMPLATES: EventChain[] = [
     description: '새로운 변이 바이러스가 확산되고 있다.',
     icon: '🦠',
     category: 'global',
-    weight: 6,
+    weight: 9,
     branchAtWeek: 2,
     triggerCondition: { minYear: 2000 },
     weeks: [
@@ -87,7 +87,7 @@ export const EVENT_CHAIN_TEMPLATES: EventChain[] = [
     description: '소비자 행동 패턴이 급변하고 있다.',
     icon: '🛍️',
     category: 'sector',
-    weight: 14,
+    weight: 21,
     branchAtWeek: 1,
     weeks: [
       { week: 1, title: '온라인 전환', description: '이커머스 급성장', driftModifier: 0.02, volatilityModifier: 0.01, affectedSectors: ['consumer'] },
@@ -105,7 +105,7 @@ export const EVENT_CHAIN_TEMPLATES: EventChain[] = [
     description: '중앙은행의 금리 정책 방향이 바뀔 수 있다.',
     icon: '📊',
     category: 'macro',
-    weight: 10,
+    weight: 15,
     branchAtWeek: 2,
     weeks: [
       { week: 1, title: '경기 지표 발표', description: '시장 전망 엇갈림', driftModifier: 0, volatilityModifier: 0.02 },
@@ -124,7 +124,7 @@ export const EVENT_CHAIN_TEMPLATES: EventChain[] = [
     description: '주요국 간 관세 전쟁이 고조되고 있다.',
     icon: '⚔️',
     category: 'global',
-    weight: 8,
+    weight: 12,
     branchAtWeek: 2,
     weeks: [
       { week: 1, title: '관세 부과', description: '수출주 타격', driftModifier: -0.015, volatilityModifier: 0.02 },
@@ -142,7 +142,7 @@ export const EVENT_CHAIN_TEMPLATES: EventChain[] = [
     description: '대형 기업들의 상장이 줄줄이 예고됐다.',
     icon: '🎪',
     category: 'macro',
-    weight: 12,
+    weight: 18,
     branchAtWeek: 1,
     weeks: [
       { week: 1, title: 'IPO 예고', description: '투자 자금 이동', driftModifier: 0.01, volatilityModifier: 0.015 },
@@ -160,7 +160,7 @@ export const EVENT_CHAIN_TEMPLATES: EventChain[] = [
     description: 'ESG 규제가 강화되며 에너지 전환이 가속된다.',
     icon: '🌱',
     category: 'sector',
-    weight: 10,
+    weight: 15,
     branchAtWeek: 2,
     triggerCondition: { minYear: 2005 },
     weeks: [
@@ -179,7 +179,7 @@ export const EVENT_CHAIN_TEMPLATES: EventChain[] = [
     description: '가상자산 시장 붕괴가 전통 금융으로 전이될 수 있다.',
     icon: '₿',
     category: 'global',
-    weight: 8,
+    weight: 12,
     branchAtWeek: 1,
     triggerCondition: { minYear: 2010 },
     weeks: [

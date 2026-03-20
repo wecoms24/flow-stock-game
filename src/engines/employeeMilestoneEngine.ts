@@ -66,26 +66,3 @@ export function checkEmployeeMilestones(
     totalXpBonus,
   }
 }
-
-/**
- * PnL 기여도 업데이트용 순수 함수
- * 거래 실행 후 관련 직원들의 bio를 업데이트할 데이터 계산
- */
-export function calculatePnlAttribution(
-  pnl: number,
-  ticker: string,
-  involvedEmployeeIds: string[],
-): Array<{
-  employeeId: string
-  pnlShare: number
-  ticker: string
-}> {
-  if (involvedEmployeeIds.length === 0) return []
-
-  const share = pnl / involvedEmployeeIds.length
-  return involvedEmployeeIds.map((id) => ({
-    employeeId: id,
-    pnlShare: share,
-    ticker,
-  }))
-}

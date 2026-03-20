@@ -1,8 +1,9 @@
 /* ── Trader Logic: Order Execution Pipeline (Pure Functions) ── */
 
-import type { Employee } from '../../types'
+import type { Employee, MarketRegime } from '../../types'
 import type { TradeProposal } from '../../types/trade'
-import { TRADE_AI_CONFIG } from '../../config/tradeAIConfig'
+import { TRADE_AI_CONFIG, TRADER_REGIME_CONFIG } from '../../config/tradeAIConfig'
+import { aggregateBadgeEffects } from '../../utils/badgeConverter'
 import { executeEmployeeTrade } from '../tradeExecutionEngine' // ✨ 신규 엔진 통합
 import { getPassiveModifiers } from '../../systems/skillSystem' // ✨ RPG Skill Tree
 import type { AggregatedCorporateEffects } from '../corporateSkillEngine' // ✨ 회사 스킬
@@ -23,20 +24,26 @@ export function executeProposal(
   currentPrice: number,
   playerCash: number,
   adjacencyBonus: number = 0,
-  volatility: number = 0.2, // ✨ 신규: 변동성 정보
-  corporateEffects?: AggregatedCorporateEffects, // ✨ 회사 스킬 효과
+  volatility: number = 0.2,
+  corporateEffects?: AggregatedCorporateEffects,
+  regime?: MarketRegime,
+  totalAssetValue?: number,
 ): {
   success: boolean
   executedPrice: number
   slippage: number
   fee: number
   reason?: string
+  appliedBadgeEffects?: string[]
+  partialFillRemaining?: number
 } {
+  const regimeConfig = TRADER_REGIME_CONFIG[regime ?? 'CALM']
   const hasTrader = trader !== null
 
   let executedPrice: number
   let slippage: number
   let fee: number
+  const appliedBadgeEffects: string[] = []
 
   if (hasTrader && trader) {
     // ✨ 신규 실행 엔진 사용 (뱃지 효과 반영)
@@ -58,6 +65,18 @@ export function executeProposal(
     slippage = executionResult.slippage
     fee = executionResult.commission
 
+    // ✨ 뱃지 집계 효과 기록 (실제 적용은 executeEmployeeTrade 내부에서 처리됨)
+    const badgeEffects = aggregateBadgeEffects(trader.badges)
+    if (badgeEffects.executionSpeedBonus > 0) {
+      appliedBadgeEffects.push(`executionSpeed +${(badgeEffects.executionSpeedBonus * 100).toFixed(0)}%`)
+    }
+    if (badgeEffects.slippageReduction > 0) {
+      appliedBadgeEffects.push(`slippageReduction -${(badgeEffects.slippageReduction * 100).toFixed(0)}%`)
+    }
+    if (badgeEffects.positionSizeMultiplier !== 1.0) {
+      appliedBadgeEffects.push(`positionSize x${badgeEffects.positionSizeMultiplier.toFixed(1)}`)
+    }
+
     // ✨ RPG Skill Tree: Apply trader passive modifiers
     const slippageModifiers = getPassiveModifiers(trader, 'slippage')
     for (const mod of slippageModifiers) {
@@ -76,6 +95,14 @@ export function executeProposal(
         fee *= mod.modifier // modifier 0.85 = 15% 감소
       }
     }
+
+    // ✨ Phase 8: gambler trait — 슬리피지 +15% (공격적 트레이딩 대가)
+    if (trader.traits?.includes('gambler')) {
+      slippage *= 1.15
+    }
+
+    // ✨ Phase 4: 레짐별 슬리피지 배수 적용
+    slippage *= regimeConfig.slippageMultiplier
 
     // ✨ Corporate Skill: 슬리피지/수수료 감소
     if (corporateEffects) {
@@ -122,6 +149,28 @@ export function executeProposal(
         slippage,
         fee,
         reason: 'insufficient_funds',
+        appliedBadgeEffects: appliedBadgeEffects.length > 0 ? appliedBadgeEffects : undefined,
+      }
+    }
+  }
+
+  // ✨ Phase 8: gambler trait — 포지션 크기 +30%
+  if (trader?.traits?.includes('gambler') && proposal.direction === 'buy') {
+    proposal.quantity = Math.floor(proposal.quantity * 1.3)
+  }
+
+  // ✨ Phase 4: 대형 주문 부분체결
+  let partialFillRemaining: number | undefined
+  if (totalAssetValue && proposal.direction === 'buy') {
+    const orderValue = executedPrice * proposal.quantity
+    if (orderValue > totalAssetValue * regimeConfig.largeOrderThreshold) {
+      const tradingSkill = trader?.skills?.trading ?? 0
+      const fillRate = Math.min(1.0, 0.5 + tradingSkill / 200)
+      const filledQuantity = Math.max(1, Math.floor(proposal.quantity * fillRate))
+      if (filledQuantity < proposal.quantity) {
+        partialFillRemaining = proposal.quantity - filledQuantity
+        // Mutate proposal quantity for this execution
+        proposal.quantity = filledQuantity
       }
     }
   }
@@ -131,5 +180,7 @@ export function executeProposal(
     executedPrice,
     slippage,
     fee,
+    appliedBadgeEffects: appliedBadgeEffects.length > 0 ? appliedBadgeEffects : undefined,
+    partialFillRemaining,
   }
 }

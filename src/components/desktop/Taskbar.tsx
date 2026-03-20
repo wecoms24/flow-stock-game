@@ -27,6 +27,7 @@ const MENU_ITEMS = [
   { category: '정보', type: 'monthly_cards' as WindowType, icon: 'news' as IconName, label: '월간 카드', menuLabel: '이달의 카드' },
   { category: '정보', type: 'event_chain_tracker' as WindowType, icon: 'news' as IconName, label: '이벤트', menuLabel: '이벤트 체인' },
   { category: '정보', type: 'playstyle_analytics' as WindowType, icon: 'chart' as IconName, label: '분석', menuLabel: '플레이스타일 분석' },
+  { category: '정보', type: 'spy' as WindowType, icon: 'ranking' as IconName, label: '스파이', menuLabel: '경쟁사 정탐' },
   { category: '시스템', type: 'settings' as WindowType, icon: 'settings' as IconName, label: '설정', menuLabel: '설정' },
 ] as const
 
@@ -290,6 +291,20 @@ export function Taskbar() {
             {win.title}
           </RetroButton>
         ))}
+      </div>
+
+      <div className="w-px h-5 bg-win-shadow mx-0.5" />
+
+      {/* Market Regime Indicator */}
+      <div className="shrink-0 flex items-center gap-1 px-1.5">
+        <span className={`w-2 h-2 rounded-full ${
+          marketRegime.current === 'CALM' ? 'bg-green-500' :
+          marketRegime.current === 'VOLATILE' ? 'bg-yellow-500' : 'bg-red-500 animate-pulse'
+        }`} />
+        <span className="text-[9px]" title={`${marketRegime.duration}시간 지속`}>
+          {marketRegime.current === 'CALM' ? '안정' :
+           marketRegime.current === 'VOLATILE' ? '변동' : '위기'}
+        </span>
       </div>
 
       <div className="w-px h-5 bg-win-shadow mx-0.5" />

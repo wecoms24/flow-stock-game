@@ -1,9 +1,9 @@
 /* ── Manager Logic: Risk Assessment Pipeline (Pure Functions) ── */
 
-import type { Employee, PortfolioPosition } from '../../types'
+import type { Employee, MarketRegime, PortfolioPosition } from '../../types'
 import type { TradeProposal } from '../../types/trade'
 import type { PlayerProfile } from '../../types/personalization'
-import { TRADE_AI_CONFIG } from '../../config/tradeAIConfig'
+import { TRADE_AI_CONFIG, MANAGER_REGIME_CONFIG } from '../../config/tradeAIConfig'
 import { SKILL_BALANCE } from '../../config/skillBalance'
 import { calculatePositionSize } from '../riskManagementEngine' // ✨ 신규 엔진 통합
 import { getPassiveModifiers } from '../../systems/skillSystem' // ✨ RPG Skill Tree
@@ -35,7 +35,8 @@ export function evaluateRisk(
   portfolio: Record<string, PortfolioPosition>,
   playerProfile?: PlayerProfile,
   personalizationEnabled?: boolean,
-  totalAssetValue?: number, // ✨ 신규: 총 자산 (리스크 계산용)
+  totalAssetValue?: number,
+  regime?: MarketRegime,
 ): { approved: boolean; reason?: string; isMistake?: boolean; approvalBias?: number } {
   // Insufficient funds check for buy orders
   if (proposal.direction === 'buy') {
@@ -104,13 +105,14 @@ export function evaluateRisk(
     }
   }
 
-  // Base approval threshold
-  let threshold = 60
+  // Base approval threshold + regime adjustment
+  const regimeConfig = MANAGER_REGIME_CONFIG[regime ?? 'CALM']
+  let threshold = 60 + regimeConfig.thresholdBonus
 
   // Trait modifiers
   if (traits.includes('social')) threshold -= 10
-  if (traits.includes('risk_averse')) threshold += 15
-  if (traits.includes('perfectionist')) threshold += 5
+  if (traits.includes('risk_averse')) threshold += 8
+  if (traits.includes('perfectionist')) threshold += 3
 
   // Manager stress affects judgment
   const managerStress = manager.stress ?? 0
@@ -119,12 +121,12 @@ export function evaluateRisk(
   // Confidence-weighted evaluation
   const effectiveConfidence = proposal.confidence + (managerSkill - 50) * 0.3
 
-  // Portfolio concentration check: reject if >30% in one stock (including proposed buy)
+  // Portfolio concentration check: reject if over regime concentration limit
   if (proposal.direction === 'buy') {
     const position = portfolio[proposal.companyId]
     const totalShares = (position?.shares ?? 0) + proposal.quantity
-    if (totalShares * proposal.targetPrice > playerCash * 0.3) {
-      threshold += 15 // more cautious with concentrated positions
+    if (totalShares * proposal.targetPrice > playerCash * regimeConfig.concentrationLimit) {
+      threshold += 15
     }
   }
 

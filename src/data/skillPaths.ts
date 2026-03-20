@@ -6,6 +6,19 @@
 
 import type { SkillPath } from '../types/skillPath'
 
+export const RESPEC_CONFIG = {
+  /** 기본 비용 */
+  BASE_COST: 500_000,
+  /** 레벨당 추가 비용 */
+  PER_LEVEL_COST: 50_000,
+  /** 쿨다운 (월 단위) */
+  COOLDOWN_MONTHS: 6,
+  /** 리스펙 후 디버프 기간 (월 단위) */
+  DEBUFF_MONTHS: 1,
+  /** 디버프 스킬 감소 비율 */
+  DEBUFF_SKILL_PENALTY: 0.1,
+} as const
+
 export const SKILL_PATHS: Record<string, SkillPath> = {
   trading: {
     type: 'trading',
@@ -70,6 +83,41 @@ export const SKILL_PATHS: Record<string, SkillPath> = {
         name: '전설의 분석가',
         description: '분석 신뢰도 +10 + 리서치 품질 +25%',
         effect: { type: 'confidence_boost', value: 10 },
+      },
+    ],
+  },
+
+  // ✨ Phase 10: 3번째 경로 — 리서치 마스터
+  research: {
+    type: 'research',
+    name: '리서치 마스터',
+    description: '리스크 관리 극대화. 위기 감지, 헤징, 스트레스 저항력 강화.',
+    icon: '🛡️',
+    color: 'text-green-400',
+    bonuses: [
+      {
+        level: 5,
+        name: '리스크 센서',
+        description: '리스크 감소 -10%',
+        effect: { type: 'risk_reduction', value: 0.1 },
+      },
+      {
+        level: 10,
+        name: '위기 조기 감지',
+        description: 'CRISIS 전환 시 1시간 조기 경고',
+        effect: { type: 'crisis_detection', value: 1 },
+      },
+      {
+        level: 20,
+        name: '헤지 할인',
+        description: '매도 수수료 20% 할인',
+        effect: { type: 'sell_commission_discount', value: 0.2 },
+      },
+      {
+        level: 30,
+        name: '전설의 리서치 마스터',
+        description: '리스크 -25% + 위기 시 실행 속도 +30%',
+        effect: { type: 'risk_reduction', value: 0.25 },
       },
     ],
   },

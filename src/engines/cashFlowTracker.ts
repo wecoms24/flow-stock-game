@@ -49,11 +49,12 @@ export function aggregateMonthly(
   const skillResets = sum('SKILL_RESET')
   const mnaCosts = sum('MNA_ACQUISITION')
   const mnaCashOuts = sum('MNA_CASHOUT')
+  const mnaDividends = sum('MNA_DIVIDEND')
   const taxes = sum('TAX')  // ✨ 부유세 추가
 
   const totalChange =
     tradeBuys + tradeSells + tradeFees + salaries + hireBonuses +
-    hrCosts + officeCosts + skillResets + mnaCosts + mnaCashOuts + taxes  // ✨ taxes 추가
+    hrCosts + officeCosts + skillResets + mnaCosts + mnaCashOuts + mnaDividends + taxes
 
   return {
     year,
@@ -68,7 +69,8 @@ export function aggregateMonthly(
     skillResets,
     mnaCosts,
     mnaCashOuts,
-    taxes,  // ✨ taxes 필드 추가
+    mnaDividends,
+    taxes,
     openingCash,
     closingCash: openingCash + totalChange,
   }
@@ -173,7 +175,7 @@ export function computePnLSummary(
 
   // Aggregate costs from summaries + recent entries
   const sumFromSummaries = (field: keyof MonthlySummary) =>
-    monthlySummaries.reduce((sum, s) => sum + (s[field] as number), 0)
+    monthlySummaries.reduce((sum, s) => sum + ((s[field] as number) ?? 0), 0)
 
   const sumFromLog = (cat: CashFlowCategory) =>
     cashFlowLog.filter((e) => e.category === cat).reduce((sum, e) => sum + e.amount, 0)

@@ -148,11 +148,40 @@ export interface Employee {
   learnedCorporateSkills?: string[] // 교육 수료한 Corporate Skill ID
   activeTrainingId?: string | null // 현재 수강 중인 교육 프로그램 ID
 
+  // ✨ Burnout System
+  burnoutTicks?: number // 번아웃 경과 틱 수 (undefined/0 = 정상)
+
+  // ✨ Salary Negotiation
+  lastNegotiationMonth?: number // 마지막 연봉 협상 월 (절대 월수)
+
   // ✨ Trading Limits (거래 한도 설정)
   tradingLimits?: TradingLimits
 
   // ✨ Stop Loss / Take Profit (자동 손익실현)
   stopLossTakeProfit?: StopLossTakeProfit
+
+  // ✨ Phase 5: 직원 습관 시스템
+  habits?: EmployeeHabits
+
+  // ✨ Phase 8: 동적 trait 해금 피티 카운터
+  pityCounters?: PityCounters
+}
+
+/* ── Employee Habits (직원 습관) ── */
+export interface EmployeeHabits {
+  hourlyPreferences: Partial<Record<number, string>> // 시간대별 선호 행동
+  weeklyPatterns: Partial<Record<number, string>> // 요일별 패턴 (day%7)
+  actionAffinities: Partial<Record<string, number>> // 학습된 선호 (-10~+10)
+  recentActions: string[] // 최근 10개 행동
+}
+
+/* ── Pity Counters (연민 시스템) ── */
+export interface PityCounters {
+  rareTrait: number // 레벨업 시 trait 미획득이면 +1, 10 도달 시 보장
+  highBadge: number // 뱃지 재생성 시 상위 뱃지 없으면 +1, 8 도달 시 보장
+  crisisSurvivals: number // CRISIS 생존 횟수
+  successfulTrades: number // 성공 거래 횟수
+  highStressMonths: number // 고스트레스 연속 월 수
 }
 
 /* ── Trading Limits Types ── */
@@ -213,6 +242,14 @@ export type EmployeeTrait =
   | 'tech_savvy' // 기술 능숙
   | 'risk_averse' // 위험 회피
   | 'ambitious' // 야심가
+  // ✨ Phase 6: 신규 trait 7종
+  | 'lucky' // 행운아
+  | 'mentor' // 멘토 기질
+  | 'contrarian_mind' // 역발상
+  | 'early_bird' // 아침형 인간
+  | 'frugal' // 절약가
+  | 'gambler' // 도박사
+  | 'empathetic' // 공감형
 
 export interface EmployeeSkills {
   analysis: number // 분석 능력 (0-100)
@@ -445,6 +482,8 @@ export type WindowType =
   | 'skill_library' // ✨ 스킬 도감/라이브러리
   | 'training_center' // ✨ 교육 센터
   | 'playstyle_analytics' // ✨ 플레이스타일 분석
+  | 'spy' // ✨ 경쟁사 스파이 정탐
+  | 'negotiation' // ✨ 연봉 협상 리듬 미니게임
 
 export type WindowLayoutPreset =
   | 'trading'
@@ -601,6 +640,13 @@ export interface SaveData {
   chapterProgress?: import('./chapter').ChapterProgress
   companyProfile?: import('./chapter').CompanyProfile
 
+  // Acquisition Management System
+  acquiredCompanyStates?: import('./acquisition').AcquiredCompanyState[]
+
+  // Spy System
+  spyMissions?: import('./spy').SpyMission[]
+  spyIntel?: import('./spy').SpyIntel[]
+
   // UX: pending ceremony state
   pendingCeremony?: { type: string; fromLevel: number; toLevel: number } | null
 }
@@ -613,6 +659,24 @@ export interface HourlyAccumulators {
 /* ── Investment Battle Mode Types ── */
 
 export type TradingStyle = 'aggressive' | 'conservative' | 'trend-follower' | 'contrarian'
+
+/* ── Competitor Memory (적응적 학습) ── */
+
+export interface CompetitorTradeRecord {
+  companyId: string
+  sector: string
+  direction: 'buy' | 'sell'
+  buyPrice: number
+  sellPrice: number
+  pnl: number // 수익/손실 금액
+  timestamp: number
+}
+
+export interface CompetitorMemory {
+  recentTrades: CompetitorTradeRecord[] // 링 버퍼 max 20
+  sectorWinRate: Record<string, { wins: number; total: number }>
+  adaptationBias: number // -1.0 ~ +1.0
+}
 
 export interface Competitor {
   id: string
@@ -630,6 +694,8 @@ export interface Competitor {
   // ✨ Core Values: Rivalry tracking
   headToHeadWins?: number // Times this AI was ranked above player
   headToHeadLosses?: number // Times player was ranked above this AI
+  // ✨ Phase 2: 적응적 학습 메모리
+  memory?: CompetitorMemory
 }
 
 export interface CompetitorAction {

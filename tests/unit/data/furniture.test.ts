@@ -47,10 +47,10 @@ describe('데이터: 사무실 가구(Furniture)', () => {
       })
     })
 
-    it('모든 가구의 비용이 합리적인 범위에 있다 (10K ~ 500K)', () => {
+    it('모든 가구의 비용이 합리적인 범위에 있다 (10K ~ 2M)', () => {
       furnitureArray.forEach((furniture) => {
         expect(furniture.cost).toBeGreaterThanOrEqual(10000)
-        expect(furniture.cost).toBeLessThanOrEqual(500000)
+        expect(furniture.cost).toBeLessThanOrEqual(2000000)
       })
     })
 

@@ -232,11 +232,11 @@ describe('Skill Tree Data Integrity', () => {
       console.log(`  By Category:`, byCategory)
       console.log(`  By Tier:`, byTier)
 
-      // 통계 검증: 각 카테고리마다 10개 스킬 (3x10=30)
-      expect(totalSkills).toBe(30)
-      expect(byCategory.analysis).toBe(10)
-      expect(byCategory.trading).toBe(10)
-      expect(byCategory.research).toBe(10)
+      // 통계 검증: 30 기본 + 6 브릿지 = 36
+      expect(totalSkills).toBe(36)
+      expect(byCategory.analysis).toBe(12) // 10 + 2 브릿지
+      expect(byCategory.trading).toBe(12) // 10 + 2 브릿지
+      expect(byCategory.research).toBe(12) // 10 + 2 브릿지
     })
   })
 })

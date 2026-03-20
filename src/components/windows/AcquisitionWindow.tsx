@@ -2,8 +2,10 @@ import { useState, useMemo } from 'react'
 import { useGameStore } from '../../stores/gameStore'
 import { RetroButton } from '../ui/RetroButton'
 import type { AcquisitionTarget } from '../../types'
+import type { AcquiredCompanyState, IntegrationPhase } from '../../types/acquisition'
 
 type MnaStep = 'screening' | 'valuation' | 'diligence' | 'negotiation' | 'integration'
+type MainTab = 'mna' | 'management'
 
 interface ValuationMethod {
   name: string
@@ -28,7 +30,9 @@ export function AcquisitionWindow() {
   const companies = useGameStore((s) => s.companies)
   const player = useGameStore((s) => s.player)
   const playerAcquireCompany = useGameStore((s) => s.playerAcquireCompany)
+  const acquiredCompanyStates = useGameStore((s) => s.acquiredCompanyStates)
 
+  const [mainTab, setMainTab] = useState<MainTab>('mna')
   const [currentStep, setCurrentStep] = useState<MnaStep>('screening')
   const [selectedId, setSelectedId] = useState<string>('')
   const [premium, setPremium] = useState(0.3)
@@ -155,6 +159,40 @@ export function AcquisitionWindow() {
 
   return (
     <div className="flex flex-col h-full bg-retro-gray/5">
+      {/* 메인 탭 */}
+      <div className="border-b-2 border-retro-gray bg-retro-bg flex">
+        <button
+          onClick={() => setMainTab('mna')}
+          className={`flex-1 px-3 py-1.5 text-xs font-bold border-r border-retro-gray transition-colors ${
+            mainTab === 'mna'
+              ? 'bg-win-title-active text-white'
+              : 'hover:bg-retro-gray/10'
+          }`}
+        >
+          M&A 진행
+        </button>
+        <button
+          onClick={() => setMainTab('management')}
+          className={`flex-1 px-3 py-1.5 text-xs font-bold transition-colors ${
+            mainTab === 'management'
+              ? 'bg-win-title-active text-white'
+              : 'hover:bg-retro-gray/10'
+          }`}
+        >
+          인수 후 관리 ({acquiredCompanyStates.length})
+        </button>
+      </div>
+
+      {/* 인수 후 관리 탭 */}
+      {mainTab === 'management' && (
+        <AcquisitionManagementTab
+          acquiredStates={acquiredCompanyStates}
+          companies={companies}
+        />
+      )}
+
+      {/* M&A 진행 탭 */}
+      {mainTab === 'mna' && <>
       {/* 상단 진행 단계 */}
       <div className="border-b-2 border-retro-gray bg-retro-bg">
         <div className="flex">
@@ -851,6 +889,8 @@ export function AcquisitionWindow() {
         )}
       </div>
 
+      </>}
+
       {/* 최종 확인 다이얼로그 */}
       {showConfirm && selectedTarget && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -911,6 +951,234 @@ export function AcquisitionWindow() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ── 인수 후 관리 탭 ── */
+
+const PHASE_LABELS: Record<IntegrationPhase, string> = {
+  restructuring: '구조조정',
+  integration: '통합',
+  synergy: '시너지',
+  complete: '완료',
+}
+
+const PHASE_COLORS: Record<IntegrationPhase, string> = {
+  restructuring: 'bg-red-500',
+  integration: 'bg-yellow-500',
+  synergy: 'bg-blue-500',
+  complete: 'bg-green-500',
+}
+
+function AcquisitionManagementTab({
+  acquiredStates,
+  companies,
+}: {
+  acquiredStates: AcquiredCompanyState[]
+  companies: { id: string; name: string; ticker: string; sector: string }[]
+}) {
+  const [selectedIdx, setSelectedIdx] = useState(0)
+
+  if (acquiredStates.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-xs text-retro-gray p-8">
+        <div className="text-center">
+          <div className="text-2xl mb-2">📋</div>
+          <div className="font-bold mb-1">인수한 기업이 없습니다</div>
+          <div className="text-[10px]">M&A 진행 탭에서 기업을 인수하면 여기서 관리할 수 있습니다.</div>
+        </div>
+      </div>
+    )
+  }
+
+  const selected = acquiredStates[selectedIdx] ?? acquiredStates[0]
+  const targetCompany = companies.find((c) => c.id === selected.companyId)
+  const acquirerCompany = selected.acquirerId === 'PLAYER'
+    ? { name: '당신', ticker: 'PLAYER' }
+    : companies.find((c) => c.id === selected.acquirerId)
+
+  const effectiveYield = (() => {
+    let y = selected.monthlyDividendYield
+    if (selected.phase === 'synergy') y += 0.01
+    if (selected.phase === 'complete') y += 0.02
+    return y
+  })()
+
+  const estimatedQuarterlyDividend = selected.dealPrice * selected.playerShares * effectiveYield / 4
+
+  return (
+    <div className="flex-1 flex overflow-hidden">
+      {/* 좌측: 인수 기업 목록 */}
+      <div className="w-2/5 border-r-2 border-retro-gray flex flex-col">
+        <div className="border-b-2 border-retro-gray bg-retro-bg px-2 py-1">
+          <span className="font-bold text-xs">
+            🏢 인수 기업 ({acquiredStates.length})
+          </span>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {acquiredStates.map((acqState, idx) => {
+            const company = companies.find((c) => c.id === acqState.companyId)
+            const isSelected = idx === selectedIdx
+
+            return (
+              <div
+                key={acqState.companyId}
+                className={`cursor-pointer border-b border-retro-gray/20 p-2 hover:bg-retro-gray/10 ${
+                  isSelected ? 'bg-win-title-active text-white' : ''
+                }`}
+                onClick={() => setSelectedIdx(idx)}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-1">
+                    <span className="font-bold text-xs">{company?.ticker ?? '???'}</span>
+                    <span className="text-[10px] opacity-70">{company?.name ?? acqState.companyId}</span>
+                  </div>
+                  <span className={`text-[8px] px-1 rounded text-white ${PHASE_COLORS[acqState.phase]}`}>
+                    {PHASE_LABELS[acqState.phase]}
+                  </span>
+                </div>
+                {/* 통합 진행률 미니 바 */}
+                <div className="h-1.5 bg-retro-gray/20 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all ${PHASE_COLORS[acqState.phase]}`}
+                    style={{ width: `${acqState.integrationProgress}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[8px] mt-0.5 opacity-70">
+                  <span>{acqState.integrationProgress}%</span>
+                  <span>배당: {Math.round(acqState.totalDividendsReceived).toLocaleString()}원</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* 우측: 상세 정보 */}
+      <div className="w-3/5 flex flex-col overflow-hidden">
+        <div className="border-b-2 border-retro-gray bg-retro-bg px-2 py-1">
+          <div className="font-bold text-xs">{targetCompany?.name ?? selected.companyId}</div>
+          <div className="text-[10px] text-retro-gray">
+            {targetCompany?.ticker} · 인수자: {acquirerCompany?.name ?? selected.acquirerId}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          {/* 통합 진행 상황 */}
+          <div className="border border-retro-gray p-2">
+            <div className="font-bold text-[10px] mb-2">📊 통합 진행 상황</div>
+            <div className="mb-2">
+              <div className="flex justify-between text-[9px] mb-1">
+                <span>진행률:</span>
+                <span className="font-bold">{selected.integrationProgress}%</span>
+              </div>
+              <div className="h-3 bg-retro-gray/20 rounded-full overflow-hidden relative">
+                <div
+                  className={`h-full transition-all ${PHASE_COLORS[selected.phase]}`}
+                  style={{ width: `${selected.integrationProgress}%` }}
+                />
+                {/* 단계 표시 마커 */}
+                <div className="absolute top-0 left-[25%] w-px h-full bg-retro-gray/40" />
+                <div className="absolute top-0 left-[50%] w-px h-full bg-retro-gray/40" />
+                <div className="absolute top-0 left-[75%] w-px h-full bg-retro-gray/40" />
+              </div>
+              <div className="flex justify-between text-[7px] text-retro-gray mt-0.5">
+                <span>구조조정</span>
+                <span>통합</span>
+                <span>시너지</span>
+                <span>완료</span>
+              </div>
+            </div>
+            <div className="flex justify-between text-[9px]">
+              <span>현재 단계:</span>
+              <span className={`font-bold ${
+                selected.phase === 'complete' ? 'text-green-600' :
+                selected.phase === 'synergy' ? 'text-blue-600' :
+                selected.phase === 'integration' ? 'text-yellow-600' :
+                'text-red-600'
+              }`}>
+                {PHASE_LABELS[selected.phase]}
+              </span>
+            </div>
+          </div>
+
+          {/* 배당 정보 */}
+          <div className="border border-retro-gray p-2">
+            <div className="font-bold text-[10px] mb-2">💰 배당 정보</div>
+            <div className="space-y-1 text-[9px]">
+              <div className="flex justify-between">
+                <span>배당 수익률 (연간):</span>
+                <span className="font-bold text-green-600">{(effectiveYield * 100).toFixed(1)}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span>예상 분기 배당:</span>
+                <span className="font-bold">{Math.round(estimatedQuarterlyDividend).toLocaleString()}원</span>
+              </div>
+              <div className="flex justify-between">
+                <span>누적 배당 수령:</span>
+                <span className="font-bold text-blue-600">
+                  {Math.round(selected.totalDividendsReceived).toLocaleString()}원
+                </span>
+              </div>
+              <div className="flex justify-between text-retro-gray">
+                <span>인수 가격 (주당):</span>
+                <span>{Math.round(selected.dealPrice).toLocaleString()}원</span>
+              </div>
+              <div className="flex justify-between text-retro-gray">
+                <span>보유 주식:</span>
+                <span>{selected.playerShares.toLocaleString()}주</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 이벤트 히스토리 */}
+          <div className="border border-retro-gray p-2">
+            <div className="font-bold text-[10px] mb-2">
+              📰 이벤트 히스토리 ({selected.events.length})
+            </div>
+            {selected.events.length === 0 ? (
+              <div className="text-[9px] text-retro-gray text-center py-2">
+                아직 발생한 이벤트가 없습니다.
+              </div>
+            ) : (
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                {[...selected.events].reverse().map((event) => {
+                  const isPositive = (event.effect.integrationDelta ?? 0) >= 0
+                  return (
+                    <div
+                      key={event.id}
+                      className={`border-l-2 pl-2 py-1 text-[9px] ${
+                        isPositive ? 'border-green-500 bg-green-500/5' : 'border-red-500 bg-red-500/5'
+                      }`}
+                    >
+                      <div className="font-bold">{event.title}</div>
+                      <div className="text-retro-gray">{event.description}</div>
+                      <div className="flex gap-2 mt-0.5 text-[8px]">
+                        {event.effect.integrationDelta != null && (
+                          <span className={event.effect.integrationDelta >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            통합 {event.effect.integrationDelta > 0 ? '+' : ''}{event.effect.integrationDelta}%
+                          </span>
+                        )}
+                        {event.effect.dividendYieldDelta != null && (
+                          <span className={event.effect.dividendYieldDelta >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            배당 {event.effect.dividendYieldDelta > 0 ? '+' : ''}{(event.effect.dividendYieldDelta * 100).toFixed(1)}%
+                          </span>
+                        )}
+                        {event.effect.acquirerDriftDelta != null && (
+                          <span className={event.effect.acquirerDriftDelta >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            주가 {event.effect.acquirerDriftDelta > 0 ? '+' : ''}{(event.effect.acquirerDriftDelta * 100).toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

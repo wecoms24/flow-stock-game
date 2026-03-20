@@ -24,6 +24,8 @@ const AchievementLogWindow = lazy(() => import('./AchievementLogWindow').then((m
 const SkillLibraryWindow = lazy(() => import('./SkillLibraryWindow').then((m) => ({ default: m.SkillLibraryWindow })))
 const TrainingCenterWindow = lazy(() => import('./TrainingCenterWindow').then((m) => ({ default: m.TrainingCenterWindow })))
 const PlaystyleWindow = lazy(() => import('./PlaystyleWindow').then((m) => ({ default: m.PlaystyleWindow })))
+const SpyWindow = lazy(() => import('./SpyWindow').then((m) => ({ default: m.SpyWindow })))
+const NegotiationWindow = lazy(() => import('./NegotiationWindow').then((m) => ({ default: m.NegotiationWindow })))
 
 const WINDOW_COMPONENTS: Record<WindowType, React.LazyExoticComponent<React.ComponentType<unknown>>> = {
   portfolio: PortfolioWindow as React.LazyExoticComponent<React.ComponentType<unknown>>,
@@ -47,6 +49,8 @@ const WINDOW_COMPONENTS: Record<WindowType, React.LazyExoticComponent<React.Comp
   skill_library: SkillLibraryWindow as React.LazyExoticComponent<React.ComponentType<unknown>>,
   training_center: TrainingCenterWindow as React.LazyExoticComponent<React.ComponentType<unknown>>,
   playstyle_analytics: PlaystyleWindow as React.LazyExoticComponent<React.ComponentType<unknown>>,
+  spy: SpyWindow as React.LazyExoticComponent<React.ComponentType<unknown>>,
+  negotiation: NegotiationWindow as React.LazyExoticComponent<React.ComponentType<unknown>>,
 }
 
 function WindowFallback() {

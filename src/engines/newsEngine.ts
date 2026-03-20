@@ -6,6 +6,7 @@ import {
   getHistoricalEventsForYear,
   type HistoricalEvent,
 } from '../data/historicalEvents'
+import { ShuffleBag } from '../utils/randomSystems'
 
 const SECTOR_LABELS: Record<string, string> = {
   tech: '기술', finance: '금융', energy: '에너지', healthcare: '헬스',
@@ -263,6 +264,11 @@ const ALL_SECTORS: Sector[] = [
   'realestate',
 ]
 
+/** ✨ Phase 11: ShuffleBag 기반 섹터 분배 (동일 섹터 연속 방지) */
+let sectorShuffleBag = new ShuffleBag<Sector>(
+  ALL_SECTORS.map((s) => ({ item: s, weight: 1 })),
+)
+
 /* ── 유틸리티 함수 ── */
 
 function pickRandom<T>(arr: T[]): T {
@@ -285,10 +291,10 @@ function generateProceduralEvent(): EventTemplate & { source: EventSource } {
   const action = pickRandom(template.actions)
   const result = pickRandom(template.results)
 
-  // 랜덤 섹터 선택
+  // ✨ Phase 11: ShuffleBag 기반 섹터 선택 (균일 분배)
   const sector = template.sectorFilter
     ? pickRandom(template.sectorFilter)
-    : pickRandom(ALL_SECTORS)
+    : sectorShuffleBag.next()
   const sectorName = SECTOR_NAMES[sector]
 
   // 패턴 변수 치환
@@ -578,6 +584,76 @@ export function processNewsEngine(time: GameTime): void {
 export function resetNewsEngine(): void {
   triggeredHistoricalEvents.clear()
   pendingChainEvents.length = 0
+  // ✨ Phase 11: ShuffleBag도 리셋 (새 게임 시 섹터 분배 초기화)
+  sectorShuffleBag = new ShuffleBag<Sector>(
+    ALL_SECTORS.map((s) => ({ item: s, weight: 1 })),
+  )
+}
+
+/* ── Acquisition Integration News Generation ── */
+
+/**
+ * 인수 통합 마일스톤 뉴스 생성
+ */
+export function createAcquisitionMilestoneNews(
+  targetName: string,
+  targetId: string,
+  acquirerId: string,
+  progress: number,
+  phase: string,
+  currentTime: import('../types').GameTime,
+): import('../types').NewsItem {
+  const phaseLabels: Record<string, string> = {
+    restructuring: '구조조정',
+    integration: '통합',
+    synergy: '시너지',
+    complete: '완료',
+  }
+
+  const headline = `[인수] ${targetName} 통합 ${phaseLabels[phase] ?? phase} 단계 진입`
+  const body = `${targetName}의 인수 후 통합이 ${progress}% 진행되었습니다. ` +
+    `현재 ${phaseLabels[phase] ?? phase} 단계입니다.`
+
+  const sentiment: import('../types').NewsSentiment = phase === 'complete' ? 'positive' : 'neutral'
+
+  return {
+    id: `acq-milestone-${targetId}-${currentTime.year}-${currentTime.month}`,
+    timestamp: currentTime,
+    headline,
+    body,
+    isBreaking: phase === 'complete',
+    sentiment,
+    relatedCompanies: [targetId, acquirerId],
+    impactSummary: `${targetName} 통합 ${progress}% 진행`,
+  }
+}
+
+/**
+ * 인수 이벤트 발생 뉴스 생성
+ */
+export function createAcquisitionEventNews(
+  targetName: string,
+  targetId: string,
+  acquirerId: string,
+  eventTitle: string,
+  eventDescription: string,
+  isPositive: boolean,
+  currentTime: import('../types').GameTime,
+): import('../types').NewsItem {
+  const headline = `[인수] ${targetName}: ${eventTitle}`
+
+  const sentiment: import('../types').NewsSentiment = isPositive ? 'neutral' : 'negative'
+
+  return {
+    id: `acq-event-${targetId}-${currentTime.year}-${currentTime.month}-${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: currentTime,
+    headline,
+    body: eventDescription,
+    isBreaking: false,
+    sentiment,
+    relatedCompanies: [targetId, acquirerId],
+    impactSummary: `${targetName} 인수 이벤트: ${eventTitle}`,
+  }
 }
 
 /* ── M&A News Generation ── */
