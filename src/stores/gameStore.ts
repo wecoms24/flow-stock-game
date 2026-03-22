@@ -2879,25 +2879,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     })
 
-    // Personalization: Log trade event
     const company = get().companies.find((c) => c.id === companyId)
-    if (company) {
-      get().logPlayerEvent('TRADE', {
-        action: 'buy',
-        companyId,
-        ticker: company.ticker,
-        qty: limitedShares,
-        price: company.price,
-      })
-    }
+    if (!company) return
+
+    // Personalization: Log trade event
+    get().logPlayerEvent('TRADE', {
+      action: 'buy',
+      companyId,
+      ticker: company.ticker,
+      qty: limitedShares,
+      price: company.price,
+    })
 
     // Record cash flow
-    {
-      const c = get().companies.find((co) => co.id === companyId)
-      if (c) {
-        get().recordCashFlow('TRADE_BUY', -(c.price * limitedShares), `${c.ticker} ${limitedShares}주 매수`, { companyId, ticker: c.ticker, shares: limitedShares })
-      }
-    }
+    get().recordCashFlow('TRADE_BUY', -(company.price * limitedShares), `${company.ticker} ${limitedShares}주 매수`, { companyId, ticker: company.ticker, shares: limitedShares })
 
     // Grant trade XP to a random working employee
     const emps = get().player.employees.filter((e) => e.stamina > 0)
@@ -2906,64 +2901,53 @@ export const useGameStore = create<GameStore>((set, get) => ({
       get().gainXP(lucky.id, XP_AMOUNTS.TRADE_SUCCESS, 'trade_success')
     }
 
-    // ✨ Queue trade animation
-    {
-      const c = get().companies.find((co) => co.id === companyId)
-      if (c) {
-        get().queueAnimation(
-          createTradeAnimationSequence({
-            action: 'buy',
-            companyName: c.name,
-            ticker: c.ticker,
-            shares: limitedShares,
-            price: c.price,
-            totalCost: c.price * limitedShares,
-          })
-        )
+    // Queue trade animation
+    get().queueAnimation(
+      createTradeAnimationSequence({
+        action: 'buy',
+        companyName: company.name,
+        ticker: company.ticker,
+        shares: limitedShares,
+        price: company.price,
+        totalCost: company.price * limitedShares,
+      })
+    )
+
+    // FEAT-3: 매수 판단 피드백
+    const state = get()
+    const tick = state.currentTick
+    if (state.time.speed < TRADE_FEEDBACK.MAX_SPEED && tick - lastTradeFeedbackTick >= TRADE_FEEDBACK.COOLDOWN_TICKS) {
+      if (company.priceHistory && company.priceHistory.length >= 5) {
+        const prices = company.priceHistory
+        const min20 = Math.min(...prices)
+        const max20 = Math.max(...prices)
+        const range = max20 - min20 || 1
+
+        if ((company.price - min20) / range < TRADE_FEEDBACK.NEAR_EXTREME_THRESHOLD) {
+          showToast({ type: 'info', title: '저점 매수', message: `${company.ticker}: 최근 최저가 근처입니다!`, icon: '🎯' })
+          lastTradeFeedbackTick = tick
+        } else if ((max20 - company.price) / range < TRADE_FEEDBACK.NEAR_EXTREME_THRESHOLD) {
+          showToast({ type: 'warning', title: '고점 주의', message: `${company.ticker}: 최근 최고가 근처입니다`, icon: '⚠️' })
+          lastTradeFeedbackTick = tick
+        } else if (state.marketRegime.current === 'CRISIS') {
+          showToast({ type: 'success', title: '용기 있는 매수', message: '위기 속 매수는 용기가 필요합니다', icon: '💪' })
+          lastTradeFeedbackTick = tick
+        }
       }
     }
 
-    // FEAT-3: 매수 판단 피드백 + FEAT-5: 경쟁자 반응
-    {
-      const state = get()
-      const tick = state.currentTick
-      if (state.time.speed < TRADE_FEEDBACK.MAX_SPEED && tick - lastTradeFeedbackTick >= TRADE_FEEDBACK.COOLDOWN_TICKS) {
-        const c = state.companies.find((co) => co.id === companyId)
-        if (c && c.priceHistory && c.priceHistory.length >= 5) {
-          const prices = c.priceHistory
-          const min20 = Math.min(...prices)
-          const max20 = Math.max(...prices)
-          const range = max20 - min20 || 1
-
-          if ((c.price - min20) / range < TRADE_FEEDBACK.NEAR_EXTREME_THRESHOLD) {
-            showToast({ type: 'info', title: '저점 매수', message: `${c.ticker}: 최근 최저가 근처입니다!`, icon: '🎯' })
-            lastTradeFeedbackTick = tick
-          } else if ((max20 - c.price) / range < TRADE_FEEDBACK.NEAR_EXTREME_THRESHOLD) {
-            showToast({ type: 'warning', title: '고점 주의', message: `${c.ticker}: 최근 최고가 근처입니다`, icon: '⚠️' })
-            lastTradeFeedbackTick = tick
-          } else if (state.marketRegime.current === 'CRISIS') {
-            showToast({ type: 'success', title: '용기 있는 매수', message: '위기 속 매수는 용기가 필요합니다', icon: '💪' })
-            lastTradeFeedbackTick = tick
-          }
-        }
-      }
-
-      // FEAT-5: 경쟁자 반응
-      if (state.time.speed < 8 && tick - lastPlayerReactionTick >= 3) {
-        const c = state.companies.find((co) => co.id === companyId)
-        if (c) {
-          const reactor = state.competitors.find((comp) =>
-            comp.portfolio[companyId] && comp.portfolio[companyId].shares > 0,
-          )
-          if (reactor) {
-            const styleTaunts = STYLE_TAUNTS[reactor.style]?.player_reaction
-            if (styleTaunts && styleTaunts.length > 0) {
-              const template = styleTaunts[Math.floor(Math.random() * styleTaunts.length)]
-              const message = template.replace('{ticker}', c.ticker)
-              get().addTaunt({ competitorId: reactor.id, competitorName: reactor.name, message, type: 'player_reaction', timestamp: Date.now() })
-              lastPlayerReactionTick = tick
-            }
-          }
+    // FEAT-5: 경쟁자 반응
+    if (state.time.speed < 8 && tick - lastPlayerReactionTick >= 3) {
+      const reactor = state.competitors.find((comp) =>
+        comp.portfolio[companyId] && comp.portfolio[companyId].shares > 0,
+      )
+      if (reactor) {
+        const styleTaunts = STYLE_TAUNTS[reactor.style]?.player_reaction
+        if (styleTaunts && styleTaunts.length > 0) {
+          const template = styleTaunts[Math.floor(Math.random() * styleTaunts.length)]
+          const message = template.replace('{ticker}', company.ticker)
+          get().addTaunt({ competitorId: reactor.id, competitorName: reactor.name, message, type: 'player_reaction', timestamp: Date.now() })
+          lastPlayerReactionTick = tick
         }
       }
     }
@@ -3016,35 +3000,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // Personalization: Log trade event + cash flow recording
     const company = get().companies.find((c) => c.id === companyId)
-    // Note: position may have been deleted (if sold all shares), use pre-sell snapshot
-    const sellBuyPrice = preSellAvgBuyPrice
-    if (company) {
-      const revenue = company.price * shares
-      get().recordCashFlow('TRADE_SELL', revenue, `${company.ticker} ${shares}주 매도`, { companyId, ticker: company.ticker, shares })
-      const pnl = (company.price - sellBuyPrice) * shares
-      get().recordRealizedTrade({
-        companyId,
-        ticker: company.ticker,
-        shares,
-        buyPrice: sellBuyPrice,
-        sellPrice: company.price,
-        pnl,
-        fee: 0,
-        tick: get().currentTick,
-        timestamp: { year: get().time.year, month: get().time.month, day: get().time.day },
-      })
+    if (!company) return
 
-      const position = get().player.portfolio[companyId]
-      get().logPlayerEvent('TRADE', {
-        action: 'sell',
-        companyId,
-        ticker: company.ticker,
-        qty: shares,
-        price: company.price,
-        pnl,
-      })
-      void position // suppress unused warning
-    }
+    const pnl = (company.price - preSellAvgBuyPrice) * shares
+    const revenue = company.price * shares
+
+    get().recordCashFlow('TRADE_SELL', revenue, `${company.ticker} ${shares}주 매도`, { companyId, ticker: company.ticker, shares })
+    get().recordRealizedTrade({
+      companyId,
+      ticker: company.ticker,
+      shares,
+      buyPrice: preSellAvgBuyPrice,
+      sellPrice: company.price,
+      pnl,
+      fee: 0,
+      tick: get().currentTick,
+      timestamp: { year: get().time.year, month: get().time.month, day: get().time.day },
+    })
+    get().logPlayerEvent('TRADE', {
+      action: 'sell',
+      companyId,
+      ticker: company.ticker,
+      qty: shares,
+      price: company.price,
+      pnl,
+    })
 
     // Grant trade XP to a random working employee
     const emps = get().player.employees.filter((e) => e.stamina > 0)
@@ -3053,99 +3033,87 @@ export const useGameStore = create<GameStore>((set, get) => ({
       get().gainXP(lucky.id, XP_AMOUNTS.TRADE_SUCCESS, 'trade_success')
 
       // Bonus XP for profitable manual sell trades
-      if (company) {
-        const sellPnl = (company.price - preSellAvgBuyPrice) * shares
-        if (sellPnl > 0) {
-          get().gainXP(lucky.id, XP_AMOUNTS.PROPOSAL_PROFITABLE, 'proposal_profitable')
-        }
-      }
-    }
-
-    // ✨ Queue trade animation
-    if (company) {
-      const pnl = (company.price - preSellAvgBuyPrice) * shares
-      get().queueAnimation(
-        createTradeAnimationSequence({
-          action: 'sell',
-          companyName: company.name,
-          ticker: company.ticker,
-          shares,
-          price: company.price,
-          totalCost: company.price * shares,
-          profitLoss: pnl,
-        })
-      )
-
-      // ✨ Trade Streak Counter
-      const prevStreak = get().player.tradeStreak ?? 0
       if (pnl > 0) {
-        const newStreak = prevStreak + 1
+        get().gainXP(lucky.id, XP_AMOUNTS.PROPOSAL_PROFITABLE, 'proposal_profitable')
+      }
+    }
+
+    // Queue trade animation
+    get().queueAnimation(
+      createTradeAnimationSequence({
+        action: 'sell',
+        companyName: company.name,
+        ticker: company.ticker,
+        shares,
+        price: company.price,
+        totalCost: revenue,
+        profitLoss: pnl,
+      })
+    )
+
+    // Trade Streak Counter
+    const prevStreak = get().player.tradeStreak ?? 0
+    if (pnl > 0) {
+      const newStreak = prevStreak + 1
+      set((s) => ({
+        player: { ...s.player, tradeStreak: newStreak },
+      }))
+      // Emit floating text at milestones
+      const STREAK_MILESTONES = [3, 5, 10, 20]
+      if (STREAK_MILESTONES.includes(newStreak)) {
+        const cx = window.innerWidth / 2
+        const cy = window.innerHeight / 3
+        emitFloatingText(`🔥 ${newStreak}연승!`, cx, cy, '#FF4500')
+        dispatchCelebration(celebrateStreak(newStreak))
+      }
+    } else if (pnl < 0) {
+      // Only reset streak on actual losses, not break-even
+      if (prevStreak > 0) {
         set((s) => ({
-          player: { ...s.player, tradeStreak: newStreak },
+          player: { ...s.player, tradeStreak: 0 },
         }))
-        // Emit floating text at milestones
-        const STREAK_MILESTONES = [3, 5, 10, 20]
-        if (STREAK_MILESTONES.includes(newStreak)) {
-          const cx = window.innerWidth / 2
-          const cy = window.innerHeight / 3
-          emitFloatingText(`🔥 ${newStreak}연승!`, cx, cy, '#FF4500')
-          dispatchCelebration(celebrateStreak(newStreak))
-        }
-      } else if (pnl < 0) {
-        // Only reset streak on actual losses, not break-even
-        if (prevStreak > 0) {
-          set((s) => ({
-            player: { ...s.player, tradeStreak: 0 },
-          }))
-        }
       }
     }
 
-    // FEAT-3: 매도 수익 피드백
-    {
-      const state = get()
-      const tick = state.currentTick
-      if (company && state.time.speed < TRADE_FEEDBACK.MAX_SPEED && tick - lastTradeFeedbackTick >= TRADE_FEEDBACK.COOLDOWN_TICKS) {
-        const pnlPercent = preSellAvgBuyPrice > 0
-          ? ((company.price - preSellAvgBuyPrice) / preSellAvgBuyPrice)
-          : 0
-        if (pnlPercent >= TRADE_FEEDBACK.BIG_PROFIT_THRESHOLD) {
-          dispatchCelebration(createCelebration(
-            1,
-            `훌륭한 타이밍!`,
-            `${company.ticker} +${(pnlPercent * 100).toFixed(1)}% 수익 확정!`,
-            '🎯',
-            { color: 'green', duration: 5000 },
-          ))
-          lastTradeFeedbackTick = tick
-        } else if (pnlPercent >= TRADE_FEEDBACK.SMALL_PROFIT_THRESHOLD) {
-          showToast({
-            type: 'success',
-            title: '수익 확정',
-            message: `${company.ticker} +${(pnlPercent * 100).toFixed(1)}% 수익!`,
-            icon: '💰',
-          })
-          lastTradeFeedbackTick = tick
-        }
+    // FEAT-3: 매도 수익 피드백 + FEAT-5: 경쟁자 반응
+    const state = get()
+    const tick = state.currentTick
+
+    if (state.time.speed < TRADE_FEEDBACK.MAX_SPEED && tick - lastTradeFeedbackTick >= TRADE_FEEDBACK.COOLDOWN_TICKS) {
+      const pnlPercent = preSellAvgBuyPrice > 0
+        ? ((company.price - preSellAvgBuyPrice) / preSellAvgBuyPrice)
+        : 0
+      if (pnlPercent >= TRADE_FEEDBACK.BIG_PROFIT_THRESHOLD) {
+        dispatchCelebration(createCelebration(
+          1,
+          `훌륭한 타이밍!`,
+          `${company.ticker} +${(pnlPercent * 100).toFixed(1)}% 수익 확정!`,
+          '🎯',
+          { color: 'green', duration: 5000 },
+        ))
+        lastTradeFeedbackTick = tick
+      } else if (pnlPercent >= TRADE_FEEDBACK.SMALL_PROFIT_THRESHOLD) {
+        showToast({
+          type: 'success',
+          title: '수익 확정',
+          message: `${company.ticker} +${(pnlPercent * 100).toFixed(1)}% 수익!`,
+          icon: '💰',
+        })
+        lastTradeFeedbackTick = tick
       }
     }
 
-    // FEAT-5: 매도 시 경쟁자 반응
-    {
-      const state = get()
-      const tick = state.currentTick
-      if (company && state.time.speed < 8 && tick - lastPlayerReactionTick >= 3) {
-        const reactor = state.competitors.find((comp) =>
-          comp.portfolio[companyId] && comp.portfolio[companyId].shares > 0,
-        )
-        if (reactor) {
-          const styleTaunts = STYLE_TAUNTS[reactor.style]?.player_reaction
-          if (styleTaunts && styleTaunts.length > 0) {
-            const template = styleTaunts[Math.floor(Math.random() * styleTaunts.length)]
-            const message = template.replace('{ticker}', company.ticker)
-            get().addTaunt({ competitorId: reactor.id, competitorName: reactor.name, message, type: 'player_reaction', timestamp: Date.now() })
-            lastPlayerReactionTick = tick
-          }
+    if (state.time.speed < 8 && tick - lastPlayerReactionTick >= 3) {
+      const reactor = state.competitors.find((comp) =>
+        comp.portfolio[companyId] && comp.portfolio[companyId].shares > 0,
+      )
+      if (reactor) {
+        const styleTaunts = STYLE_TAUNTS[reactor.style]?.player_reaction
+        if (styleTaunts && styleTaunts.length > 0) {
+          const template = styleTaunts[Math.floor(Math.random() * styleTaunts.length)]
+          const message = template.replace('{ticker}', company.ticker)
+          get().addTaunt({ competitorId: reactor.id, competitorName: reactor.name, message, type: 'player_reaction', timestamp: Date.now() })
+          lastPlayerReactionTick = tick
         }
       }
     }

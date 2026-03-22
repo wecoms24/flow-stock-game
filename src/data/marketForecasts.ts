@@ -1,5 +1,4 @@
-import type { GameTime, MarketEvent, Employee } from '../types'
-import type { RegimeState } from '../types'
+import type { GameTime, MarketEvent, Employee, RegimeState } from '../types'
 
 interface ForecastContext {
   time: GameTime
