@@ -196,7 +196,7 @@ export const CHAIN_EVENT_TEMPLATES: EventTemplate[] = [
 /* ── Historical Events: 1995-2025 ── */
 export const HISTORICAL_EVENTS: HistoricalEvent[] = [
   // ═══ 1995 ═══
-  { year: 1995, month: 1, title: '멕시코 페소 위기 여파', description: '멕시코 통화 위기가 신흥국 시장 전반에 불안을 확산시킵니다.', type: 'global', impact: { driftModifier: -0.08, volatilityModifier: 0.15, severity: 'medium' }, duration: 100, weight: 3 },
+  { year: 1995, month: 1, title: '멕시코 페소 위기 여파', description: '멕시코 통화 위기가 신흥국 시장 전반에 불안을 확산시킵니다.', type: 'global', impact: { driftModifier: -0.04, volatilityModifier: 0.15, severity: 'medium' }, duration: 100, weight: 3 }, // v6.1: -0.08→-0.04 초기 폭락 완화
   { year: 1995, month: 3, title: '엔고 현상, 수출주 타격', description: '엔화 강세로 한국 수출 기업 경쟁력이 악화됩니다.', type: 'global', impact: { driftModifier: -0.02, volatilityModifier: 0.1, severity: 'low' }, duration: 80, weight: 5, affectedSectors: ['industrial', 'consumer'] },
   { year: 1995, month: 5, title: '인터넷 상용화 시작', description: '국내 인터넷 서비스가 본격 시작되며 IT 기대감이 형성됩니다.', type: 'sector', impact: { driftModifier: 0.04, volatilityModifier: 0.1, severity: 'medium' }, duration: 120, weight: 3, affectedSectors: ['tech', 'telecom'] },
   { year: 1995, month: 7, title: '삼풍백화점 붕괴 참사', description: '대형 참사로 건설·부동산주가 큰 타격을 받습니다.', type: 'company', impact: { driftModifier: -0.04, volatilityModifier: 0.2, severity: 'high' }, duration: 80, weight: 2, affectedSectors: ['realestate', 'industrial'] },

@@ -132,7 +132,7 @@ export function determineResult(
 
 /**
  * 협상 시작 대상 직원 필터
- * lastNegotiationMonth가 없거나 (currentMonth - lastNegotiationMonth >= 6)인 직원
+ * lastNegotiationMonth가 없거나 (currentMonth - lastNegotiationMonth >= TRIGGER_INTERVAL_MONTHS)인 직원
  */
 export function getEmployeesNeedingNegotiation(
   employees: Employee[],
@@ -146,7 +146,7 @@ export function getEmployeesNeedingNegotiation(
 
     const lastNeg = (emp as Employee & { lastNegotiationMonth?: number }).lastNegotiationMonth
     if (lastNeg == null) {
-      // 첫 협상: 고용 후 최소 6개월 경과
+      // 첫 협상: 고용 후 최소 TRIGGER_INTERVAL_MONTHS개월 경과
       return currentMonth - emp.hiredMonth >= TRIGGER_INTERVAL_MONTHS
     }
 

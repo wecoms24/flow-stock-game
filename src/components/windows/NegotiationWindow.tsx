@@ -56,6 +56,18 @@ export function NegotiationWindow() {
     updateNegotiation({ phase: 'rhythm', startTime: performance.now() })
   }, [negotiation, updateNegotiation])
 
+  /* ── v6.1: 자동 승인 (50%) — 리듬게임 스킵 ── */
+  const handleAutoApprove = useCallback(() => {
+    if (!negotiation) return
+    const partialRaise = Math.round(negotiation.demandedRaise * NEGOTIATION_CONFIG.PARTIAL_RAISE_RATIO * 100) / 100
+    updateNegotiation({
+      phase: 'result',
+      score: NEGOTIATION_CONFIG.SCORE_PARTIAL_MIN,
+      result: 'partial',
+      finalRaise: partialRaise,
+    })
+  }, [negotiation, updateNegotiation])
+
   /* ── Phase: Rhythm - Keyboard Input ── */
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -360,9 +372,17 @@ export function NegotiationWindow() {
             <span className="text-[#ff4444]">49점 이하</span> = 거절
           </div>
 
-          <RetroButton variant="primary" onClick={handleStartRhythm}>
-            협상 시작
-          </RetroButton>
+          <div className="flex gap-2">
+            <RetroButton variant="primary" onClick={handleStartRhythm}>
+              협상 시작
+            </RetroButton>
+            <RetroButton variant="default" onClick={handleAutoApprove}>
+              자동 승인 (50%)
+            </RetroButton>
+          </div>
+          <span className="text-[10px] text-[#888] mt-1">
+            자동 승인: 요구의 50%를 즉시 수락합니다
+          </span>
         </div>
       )}
 

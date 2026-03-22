@@ -529,6 +529,15 @@ export function decideAction(
     weights.WORKING -= 20
   }
 
+  // v6.1: 고스트레스 시 강제 휴식 (STRESSED_OUT → +stress 루프 차단)
+  if (stress >= 75 && (employee.burnoutTicks ?? 0) === 0) {
+    weights.BREAK += 40
+    weights.COUNSELING += 15
+    weights.COFFEE += 10
+    weights.STRESSED_OUT = Math.max(0, weights.STRESSED_OUT - 20)
+    weights.WORKING = Math.max(0, weights.WORKING - 15)
+  }
+
   // 만족도 높으면 축하 확률 증가
   if (satisfaction > 85) {
     weights.CELEBRATING += 5

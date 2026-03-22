@@ -48,7 +48,7 @@ import { calculateBonuses, canRespec as canRespecFn, executeRespec as executeRes
 import { selectChain, initChainState, advanceChainWeek, getCurrentWeekModifiers, canStartChain } from '../engines/eventChainEngine'
 import { EVENT_CHAIN_TEMPLATES } from '../data/eventChains'
 import { updateTier, calculateMonthlyTax, checkPositionLimit, recordMonthlyPerformance } from '../engines/economicPressureEngine'
-import { OFFICE_BALANCE, SALARY_BALANCE, STRESS_WARNING } from '../config/balanceConfig'
+import { OFFICE_BALANCE, SALARY_BALANCE, STRESS_WARNING, CASH_INTEREST } from '../config/balanceConfig'
 import { getTierConfig, RELIEF_TAX_DISCOUNT } from '../config/economicPressureConfig'
 import { EMPLOYEE_ROLE_CONFIG } from '../types'
 import type { GameMode } from '../types'
@@ -2263,7 +2263,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   /* ── Hourly Processing: salary/tax/stamina/mood/XP distributed per-hour ── */
   processHourly: () => {
     const s = get()
-    if (s.player.employees.length === 0 && s.economicPressure.currentTier === 'beginner') return
+    // v6.1: beginner/growing 티어는 이자 적용을 위해 processHourly 진입 허용
+    const interestEligible = s.economicPressure.currentTier === 'beginner' || s.economicPressure.currentTier === 'growing'
+    if (s.player.employees.length === 0 && !interestEligible) return
 
     const HPM = TIME_CONFIG.HOURS_PER_MONTH // 300
     const dcfg = s.difficultyConfig
@@ -2290,6 +2292,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // 3. Deduct cash
       const totalDeduction = hourlySalary + hourlyTax
       const newCash = Math.max(0, st.player.cash - totalDeduction)
+
+      // 3b. v6.1: 현금 이자 (총자산 1억 미만 세이프티넷)
+      let hourlyInterest = 0
+      if (totalAssets < 100_000_000) {
+        hourlyInterest = Math.round(newCash * CASH_INTEREST.MONTHLY_RATE / HPM)
+      }
+      const finalCash = newCash + hourlyInterest
 
       // 4. Process employees: stamina drain/recovery, mood drift, XP
       let firstLevelUp: LevelUpEvent | null = null
@@ -2413,9 +2422,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return {
         player: {
           ...st.player,
-          cash: newCash,
+          cash: finalCash,
           employees: updatedEmployees,
-          totalAssetValue: newCash + calcPortfolioValue(st.player.portfolio, st.companies),
+          totalAssetValue: finalCash + calcPortfolioValue(st.player.portfolio, st.companies),
         },
         hourlyAccumulators: {
           salaryPaid: st.hourlyAccumulators.salaryPaid + hourlySalary,
@@ -5092,7 +5101,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!employee) return
 
     const negotiationState = createNegotiationState(employee)
-    set({ activeNegotiation: negotiationState })
+    // v6.1: 연봉 협상 시 자동 일시정지 (리듬게임 중 시간 소비 방지)
+    set((st) => ({
+      activeNegotiation: negotiationState,
+      time: { ...st.time, isPaused: true },
+    }))
     get().openWindow('negotiation')
   },
 
@@ -5147,6 +5160,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           monthlyExpenses: newMonthlyExpenses,
         },
         activeNegotiation: null,
+        time: { ...st.time, isPaused: false }, // v6.1: 협상 완료 후 자동 재개
       }
     })
 
