@@ -711,6 +711,7 @@ export function destroyTickEngine() {
   stopTickLoop()
   previousRankings = {}
   autoSaveCounter = 0
+  lastForecastDay = '' // FEAT-2 리셋
   resetNewsEngine()
   resetSentiment()
 

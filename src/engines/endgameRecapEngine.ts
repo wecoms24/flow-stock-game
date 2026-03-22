@@ -150,8 +150,6 @@ export function generateEndgameRecap(state: {
         realizedTrades,
         allBios.length,
         playYears * 12,
-        config.initialCash,
-        player.totalAssetValue,
       )
     : undefined
 

@@ -724,7 +724,7 @@ export interface TauntMessage {
   competitorId: string
   competitorName: string
   message: string
-  type: 'rank_up' | 'rank_down' | 'overtake_player' | 'panic' | 'champion' | 'trade_brag' | 'big_trade' | 'rival_defeated'
+  type: 'rank_up' | 'rank_down' | 'overtake_player' | 'panic' | 'champion' | 'trade_brag' | 'big_trade' | 'rival_defeated' | 'player_reaction'
   timestamp: number
   playerResponse?: PlayerTauntResponse
   playerResponseMessage?: string

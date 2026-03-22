@@ -569,6 +569,7 @@ let crisisEntryAssets: number | null = null // FEAT-1: 위기 진입 시 자산 
 let crisisEntryTick: number | null = null // FEAT-1: 위기 진입 시 틱
 let lastTradeFeedbackTick = 0 // FEAT-3: 매매 피드백 쿨다운
 let lastPlayerReactionTick = 0 // FEAT-5: 경쟁자 반응 쿨다운
+let earlyTradeGuideShown = false // P1: 초반 매매 가이드 1회 표시
 
 export const useGameStore = create<GameStore>((set, get) => ({
   config: {
@@ -707,6 +708,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   /* ── Game Actions ── */
   startGame: (difficulty, targetAsset, customInitialCash, gameMode = 'virtual', kisCredentials, companyProfile) => {
+    // Reset module-level state for new game
+    zeroCashMonths = 0
+    crisisEntryAssets = null
+    crisisEntryTick = null
+    lastTradeFeedbackTick = 0
+    lastPlayerReactionTick = 0
+    earlyTradeGuideShown = false
+
     const dcfg = DIFFICULTY_TABLE[difficulty]
 
     // KOSPI 모드: 실제 종목 사용 + historicalDataService에서 실제 통계 로드
@@ -2600,11 +2609,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     }
 
-    // P1: 초반 매매 가이드 — 3개월 이내 보유 주식 없으면 경고
-    {
+    // P1: 초반 매매 가이드 — 3개월 이내 보유 주식 없으면 경고 (1회만)
+    if (!earlyTradeGuideShown) {
       const curState = get()
       const monthsPlayed = (curState.time.year - curState.config.startYear) * 12 + curState.time.month
       if (monthsPlayed <= 3 && Object.keys(curState.player.portfolio).length === 0 && curState.player.employees.length > 0) {
+        earlyTradeGuideShown = true
         showToast({
           type: 'warning',
           title: '투자를 시작하세요!',
@@ -2950,7 +2960,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             if (styleTaunts && styleTaunts.length > 0) {
               const template = styleTaunts[Math.floor(Math.random() * styleTaunts.length)]
               const message = template.replace('{ticker}', c.ticker)
-              get().addTaunt({ competitorId: reactor.id, competitorName: reactor.name, message, type: 'trade_brag', timestamp: Date.now() })
+              get().addTaunt({ competitorId: reactor.id, competitorName: reactor.name, message, type: 'player_reaction', timestamp: Date.now() })
               lastPlayerReactionTick = tick
             }
           }
@@ -3125,19 +3135,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const state = get()
       const tick = state.currentTick
       if (company && state.time.speed < 8 && tick - lastPlayerReactionTick >= 3) {
-        const pnl = (company.price - preSellAvgBuyPrice) * shares
-        if (pnl < 0) {
-          const reactor = state.competitors.find((comp) =>
-            comp.portfolio[companyId] && comp.portfolio[companyId].shares > 0,
-          )
-          if (reactor) {
-            const styleTaunts = STYLE_TAUNTS[reactor.style]?.player_reaction
-            if (styleTaunts && styleTaunts.length > 0) {
-              const template = styleTaunts[Math.floor(Math.random() * styleTaunts.length)]
-              const message = template.replace('{ticker}', company.ticker)
-              get().addTaunt({ competitorId: reactor.id, competitorName: reactor.name, message, type: 'trade_brag', timestamp: Date.now() })
-              lastPlayerReactionTick = tick
-            }
+        const reactor = state.competitors.find((comp) =>
+          comp.portfolio[companyId] && comp.portfolio[companyId].shares > 0,
+        )
+        if (reactor) {
+          const styleTaunts = STYLE_TAUNTS[reactor.style]?.player_reaction
+          if (styleTaunts && styleTaunts.length > 0) {
+            const template = styleTaunts[Math.floor(Math.random() * styleTaunts.length)]
+            const message = template.replace('{ticker}', company.ticker)
+            get().addTaunt({ competitorId: reactor.id, competitorName: reactor.name, message, type: 'player_reaction', timestamp: Date.now() })
+            lastPlayerReactionTick = tick
           }
         }
       }

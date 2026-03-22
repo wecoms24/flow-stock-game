@@ -208,8 +208,6 @@ export function generateBankruptcyCoaching(
   trades: RealizedTrade[],
   totalEmployees: number,
   playMonths: number,
-  _initialCash: number,
-  _finalAssets: number,
 ): { cause: string; tips: string[] } {
   const tips: string[] = []
   let cause = ''
@@ -241,15 +239,11 @@ export function generateBankruptcyCoaching(
     tips.push('초반 1~2년은 투자 기반을 다지는 시기입니다. 조급하게 큰 수익을 노리지 마세요.')
   }
 
-  // 원인 5: 집중 투자 실패
+  // 원인 5: 집중 투자 실패 (종목 수 기준)
   if (trades.length >= 10) {
-    const sectorCounts = new Map<string, number>()
-    trades.forEach((t) => {
-      const key = t.companyId
-      sectorCounts.set(key, (sectorCounts.get(key) ?? 0) + 1)
-    })
-    if (sectorCounts.size <= 2) {
-      tips.push('1~2개 종목에만 집중하지 마세요. 5개 이상 섹터에 분산 투자하면 리스크가 줄어듭니다.')
+    const uniqueCompanies = new Set(trades.map((t) => t.companyId))
+    if (uniqueCompanies.size <= 2) {
+      tips.push('1~2개 종목에만 집중하지 마세요. 5개 이상 종목에 분산 투자하면 리스크가 줄어듭니다.')
     }
   }
 
