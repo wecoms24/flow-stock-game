@@ -438,6 +438,7 @@ export interface MarketEvent {
   chainParentId?: string // parent event ID for chained events
   historicalYear?: number // original year for historical events
   propagationPhase?: number // 0-1, how much of the effect is applied
+  lessonText?: string // FEAT-4: 투자 교훈 텍스트
 }
 
 export interface EventImpact {

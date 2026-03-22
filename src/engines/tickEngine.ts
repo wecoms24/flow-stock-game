@@ -28,6 +28,7 @@ import { autoSelectCards } from './cardDrawEngine'
 import { soundManager } from '../systems/soundManager'
 import { dispatchCelebration } from '../components/ui/CelebrationManager'
 import { createCelebration } from '../systems/celebrationSystem'
+import { generateMarketForecast } from '../data/marketForecasts'
 import { REALTIME_TICK_INTERVAL } from '../config/kisConfig'
 import { kisWebSocket } from '../services/kisWebSocketService'
 import { startPriceAggregator, stopPriceAggregator } from '../services/kisPriceAggregator'
@@ -43,6 +44,7 @@ let intervalId: ReturnType<typeof setInterval> | null = null
 let unsubscribeSpeed: (() => void) | null = null
 let autoSaveCounter = 0
 let previousRankings: Record<string, number> = {} // Track previous rankings for change detection
+let lastForecastDay = '' // FEAT-2: 하루 1회 전망 제한
 
 const BASE_HOUR_MS = 1000 // 1 second = 1 hour at 1x speed
 const AUTO_SAVE_INTERVAL = 300 // Auto-save every 300 hours (~5 min at 1x)
@@ -196,6 +198,32 @@ export function startTickLoop() {
             change >= 0 ? '📈' : '📉',
             { color: change >= 0 ? 'green' : 'red', duration: 5000 },
           ))
+        }
+      }
+    }
+
+    // FEAT-2: Market close forecast (suppressed at 4x+ speed)
+    if (current.time.hour === 18 && current.time.speed <= 4) {
+      const forecastDay = `${current.time.year}-${current.time.month}-${current.time.day}`
+      if (forecastDay !== lastForecastDay) {
+        lastForecastDay = forecastDay
+        const forecast = generateMarketForecast({
+          time: current.time,
+          regime: current.marketRegime,
+          events: current.events,
+          employees: current.player.employees,
+        })
+        if (forecast) {
+          current.addNews({
+            id: `news-forecast-${Date.now()}`,
+            timestamp: { ...current.time },
+            headline: forecast.headline,
+            body: forecast.body,
+            isBreaking: false,
+            sentiment: 'neutral',
+            relatedCompanies: [],
+            impactSummary: '시장 전망',
+          })
         }
       }
     }
@@ -506,6 +534,40 @@ export function startTickLoop() {
             source: 'aftereffect' as const,
             chainParentId: evt.id,
           })
+        }
+      })
+
+      // FEAT-4: 역사 이벤트 만료 시 투자 교훈 뉴스 생성
+      decayed.forEach((evt) => {
+        if (
+          evt.remainingTicks <= 0 &&
+          evt.source === 'historical' &&
+          evt.lessonText
+        ) {
+          const state = useGameStore.getState()
+          const affectedSectors = evt.affectedSectors ?? []
+          const heldSectors = affectedSectors.filter((sector) =>
+            Object.keys(state.player.portfolio).some((cId) => {
+              const company = state.companies.find((c) => c.id === cId)
+              return company && company.sector === sector
+            }),
+          )
+          const personalNote = heldSectors.length > 0
+            ? ` 당신은 이 시기에 관련 섹터에 투자하고 있었습니다.`
+            : ''
+
+          setTimeout(() => {
+            useGameStore.getState().addNews({
+              id: `news-lesson-${evt.id}-${Date.now()}`,
+              timestamp: { ...state.time },
+              headline: `[투자 교훈] ${evt.title}`,
+              body: `${evt.lessonText}${personalNote}`,
+              isBreaking: evt.impact.severity === 'critical',
+              sentiment: 'neutral',
+              relatedCompanies: [],
+              impactSummary: '투자 교훈',
+            })
+          }, 0)
         }
       })
 

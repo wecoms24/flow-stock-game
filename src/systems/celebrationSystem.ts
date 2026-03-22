@@ -129,3 +129,35 @@ export function celebrateRivalDefeated(rivalName: string, wins: number): Celebra
     { color: 'gold', sound: 'achievement' },
   )
 }
+
+export function celebrateCrisisSurvival(
+  durationHours: number,
+  assetChangePercent: number,
+): CelebrationEvent {
+  const days = Math.round(durationHours / 10)
+  if (assetChangePercent >= 0) {
+    return createCelebration(
+      3,
+      '폭풍의 승자!',
+      `${days}일간의 위기를 +${assetChangePercent.toFixed(1)}% 수익으로 돌파!`,
+      '🛡️',
+      { color: 'gold', confetti: true, sound: 'achievement' },
+    )
+  }
+  if (assetChangePercent > -10) {
+    return createCelebration(
+      2,
+      '폭풍을 견뎌냈습니다',
+      `${days}일간의 위기 생존 (${assetChangePercent.toFixed(1)}%)`,
+      '⛈️',
+      { color: 'blue', sound: 'levelup' },
+    )
+  }
+  return createCelebration(
+    2,
+    '상처투성이지만 살아남았습니다',
+    `${days}일간의 위기 생존 (${assetChangePercent.toFixed(1)}%)`,
+    '🩹',
+    { color: 'red' },
+  )
+}

@@ -42,7 +42,8 @@ import { getAbsoluteTimestamp, TIME_CONFIG } from '../config/timeConfig'
 import { drawCards } from '../engines/cardDrawEngine'
 import { createBio, inferEmotion, updateGoals } from '../engines/employeeBioEngine'
 import { checkEmployeeMilestones } from '../engines/employeeMilestoneEngine'
-import { getRandomTaunt as getRandomTauntFn, getContextualTradeTaunt, getBigTradeTaunt, getPlayerResponseMessage } from '../data/taunts'
+import { getRandomTaunt as getRandomTauntFn, getContextualTradeTaunt, getBigTradeTaunt, getPlayerResponseMessage, STYLE_TAUNTS } from '../data/taunts'
+import { TRADE_FEEDBACK } from '../config/tradeFeedbackConfig'
 import { calculateBonuses, canRespec as canRespecFn, executeRespec as executeRespecFn } from '../engines/skillPathEngine'
 import { selectChain, initChainState, advanceChainWeek, getCurrentWeekModifiers, canStartChain } from '../engines/eventChainEngine'
 import { EVENT_CHAIN_TEMPLATES } from '../data/eventChains'
@@ -103,6 +104,7 @@ import {
   celebrateStreak,
   celebrateMilestone,
   celebrateRivalDefeated,
+  celebrateCrisisSurvival,
 } from '../systems/celebrationSystem'
 import {
   validateUnlock,
@@ -563,6 +565,10 @@ interface GameStore {
 
 let employeeIdCounter = 0
 let zeroCashMonths = 0 // FIX-4: 현금 0원 지속 카운터 (세션 내에서만 유효)
+let crisisEntryAssets: number | null = null // FEAT-1: 위기 진입 시 자산 스냅샷
+let crisisEntryTick: number | null = null // FEAT-1: 위기 진입 시 틱
+let lastTradeFeedbackTick = 0 // FEAT-3: 매매 피드백 쿨다운
+let lastPlayerReactionTick = 0 // FEAT-5: 경쟁자 반응 쿨다운
 
 export const useGameStore = create<GameStore>((set, get) => ({
   config: {
@@ -2891,6 +2897,51 @@ export const useGameStore = create<GameStore>((set, get) => ({
         )
       }
     }
+
+    // FEAT-3: 매수 판단 피드백 + FEAT-5: 경쟁자 반응
+    {
+      const state = get()
+      const tick = state.currentTick
+      if (state.time.speed < TRADE_FEEDBACK.MAX_SPEED && tick - lastTradeFeedbackTick >= TRADE_FEEDBACK.COOLDOWN_TICKS) {
+        const c = state.companies.find((co) => co.id === companyId)
+        if (c && c.priceHistory && c.priceHistory.length >= 5) {
+          const prices = c.priceHistory
+          const min20 = Math.min(...prices)
+          const max20 = Math.max(...prices)
+          const range = max20 - min20 || 1
+
+          if ((c.price - min20) / range < TRADE_FEEDBACK.NEAR_EXTREME_THRESHOLD) {
+            showToast({ type: 'info', title: '저점 매수', message: `${c.ticker}: 최근 최저가 근처입니다!`, icon: '🎯' })
+            lastTradeFeedbackTick = tick
+          } else if ((max20 - c.price) / range < TRADE_FEEDBACK.NEAR_EXTREME_THRESHOLD) {
+            showToast({ type: 'warning', title: '고점 주의', message: `${c.ticker}: 최근 최고가 근처입니다`, icon: '⚠️' })
+            lastTradeFeedbackTick = tick
+          } else if (state.marketRegime.current === 'CRISIS') {
+            showToast({ type: 'success', title: '용기 있는 매수', message: '위기 속 매수는 용기가 필요합니다', icon: '💪' })
+            lastTradeFeedbackTick = tick
+          }
+        }
+      }
+
+      // FEAT-5: 경쟁자 반응
+      if (state.time.speed < 8 && tick - lastPlayerReactionTick >= 5) {
+        const c = state.companies.find((co) => co.id === companyId)
+        if (c) {
+          const reactor = state.competitors.find((comp) =>
+            comp.portfolio[companyId] && comp.portfolio[companyId].shares > 0,
+          )
+          if (reactor) {
+            const styleTaunts = STYLE_TAUNTS[reactor.style]?.player_reaction
+            if (styleTaunts && styleTaunts.length > 0) {
+              const template = styleTaunts[Math.floor(Math.random() * styleTaunts.length)]
+              const message = template.replace('{ticker}', c.ticker)
+              get().addTaunt({ competitorId: reactor.id, competitorName: reactor.name, message, type: 'trade_brag', timestamp: Date.now() })
+              lastPlayerReactionTick = tick
+            }
+          }
+        }
+      }
+    }
   },
 
   sellStock: (companyId, shares) => {
@@ -3021,6 +3072,58 @@ export const useGameStore = create<GameStore>((set, get) => ({
           set((s) => ({
             player: { ...s.player, tradeStreak: 0 },
           }))
+        }
+      }
+    }
+
+    // FEAT-3: 매도 수익 피드백
+    {
+      const state = get()
+      const tick = state.currentTick
+      if (company && state.time.speed < TRADE_FEEDBACK.MAX_SPEED && tick - lastTradeFeedbackTick >= TRADE_FEEDBACK.COOLDOWN_TICKS) {
+        const pnlPercent = preSellAvgBuyPrice > 0
+          ? ((company.price - preSellAvgBuyPrice) / preSellAvgBuyPrice)
+          : 0
+        if (pnlPercent >= TRADE_FEEDBACK.BIG_PROFIT_THRESHOLD) {
+          dispatchCelebration(createCelebration(
+            1,
+            `훌륭한 타이밍!`,
+            `${company.ticker} +${(pnlPercent * 100).toFixed(1)}% 수익 확정!`,
+            '🎯',
+            { color: 'green', duration: 5000 },
+          ))
+          lastTradeFeedbackTick = tick
+        } else if (pnlPercent >= TRADE_FEEDBACK.SMALL_PROFIT_THRESHOLD) {
+          showToast({
+            type: 'success',
+            title: '수익 확정',
+            message: `${company.ticker} +${(pnlPercent * 100).toFixed(1)}% 수익!`,
+            icon: '💰',
+          })
+          lastTradeFeedbackTick = tick
+        }
+      }
+    }
+
+    // FEAT-5: 매도 시 경쟁자 반응
+    {
+      const state = get()
+      const tick = state.currentTick
+      if (company && state.time.speed < 8 && tick - lastPlayerReactionTick >= 5) {
+        const pnl = (company.price - preSellAvgBuyPrice) * shares
+        if (pnl < 0) {
+          const reactor = state.competitors.find((comp) =>
+            comp.portfolio[companyId] && comp.portfolio[companyId].shares > 0,
+          )
+          if (reactor) {
+            const styleTaunts = STYLE_TAUNTS[reactor.style]?.player_reaction
+            if (styleTaunts && styleTaunts.length > 0) {
+              const template = styleTaunts[Math.floor(Math.random() * styleTaunts.length)]
+              const message = template.replace('{ticker}', company.ticker)
+              get().addTaunt({ competitorId: reactor.id, competitorName: reactor.name, message, type: 'trade_brag', timestamp: Date.now() })
+              lastPlayerReactionTick = tick
+            }
+          }
         }
       }
     }
@@ -3196,6 +3299,37 @@ export const useGameStore = create<GameStore>((set, get) => ({
           employeeIds: [],
           hour: s.time.hour,
         })
+
+        // FEAT-1: 위기 진입/탈출 감지
+        if (newRegimeState.current === 'CRISIS') {
+          // 위기 진입 — 자산 스냅샷 저장
+          crisisEntryAssets = s.player.totalAssetValue
+          crisisEntryTick = absoluteTick
+        } else if (s.marketRegime.current === 'CRISIS' && crisisEntryAssets !== null && crisisEntryTick !== null) {
+          // 위기 탈출 — 생존 축하
+          const durationHours = absoluteTick - crisisEntryTick
+          const assetChange = crisisEntryAssets > 0
+            ? ((s.player.totalAssetValue - crisisEntryAssets) / crisisEntryAssets) * 100
+            : 0
+          if (durationHours >= 10) { // 최소 10시간(1일) 이상 지속된 위기만
+            dispatchCelebration(celebrateCrisisSurvival(durationHours, assetChange))
+            const days = Math.round(durationHours / 10)
+            setTimeout(() => {
+              get().addNews({
+                id: `news-crisis-survival-${Date.now()}`,
+                timestamp: { ...s.time },
+                headline: `[시장 리포트] ${days}일간의 위기 종료`,
+                body: `시장이 위기 상황에서 벗어났습니다. 위기 동안 자산 변동: ${assetChange >= 0 ? '+' : ''}${assetChange.toFixed(1)}%`,
+                isBreaking: true,
+                sentiment: assetChange >= 0 ? 'positive' : 'negative',
+                relatedCompanies: [],
+                impactSummary: '위기 종료',
+              })
+            }, 0)
+          }
+          crisisEntryAssets = null
+          crisisEntryTick = null
+        }
       }
 
       return {

@@ -50,7 +50,7 @@ export const RIVAL_DEFEATED_TAUNTS = [
 ]
 
 /** ✨ Core Values: 스타일별 도발 (라이벌 개성 강화) */
-export type TauntType = 'panic' | 'rank_up' | 'rank_down' | 'overtake' | 'champion' | 'trade_brag' | 'big_trade' | 'rival_defeated'
+export type TauntType = 'panic' | 'rank_up' | 'rank_down' | 'overtake' | 'champion' | 'trade_brag' | 'big_trade' | 'rival_defeated' | 'player_reaction'
 
 export const STYLE_TAUNTS: Record<TradingStyle, Partial<Record<TauntType, string[]>>> = {
   aggressive: {
@@ -104,6 +104,13 @@ export const STYLE_TAUNTS: Record<TradingStyle, Partial<Record<TauntType, string
       '인정한다... 하지만 상어는 포기하지 않아 🦈',
       '패배 인정! 더 세게 공격할 준비 중 ⚡',
     ],
+    player_reaction: [
+      '나도 {ticker} 갖고 있는데? 어디 한번 붙어보자 🦈',
+      '{ticker} 매수? 느려. 난 이미 탔어 ⚡',
+      '내 영역에 들어왔군? 각오해 🔥',
+      '큰 판을 벌이는군! 배짱은 인정 💪',
+      '{ticker} 포기? 더 살 수 있겠네 😏',
+    ],
   },
   conservative: {
     rank_up: [
@@ -152,6 +159,13 @@ export const STYLE_TAUNTS: Record<TradingStyle, Partial<Record<TauntType, string
       '3번 졌지만... 장기전은 아직이야 🐢',
       '인내심으로 버틸게. 인정은 한다 📈',
       '느려도 끝까지 간다. 기다려봐 🛡️',
+    ],
+    player_reaction: [
+      '{ticker}? 좋은 종목이지. 나도 오래 들고 있어 🐢',
+      '급하게 사지 마. 장기적으로 봐야지 📈',
+      '내 영역이긴 한데... 같이 가자 🛡️',
+      '성급한 매매는 독이야. 천천히 해 🐢',
+      '{ticker} 손절? 아까운데... 🤔',
     ],
   },
   'trend-follower': {
@@ -202,6 +216,13 @@ export const STYLE_TAUNTS: Record<TradingStyle, Partial<Record<TauntType, string
       '다음 파도에서 반드시 역전한다! 🌊',
       '트렌드를 놓쳤어... 하지만 끝이 아냐 📊',
     ],
+    player_reaction: [
+      '{ticker} 매수? 트렌드 따라가는 거야? 🏄',
+      '모멘텀이 살아있네. 같이 파도 타자 🌊',
+      '내가 먼저 탄 종목인데! 뒤따라오는구나 📊',
+      '매도? 파도가 아직 안 끝났는데 🏄‍♂️',
+      '좋은 타이밍이야! 흐름을 읽었네 🌊',
+    ],
   },
   contrarian: {
     rank_up: [
@@ -250,6 +271,13 @@ export const STYLE_TAUNTS: Record<TradingStyle, Partial<Record<TauntType, string
       '역발상도 3번 틀리면... 인정해야지 🐻',
       '시장이 내 편이 아니었나... 다음엔 보자 🔄',
       '곰도 울 때가 있는 법이야 😤',
+    ],
+    player_reaction: [
+      '다들 살 때 {ticker} 매수? 나라면 반대로 갈 텐데 🐻',
+      '{ticker}? 과열 아닌가? 조심해 🔄',
+      '남들이 다 파는 종목이라... 오히려 좋아! 😏',
+      '손절 잘했어. 하지만 내겐 기회야 🐻',
+      '내 영역에서 역발상 매매? 재밌는 녀석이군 🔄',
     ],
   },
 }

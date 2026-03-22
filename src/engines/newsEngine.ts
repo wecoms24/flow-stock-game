@@ -391,6 +391,7 @@ function createEventFromHistorical(
     priceImpactSnapshot: priceSnapshot,
     source: 'historical',
     historicalYear: hEvent.year,
+    lessonText: hEvent.lessonText,
   }
 
   const isBreaking =
