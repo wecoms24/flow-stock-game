@@ -4,6 +4,7 @@ import type { SQLiteDB } from '@subframe7536/sqlite-wasm'
 import type { SaveData, Company, Employee, Competitor, MarketEvent, NewsItem } from '../../types'
 import type { TradeProposal } from '../../types/trade'
 import type { SaveRow, CompanyRow, EmployeeRow, CompetitorRow } from './types'
+import { HISTORICAL_EVENTS } from '../../data/historicalEvents'
 
 /**
  * Safely parse JSON with fallback to default value
@@ -679,6 +680,10 @@ export async function sqliteToSaveData(
         chainParentId: r.chain_parent_id ?? undefined,
         historicalYear: r.historical_year ?? undefined,
         propagationPhase: r.propagation_phase ?? undefined,
+        // Restore lessonText from static data (not persisted in DB)
+        lessonText: r.source === 'historical' && r.historical_year
+          ? HISTORICAL_EVENTS.find(h => h.year === r.historical_year && h.title === r.title)?.lessonText
+          : undefined,
       }
     })
 
