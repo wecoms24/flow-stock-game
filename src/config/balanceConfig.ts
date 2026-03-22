@@ -104,7 +104,7 @@ export const CASH_INTEREST = {
   MAX_TIER: 'growing' as const,
 } as const
 
-/** v6 밸런스: 급여 삭감 요청 메카닉 */
+/** v6 밸런스: 급여 삭감 요청 메카닉 — TODO: v7에서 구현 예정, 현재 미사용 */
 export const PAY_CUT = {
   /** 최대 삭감률 30% */
   MAX_RATE: 0.30,

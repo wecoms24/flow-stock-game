@@ -1419,16 +1419,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const result = analyzeStock(company, company.priceHistory, analyst, adjBonus, [], corpEffects, s.marketRegime?.current)
         if (!result) continue
 
-        // v6 밸런스: 추격자 보너스 (꼴찌 + 손실 중일 때 +10 confidence)
-        if (s.competitors && s.competitors.length > 0) {
-          const playerROI = s.player.cash + Object.entries(s.player.portfolio).reduce((sum, [id, pos]) => {
-            const c = s.companies.find((cc) => cc.id === id)
-            return sum + (c && pos.shares > 0 ? pos.shares * c.price : 0)
-          }, 0)
-          const initialCash = s.config?.initialCash ?? 70_000_000
-          if (playerROI < initialCash) {
-            result.confidence = Math.min(100, result.confidence + TRADE_AI_CONFIG.TRAILING_CONFIDENCE_BONUS)
-          }
+        // v6 밸런스: 추격자 보너스 (손실 중일 때 +10 confidence, totalAssetValue 캐시 사용)
+        const initialCash = s.config?.initialCash ?? 70_000_000
+        if ((s.player.totalAssetValue ?? s.player.cash) < initialCash) {
+          result.confidence = Math.min(100, result.confidence + TRADE_AI_CONFIG.TRAILING_CONFIDENCE_BONUS)
         }
 
         const proposal = generateProposal(analyst, company, result, absoluteTick, newProposals, s.player.cash, corpEffects)
@@ -2293,9 +2287,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const totalDeduction = hourlySalary + hourlyTax
       const newCash = Math.max(0, st.player.cash - totalDeduction)
 
-      // 3b. v6.1: 현금 이자 (총자산 1억 미만 세이프티넷)
+      // 3b. v6.1: 현금 이자 (소규모 자산 세이프티넷, tier+금액 이중 체크)
       let hourlyInterest = 0
-      if (totalAssets < 100_000_000) {
+      const currentTier = st.economicPressure.currentTier
+      if ((currentTier === 'beginner' || currentTier === CASH_INTEREST.MAX_TIER) && totalAssets < 100_000_000) {
         hourlyInterest = Math.round(newCash * CASH_INTEREST.MONTHLY_RATE / HPM)
       }
       const finalCash = newCash + hourlyInterest
@@ -5101,9 +5096,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!employee) return
 
     const negotiationState = createNegotiationState(employee)
+    const wasPaused = s.time.isPaused // v6.1: 협상 전 일시정지 상태 보존
     // v6.1: 연봉 협상 시 자동 일시정지 (리듬게임 중 시간 소비 방지)
     set((st) => ({
       activeNegotiation: negotiationState,
+      _negotiationWasPaused: wasPaused,
       time: { ...st.time, isPaused: true },
     }))
     get().openWindow('negotiation')
@@ -5160,7 +5157,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
           monthlyExpenses: newMonthlyExpenses,
         },
         activeNegotiation: null,
-        time: { ...st.time, isPaused: false }, // v6.1: 협상 완료 후 자동 재개
+        // v6.1: 협상 전 일시정지 상태 복원 (수동 일시정지 덮어쓰기 방지)
+        time: { ...st.time, isPaused: !!((st as unknown as Record<string, unknown>)._negotiationWasPaused) },
       }
     })
 
