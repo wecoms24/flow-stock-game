@@ -31,9 +31,9 @@ export const CHAPTERS: Chapter[] = [
     objectives: [
       {
         id: 'ch2_networth',
-        label: '순자산 5억 달성',
-        description: '총 자산(현금 + 포트폴리오)이 5억 원을 돌파',
-        targetValue: 500_000_000,
+        label: '순자산 2억 달성',
+        description: '총 자산(현금 + 포트폴리오)이 2억 원을 돌파',
+        targetValue: 200_000_000, // v6 밸런스: 5억→2억 (Normal 난이도 달성 가능)
       },
       {
         id: 'ch2_profit',

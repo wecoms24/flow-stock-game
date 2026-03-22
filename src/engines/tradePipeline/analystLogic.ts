@@ -147,6 +147,11 @@ export function analyzeStock(
     confidence += TRADE_AI_CONFIG.INSIGHT_CONFIDENCE_BONUS
   }
 
+  // v6 밸런스: 위기 레짐 시 기회 보너스 (CRISIS = Opportunity)
+  if (currentRegime === 'CRISIS') {
+    confidence += TRADE_AI_CONFIG.CRISIS_CONFIDENCE_BONUS
+  }
+
   // Adjacency bonus: lower effective threshold (bonus 0~0.3 → threshold reduction 0~21)
   const effectiveThreshold = TRADE_AI_CONFIG.CONFIDENCE_THRESHOLD - (adjacencyBonus * 70)
 
@@ -186,7 +191,7 @@ export function generateProposal(
   // - 예: cash 500M, confidence 85 → 10M 투자 (단일 종목 적정 비율)
   // - 예: cash 100M, confidence 85 → 2M 투자 (적정 수준)
   const confidenceRatio = Math.min(1, Math.max(0, (analysis.confidence - 70) / 30))
-  let cashRatio = 0.01 + confidenceRatio * 0.02 // 1.0% ~ 3.0%
+  let cashRatio = 0.02 + confidenceRatio * 0.04 // v6 밸런스: 2.0% ~ 6.0% (직원 급여 대비 수익성 확보)
 
   // ✨ Corporate Skill: riskReductionBonus → 투자 비율 축소 (리스크 감소)
   if (corporateEffects && corporateEffects.riskReductionBonus > 0) {

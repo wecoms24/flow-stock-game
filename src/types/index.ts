@@ -318,13 +318,13 @@ export const EMPLOYEE_ROLE_CONFIG: Record<
 > = {
   intern: {
     title: '인턴',
-    baseSalary: 500_000,
+    baseSalary: 300_000,
     maxStamina: 60,
     bonus: { driftBoost: 0.001, volatilityReduction: 0, tradingDiscount: 0, staminaRecovery: 15 },
   },
   analyst: {
     title: '애널리스트',
-    baseSalary: 2_000_000,
+    baseSalary: 1_200_000,
     maxStamina: 80,
     bonus: {
       driftBoost: 0.005,
@@ -335,13 +335,13 @@ export const EMPLOYEE_ROLE_CONFIG: Record<
   },
   trader: {
     title: '트레이더',
-    baseSalary: 3_000_000,
+    baseSalary: 2_000_000,
     maxStamina: 70,
     bonus: { driftBoost: 0, volatilityReduction: 0, tradingDiscount: 0.1, staminaRecovery: 8 },
   },
   manager: {
     title: '매니저',
-    baseSalary: 5_000_000,
+    baseSalary: 3_000_000,
     maxStamina: 90,
     bonus: {
       driftBoost: 0.003,
@@ -352,7 +352,7 @@ export const EMPLOYEE_ROLE_CONFIG: Record<
   },
   ceo: {
     title: 'CEO',
-    baseSalary: 10_000_000,
+    baseSalary: 7_000_000,
     maxStamina: 100,
     bonus: {
       driftBoost: 0.01,
@@ -363,7 +363,7 @@ export const EMPLOYEE_ROLE_CONFIG: Record<
   },
   hr_manager: {
     title: 'HR 매니저',
-    baseSalary: 5_000_000,
+    baseSalary: 3_000_000,
     maxStamina: 85,
     bonus: {
       driftBoost: 0,

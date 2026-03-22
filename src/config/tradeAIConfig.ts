@@ -11,8 +11,8 @@ export const TRADE_AI_CONFIG = {
   TRADER_HOUR_INTERVAL: 1,
   /** 제안서 생성 최소 Confidence */
   CONFIDENCE_THRESHOLD: 70,
-  /** 최대 PENDING 제안서 수 */
-  MAX_PENDING_PROPOSALS: 10,
+  /** 최대 PENDING 제안서 수 (v6 밸런스: 10 → 20, 분석가 산출물 버퍼 확대) */
+  MAX_PENDING_PROPOSALS: 20,
   /** PENDING 자동 만료 영업시간 수 */
   PROPOSAL_EXPIRE_HOURS: 50,
   /** 기본 슬리피지 비율 (1%) */
@@ -33,6 +33,10 @@ export const TRADE_AI_CONFIG = {
   FAILURE_STRESS_GAIN: 15,
   /** 반려 시 Analyst 스트레스 증가 */
   REJECTION_STRESS_GAIN: 8,
+  /** v6 밸런스: 꼴찌 플레이어 신뢰도 보너스 (Rubber Banding) */
+  TRAILING_CONFIDENCE_BONUS: 10,
+  /** v6 밸런스: 위기 레짐 시 분석 신뢰도 보너스 (Crisis = Opportunity) */
+  CRISIS_CONFIDENCE_BONUS: 15,
 } as const
 
 // ===== Phase 3: 레짐별 지표 가중치 =====

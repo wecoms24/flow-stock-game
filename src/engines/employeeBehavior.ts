@@ -625,7 +625,7 @@ export function getActionEffects(action: EmployeeActionType): {
     case 'WORKING':
       return { staminaDelta: -0.05, stressDelta: 0.02, satisfactionDelta: 0.01, skillMultiplier: 1.2 }
     case 'IDLE':
-      return { staminaDelta: 0.02, stressDelta: -0.01, satisfactionDelta: -0.005, skillMultiplier: 0 }
+      return { staminaDelta: 0.02, stressDelta: -0.01, satisfactionDelta: -0.002, skillMultiplier: 0 } // v6: -0.005→-0.002
     case 'BREAK':
       return { staminaDelta: 0.1, stressDelta: -0.04, satisfactionDelta: 0.02, skillMultiplier: 0 }
     case 'SOCIALIZING':
@@ -635,7 +635,7 @@ export function getActionEffects(action: EmployeeActionType): {
     case 'MEETING':
       return { staminaDelta: -0.02, stressDelta: 0.01, satisfactionDelta: 0.01, skillMultiplier: 0.5 }
     case 'STRESSED_OUT':
-      return { staminaDelta: -0.05, stressDelta: 0.03, satisfactionDelta: -0.02, skillMultiplier: 0 }
+      return { staminaDelta: -0.05, stressDelta: 0.03, satisfactionDelta: -0.01, skillMultiplier: 0 } // v6: -0.02→-0.01
     case 'COUNSELING':
       return { staminaDelta: 0.08, stressDelta: -0.10, satisfactionDelta: 0.08, skillMultiplier: 0 }
     case 'CELEBRATING':
@@ -648,7 +648,7 @@ export function getActionEffects(action: EmployeeActionType): {
       return {
         staminaDelta: -STRESS_AI.BURNOUT_STAMINA_DRAIN,
         stressDelta: -0.01, // 번아웃 중 스트레스 미세 감소 (회복 유도)
-        satisfactionDelta: -0.03,
+        satisfactionDelta: -0.015, // v6: -0.03→-0.015
         skillMultiplier: STRESS_AI.BURNOUT_SKILL_MULTIPLIER,
       }
   }

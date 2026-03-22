@@ -1419,6 +1419,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const result = analyzeStock(company, company.priceHistory, analyst, adjBonus, [], corpEffects, s.marketRegime?.current)
         if (!result) continue
 
+        // v6 밸런스: 추격자 보너스 (꼴찌 + 손실 중일 때 +10 confidence)
+        if (s.competitors && s.competitors.length > 0) {
+          const playerROI = s.player.cash + Object.entries(s.player.portfolio).reduce((sum, [id, pos]) => {
+            const c = s.companies.find((cc) => cc.id === id)
+            return sum + (c && pos.shares > 0 ? pos.shares * c.price : 0)
+          }, 0)
+          const initialCash = s.config?.initialCash ?? 70_000_000
+          if (playerROI < initialCash) {
+            result.confidence = Math.min(100, result.confidence + TRADE_AI_CONFIG.TRAILING_CONFIDENCE_BONUS)
+          }
+        }
+
         const proposal = generateProposal(analyst, company, result, absoluteTick, newProposals, s.player.cash, corpEffects)
         if (!proposal) continue
 
@@ -2452,13 +2464,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (latestState.time.hour === 9 && latestState.player.employees.length > 0) {
         const tick = getAbsoluteTimestamp(latestState.time, latestState.config.startYear)
         const monthlySalary = latestState.player.employees.reduce((sum, emp) => sum + emp.salary, 0)
-        if (latestState.player.cash < monthlySalary * 2 && tick - latestState.lastLowCashWarningTick > 300) {
-          const monthsLeft = monthlySalary > 0 ? Math.floor(latestState.player.cash / monthlySalary) : 0
+        // v6 밸런스: 2단계 급여 경고 (쿨다운 300→150틱, 1개월 미만 시 자동정지)
+        const runway = monthlySalary > 0 ? Math.floor(latestState.player.cash / monthlySalary) : 999
+        if (runway <= 1 && tick - latestState.lastLowCashWarningTick > 100) {
+          latestState.addNews({
+            id: `news-low-cash-critical-${Date.now()}`,
+            timestamp: { ...latestState.time },
+            headline: `💀 급여 지급 위기!`,
+            body: `현금이 1개월분 급여 미만입니다! 즉시 주식 매도 또는 직원 감축이 필요합니다.`,
+            isBreaking: true,
+            sentiment: 'negative',
+            relatedCompanies: [],
+            impactSummary: '급여 위기',
+          })
+          set({ lastLowCashWarningTick: tick })
+          get().autoPauseForEvent('💀 급여 지급 위기! 현금이 1개월분 미만입니다.')
+        } else if (runway <= 3 && tick - latestState.lastLowCashWarningTick > 150) {
           latestState.addNews({
             id: `news-low-cash-${Date.now()}`,
             timestamp: { ...latestState.time },
             headline: `현금 부족 경고!`,
-            body: `현재 현금이 ${Math.round(latestState.player.cash).toLocaleString()}원으로, 약 ${monthsLeft}개월분 급여만 남았습니다. 주식 매도 또는 직원 감축을 고려하세요.`,
+            body: `현재 현금이 ${Math.round(latestState.player.cash).toLocaleString()}원으로, 약 ${runway}개월분 급여만 남았습니다. 주식 매도 또는 직원 감축을 고려하세요.`,
             isBreaking: true,
             sentiment: 'negative',
             relatedCompanies: [],
@@ -3888,10 +3914,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
         props,
       }
 
+      // v6 밸런스: 매매창 오픈 시 고속모드(4x+) 자동 일시정지
+      const shouldAutoPause = type === 'trading' && s.time.speed >= 4 && !s.time.isPaused
+
       return {
         windows: [...s.windows, win],
         nextZIndex: s.nextZIndex + 1,
         windowIdCounter: counter,
+        ...(shouldAutoPause ? { time: { ...s.time, isPaused: true } } : {}),
       }
     }),
 
@@ -4469,8 +4499,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     }
 
-    // 이벤트 체인 트래커 창 열기
-    get().openWindow('event_chain_tracker')
+    // 이벤트 체인 트래커 창 열기 (v6: 고속모드 8x+ 에서 팝업 억제)
+    if (get().time.speed <= 4) {
+      get().openWindow('event_chain_tracker')
+    }
   },
 
   advanceChain: () => {

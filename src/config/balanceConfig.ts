@@ -67,8 +67,8 @@ export const SALARY_BALANCE = {
   PROBATION_MONTHS: 3,
   /** 수습 중 급여 비율 (50%) */
   PROBATION_SALARY_RATE: 0.5,
-  /** 채용 시 선지급 급여 배수 (기존 3배 → 2배) */
-  HIRING_COST_MULTIPLIER: 2,
+  /** 채용 시 선지급 급여 배수 (v6 밸런스: 2배 → 1배, 진입장벽 완화) */
+  HIRING_COST_MULTIPLIER: 1,
 } as const
 
 export const STRESS_WARNING = {
@@ -94,4 +94,22 @@ export const OFFICE_BALANCE = {
 
   /** 최대 오피스 레벨 */
   MAX_LEVEL: 3,
+} as const
+
+/** v6 밸런스: 초기 게임 현금 이자 (세이프티넷) */
+export const CASH_INTEREST = {
+  /** 월 이자율 0.3% (연 ~3.6%, 예금 수준) */
+  MONTHLY_RATE: 0.003,
+  /** 적용 상한 티어 — growing(1억) 이하에서만 적용 */
+  MAX_TIER: 'growing' as const,
+} as const
+
+/** v6 밸런스: 급여 삭감 요청 메카닉 */
+export const PAY_CUT = {
+  /** 최대 삭감률 30% */
+  MAX_RATE: 0.30,
+  /** 삭감률 × 이 값 = 만족도 감소 (30% 삭감 → -15 만족도) */
+  SATISFACTION_PENALTY: 50,
+  /** 최대 삭감 유지 기간 (개월) */
+  MAX_DURATION_MONTHS: 6,
 } as const
