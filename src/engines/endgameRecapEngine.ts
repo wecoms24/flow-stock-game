@@ -15,7 +15,7 @@ import type {
   CompetitorResult,
   TurningPoint,
 } from '../types/endgame'
-import { generateDecisionAnalysis } from './decisionAnalysisEngine'
+import { generateDecisionAnalysis, generateBankruptcyCoaching } from './decisionAnalysisEngine'
 import { getFinalQuote } from '../data/taunts'
 import type { TradingStyle } from '../types'
 import { generateTestimonial } from '../data/employeeTestimonials'
@@ -143,6 +143,18 @@ export function generateEndgameRecap(state: {
     starEmployees[0]?.name,
   )
 
+  // P0: 파산 코칭 (파산 임계: 초기 자본의 5%)
+  const isBankrupt = player.totalAssetValue < config.initialCash * 0.05
+  const bankruptcyCoaching = isBankrupt
+    ? generateBankruptcyCoaching(
+        realizedTrades,
+        allBios.length,
+        playYears * 12,
+        config.initialCash,
+        player.totalAssetValue,
+      )
+    : undefined
+
   return {
     finalAssets: player.totalAssetValue,
     totalROI,
@@ -165,6 +177,7 @@ export function generateEndgameRecap(state: {
     oneLineStory,
     turningPoints,
     assetCurve,
+    bankruptcyCoaching,
   }
 }
 

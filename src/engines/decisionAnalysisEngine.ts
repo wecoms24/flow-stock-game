@@ -200,3 +200,63 @@ export function generateDecisionAnalysis(
 
   return { sectorBreakdown, timing, riskBehavior, personalInsight }
 }
+
+/**
+ * P0: 파산 원인 분석 + 코칭 팁 생성
+ */
+export function generateBankruptcyCoaching(
+  trades: RealizedTrade[],
+  totalEmployees: number,
+  playMonths: number,
+  _initialCash: number,
+  _finalAssets: number,
+): { cause: string; tips: string[] } {
+  const tips: string[] = []
+  let cause = ''
+
+  // 원인 1: 매매를 거의 안 함
+  if (trades.length < 5) {
+    cause = '매매 부족 — 주식 투자 없이 직원 급여만 소진'
+    tips.push('첫 달에 자본의 30~50%로 다양한 섹터의 주식을 매수하세요.')
+    tips.push('AI 트레이드 파이프라인(애널리스트+트레이더+매니저)을 활용하면 자동 매매가 가능합니다.')
+  }
+
+  // 원인 2: 직원 급여 부담
+  if (totalEmployees > 0 && trades.length < totalEmployees * 10) {
+    if (!cause) cause = '직원 급여 대비 매매 수익 부족'
+    tips.push('직원 급여가 매월 고정 지출됩니다. 매매 수익이 급여를 초과해야 생존합니다.')
+    tips.push('런웨이(잔여 개월)가 6개월 미만이면 직원 해고를 고려하세요.')
+  }
+
+  // 원인 3: 손실 매매가 많음
+  const lossTrades = trades.filter((t) => t.pnl < 0)
+  if (trades.length >= 5 && lossTrades.length > trades.length * 0.6) {
+    if (!cause) cause = '손실 매매 과다 — 승률이 40% 미만'
+    tips.push('손절매를 설정하세요. 스킬 도감에서 "손절매 정책"을 구매하면 자동으로 -5%에서 손절합니다.')
+    tips.push('하락 추세인 종목을 오래 보유하지 마세요. 추세를 확인 후 매매하세요.')
+  }
+
+  // 원인 4: 너무 짧은 플레이
+  if (playMonths < 24) {
+    tips.push('초반 1~2년은 투자 기반을 다지는 시기입니다. 조급하게 큰 수익을 노리지 마세요.')
+  }
+
+  // 원인 5: 집중 투자 실패
+  if (trades.length >= 10) {
+    const sectorCounts = new Map<string, number>()
+    trades.forEach((t) => {
+      const key = t.companyId
+      sectorCounts.set(key, (sectorCounts.get(key) ?? 0) + 1)
+    })
+    if (sectorCounts.size <= 2) {
+      tips.push('1~2개 종목에만 집중하지 마세요. 5개 이상 섹터에 분산 투자하면 리스크가 줄어듭니다.')
+    }
+  }
+
+  // 기본 팁 (항상 포함)
+  tips.push('역사적 위기(1997 IMF, 2008 금융위기, 2020 코로나)는 저점 매수의 기회입니다.')
+
+  if (!cause) cause = '시장 변동성과 고정 비용의 이중 부담'
+
+  return { cause, tips }
+}

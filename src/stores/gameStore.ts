@@ -2600,6 +2600,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     }
 
+    // P1: 초반 매매 가이드 — 3개월 이내 보유 주식 없으면 경고
+    {
+      const curState = get()
+      const monthsPlayed = (curState.time.year - curState.config.startYear) * 12 + curState.time.month
+      if (monthsPlayed <= 3 && Object.keys(curState.player.portfolio).length === 0 && curState.player.employees.length > 0) {
+        showToast({
+          type: 'warning',
+          title: '투자를 시작하세요!',
+          message: '주식을 보유하지 않으면 직원 급여만 소진됩니다. 매매 창에서 주식을 매수하세요.',
+          icon: '📈',
+          duration: 8000,
+        })
+      }
+    }
+
     // Record tax cash flow
     if (accum.taxPaid > 0) {
       get().recordCashFlow('TAX' as CashFlowCategory, -accum.taxPaid, `부유세 (${state.economicPressure.currentTier} 구간)`)
@@ -2924,7 +2939,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
 
       // FEAT-5: 경쟁자 반응
-      if (state.time.speed < 8 && tick - lastPlayerReactionTick >= 5) {
+      if (state.time.speed < 8 && tick - lastPlayerReactionTick >= 3) {
         const c = state.companies.find((co) => co.id === companyId)
         if (c) {
           const reactor = state.competitors.find((comp) =>
@@ -3109,7 +3124,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     {
       const state = get()
       const tick = state.currentTick
-      if (company && state.time.speed < 8 && tick - lastPlayerReactionTick >= 5) {
+      if (company && state.time.speed < 8 && tick - lastPlayerReactionTick >= 3) {
         const pnl = (company.price - preSellAvgBuyPrice) * shares
         if (pnl < 0) {
           const reactor = state.competitors.find((comp) =>

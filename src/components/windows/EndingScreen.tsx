@@ -302,6 +302,21 @@ function SummaryTab({ recap, endingResult }: { recap: EndgameRecap; endingResult
           </div>
         ))}
       </div>
+
+      {/* P0: Bankruptcy Coaching */}
+      {recap.bankruptcyCoaching && (
+        <div className="win-inset bg-yellow-50 p-3 text-xs space-y-2 border-l-4 border-yellow-500">
+          <div className="font-bold text-yellow-800 text-sm">💡 다음 플레이를 위한 코칭</div>
+          <div className="text-yellow-900 font-bold text-[11px]">
+            원인: {recap.bankruptcyCoaching.cause}
+          </div>
+          <ul className="list-disc pl-4 space-y-1">
+            {recap.bankruptcyCoaching.tips.map((tip, i) => (
+              <li key={i} className="text-yellow-800 text-[11px]">{tip}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }

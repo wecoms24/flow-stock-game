@@ -111,4 +111,10 @@ export interface EndgameRecap {
   oneLineStory: string
   turningPoints: TurningPoint[]
   assetCurve: Array<{ year: number; month: number; cash: number }>
+
+  // P0: Bankruptcy Coaching
+  bankruptcyCoaching?: {
+    cause: string
+    tips: string[]
+  }
 }

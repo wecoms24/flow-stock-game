@@ -10,7 +10,7 @@ export const DIFFICULTY_TABLE: Record<Difficulty, DifficultyConfig> = {
   easy: {
     startYear: 1995,
     endYear: 2025,
-    initialCash: 100_000_000,
+    initialCash: 150_000_000, // P2: 1억→1.5억 상향 (다양한 시스템 체험 가능)
     maxCompanies: 100,
     eventChance: 0.005, // 0.5% per tick → fewer surprises
     volatilityMultiplier: 0.7, // 30% less volatile

@@ -404,11 +404,14 @@ function createEventFromHistorical(
         : 'neutral'
 
   store.addEvent(event)
+  const newsBody = hEvent.lessonText
+    ? `${hEvent.description}\n\n💡 ${hEvent.lessonText}`
+    : hEvent.description
   store.addNews({
     id: `news-hist-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     timestamp: { ...store.time },
     headline: `[역사] ${hEvent.title}`,
-    body: hEvent.description,
+    body: newsBody,
     eventId: event.id,
     isBreaking,
     sentiment,
