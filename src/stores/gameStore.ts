@@ -2523,8 +2523,36 @@ export const useGameStore = create<GameStore>((set, get) => ({
       })
     }
 
+    // v7.3: 자동 구조조정 — 현금 < 월급 1개월분이면 주식 매도 + 직원 해고
+    {
+      const latestS = get()
+      const monthlySalary = latestS.player.employees.reduce((sum, e) => sum + (e.salary || 0), 0)
+      if (monthlySalary > 0 && latestS.player.cash < monthlySalary) {
+        // 1. 보유 주식 전량 매도
+        for (const [id, pos] of Object.entries(latestS.player.portfolio || {})) {
+          if (pos.shares > 0) get().sellStock(id, pos.shares)
+        }
+        // 2. 현금 여전히 부족하면 가장 비싼 직원부터 해고 (최소 0명까지)
+        const afterSell = get()
+        if (afterSell.player.cash < monthlySalary && afterSell.player.employees.length > 0) {
+          const sorted = [...afterSell.player.employees].sort((a, b) => (b.salary || 0) - (a.salary || 0))
+          for (const emp of sorted) {
+            if (get().player.cash >= get().player.employees.reduce((s2, e) => s2 + (e.salary || 0), 0)) break
+            get().fireEmployee(emp.id)
+          }
+          get().addNews({
+            id: `news-restructure-${monthNum}`,
+            timestamp: { ...get().time },
+            headline: '긴급 구조조정 실시!',
+            body: '현금 부족으로 자동 구조조정이 실행되었습니다. 직원이 감축되었습니다.',
+            isBreaking: true, sentiment: 'negative', relatedCompanies: [], impactSummary: '구조조정',
+          })
+        }
+      }
+    }
+
     // Record accumulated salary/tax from hourly processing
-    const accum = state.hourlyAccumulators
+    const accum = get().hourlyAccumulators
     // 수습 기간 할인을 반영한 실제 급여 총액 계산
     const currentMonthNum = (state.time.year - state.config.startYear) * 12 + state.time.month
     const totalSalaryOwed = state.player.employees.reduce((sum, emp) => {
