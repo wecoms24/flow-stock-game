@@ -63,8 +63,8 @@ export const STRESS_AI = {
 } as const
 
 export const SALARY_BALANCE = {
-  /** 수습 기간 (개월) */
-  PROBATION_MONTHS: 3,
+  /** 수습 기간 (개월) — v7: 3→6개월 (급여 33% 절감, 초기 생존성 개선) */
+  PROBATION_MONTHS: 6,
   /** 수습 중 급여 비율 (50%) */
   PROBATION_SALARY_RATE: 0.5,
   /** 채용 시 선지급 급여 배수 (v6 밸런스: 2배 → 1배, 진입장벽 완화) */
@@ -98,8 +98,8 @@ export const OFFICE_BALANCE = {
 
 /** v6 밸런스: 초기 게임 현금 이자 (세이프티넷) */
 export const CASH_INTEREST = {
-  /** 월 이자율 0.3% (연 ~3.6%, 예금 수준) */
-  MONTHLY_RATE: 0.003,
+  /** 월 이자율 1% (연 ~12%, v7: 0.3%→1% 급여 드레인 완화) */
+  MONTHLY_RATE: 0.01,
   /** 적용 상한 티어 — growing(1억) 이하에서만 적용 */
   MAX_TIER: 'growing' as const,
 } as const

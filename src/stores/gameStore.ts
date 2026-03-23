@@ -204,11 +204,11 @@ function getEndingScenarios(config: GameConfig): EndingScenario[] {
       title: '파산',
       description: '자산이 바닥났습니다. 시장은 냉혹합니다.',
       condition: (player, time, cfg) => {
-        // 시작 3개월은 보호기간
+        // v7: 시작 12개월은 보호기간 (첫 해는 튜토리얼, Flow Theory 안전 학습)
         const monthsPlayed = (time.year - cfg.startYear) * 12 + time.month
-        if (monthsPlayed < 3) return false
-        // 총 자산이 초기 자본의 5% 미만이면 파산
-        return player.totalAssetValue < cfg.initialCash * 0.05
+        if (monthsPlayed < 12) return false
+        // v7: 총 자산이 초기 자본의 2% 미만이면 파산 (5%→2% 완화)
+        return player.totalAssetValue < cfg.initialCash * 0.02
       },
     },
   ]
@@ -2506,6 +2506,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const monthNum = (state.time.year - state.config.startYear) * 12 + state.time.month
 
     if (monthNum <= state.lastProcessedMonth) return
+
+    // v7: 스타트업 보조금 (첫 3개월, 월 200만원)
+    if (monthNum <= 3 && state.player.cash > 0) {
+      const subsidy = 2_000_000
+      set((s) => ({ player: { ...s.player, cash: s.player.cash + subsidy } }))
+      state.addNews({
+        id: `news-subsidy-${monthNum}`,
+        timestamp: { ...state.time },
+        headline: '스타트업 지원금 입금!',
+        body: `정부 창업지원 프로그램에서 ${(subsidy / 10000).toFixed(0)}만원이 입금되었습니다. 사업 초기 안정을 위해 사용하세요.`,
+        isBreaking: false,
+        sentiment: 'positive',
+        relatedCompanies: [],
+        impactSummary: '보조금 수령',
+      })
+    }
 
     // Record accumulated salary/tax from hourly processing
     const accum = state.hourlyAccumulators
