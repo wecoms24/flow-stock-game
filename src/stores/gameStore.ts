@@ -2274,6 +2274,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
         return sum + (emp.salary * rate) / HPM
       }, 0))
 
+      // v7.3: 현금 < 월급 2개월분이면 급여 동결 (좀비 방지)
+      const monthlySalaryTotal = st.player.employees.reduce((s2, e) => s2 + (e.salary || 0), 0)
+      const salaryFrozen = monthlySalaryTotal > 0 && st.player.cash < monthlySalaryTotal * 2
+      const effectiveHourlySalary = salaryFrozen ? 0 : hourlySalary
+
       // 2. Hourly wealth tax (rounded)
       const totalAssets = st.player.cash + calcPortfolioValue(st.player.portfolio, st.companies)
       const { tax: taxCfg } = getTierConfig(st.economicPressure.currentTier)
@@ -2283,8 +2288,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
       const hourlyTax = Math.round(totalAssets * taxRate / HPM)
 
-      // 3. Deduct cash
-      const totalDeduction = hourlySalary + hourlyTax
+      // 3. Deduct cash (급여 동결 시 급여=0)
+      const totalDeduction = effectiveHourlySalary + hourlyTax
       const newCash = Math.max(0, st.player.cash - totalDeduction)
 
       // 3b. v6.1: 현금 이자 (소규모 자산 세이프티넷, tier+금액 이중 체크)
@@ -2422,7 +2427,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           totalAssetValue: finalCash + calcPortfolioValue(st.player.portfolio, st.companies),
         },
         hourlyAccumulators: {
-          salaryPaid: st.hourlyAccumulators.salaryPaid + hourlySalary,
+          salaryPaid: st.hourlyAccumulators.salaryPaid + effectiveHourlySalary,
           taxPaid: st.hourlyAccumulators.taxPaid + hourlyTax,
         },
         ...(firstLevelUp ? { pendingLevelUps: [...st.pendingLevelUps, firstLevelUp], pendingLevelUp: firstLevelUp } : {}),

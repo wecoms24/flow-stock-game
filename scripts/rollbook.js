@@ -140,8 +140,13 @@
     const crisisAction = getCrisisAction(year, month)
 
     if (crisisAction === 'sell') {
-      // 위기 전 전량 매도
+      // 위기 전 전량 매도 + 직원 해고 (급여 드레인 방지)
       sellAll(s, `위기 대비 매도 (${year}.${month})`)
+      const emps = store.getState().player.employees || []
+      if (emps.length > 0) {
+        emps.forEach(e => store.getState().fireEmployee(e.id))
+        decide('employee', `위기 대비 전원 해고 (${emps.length}명)`)
+      }
       return
     }
 
