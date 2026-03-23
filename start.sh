@@ -1,100 +1,81 @@
 #!/bin/bash
-
-# Flow Stock Game - Dev Server Start Script
+# Flow Stock Game - 백그라운드 서버 관리 스크립트
+# 사용법: ./start.sh {start|stop|restart|status|log}
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PID_FILE="$PROJECT_DIR/.dev-server.pid"
 SERVER_LOG="$PROJECT_DIR/.dev-server.log"
-BUILD_LOG="$PROJECT_DIR/.build-kospi.log"
-KOSPI_DB="$PROJECT_DIR/public/kospi-historical.db"
-KOSPI_SCRIPT="$PROJECT_DIR/scripts/build_kospi_db.py"
+PORT=5173
 
-echo "=== Flow Stock Game Dev Server ==="
-echo "Project: $PROJECT_DIR"
+is_running() {
+  [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null
+}
 
-# ── Node.js 확인 ──
-if ! command -v node &> /dev/null; then
-  echo "[ERROR] Node.js가 설치되어 있지 않습니다."
-  exit 1
-fi
-
-if ! command -v npm &> /dev/null; then
-  echo "[ERROR] npm이 설치되어 있지 않습니다."
-  exit 1
-fi
-
-cd "$PROJECT_DIR"
-
-# ── node_modules 없으면 설치 ──
-if [ ! -d "node_modules" ]; then
-  echo "[INFO] npm 의존성 설치 중..."
-  npm install
-fi
-
-# ── sql-wasm.wasm 확인 및 복사 (public/ — static URL /sql-wasm.wasm 으로 서빙) ──
-WASM_DST="$PROJECT_DIR/public/sql-wasm.wasm"
-WASM_SRC="$PROJECT_DIR/node_modules/sql.js/dist/sql-wasm.wasm"
-if [ ! -f "$WASM_DST" ] && [ -f "$WASM_SRC" ]; then
-  echo "[INFO] sql-wasm.wasm 복사 중..."
-  mkdir -p "$PROJECT_DIR/public"
-  cp "$WASM_SRC" "$WASM_DST"
-fi
-
-# ── KOSPI DB 빌드 (없는 경우에만) ──
-if [ ! -f "$KOSPI_DB" ]; then
-  echo "[INFO] KOSPI DB가 없습니다. 빌드를 시작합니다..."
-  echo "[INFO] 빌드 로그: $BUILD_LOG"
-
-  # Python 확인
-  PYTHON=""
-  for py in python3 python; do
-    if command -v "$py" &> /dev/null; then
-      PYTHON="$py"
-      break
-    fi
-  done
-
-  if [ -z "$PYTHON" ]; then
-    echo "[ERROR] Python이 설치되어 있지 않습니다. KOSPI DB 빌드를 건너뜁니다."
-    echo "[WARN]  수동으로 'python3 scripts/build_kospi_db.py'를 실행하세요."
-  else
-    echo "[INFO] Python: $($PYTHON --version 2>&1)"
-    echo "[INFO] 빌드 중... (수 분 소요, 로그: $BUILD_LOG)"
-    "$PYTHON" "$KOSPI_SCRIPT" 2>&1 | tee "$BUILD_LOG"
-    if [ ${PIPESTATUS[0]} -eq 0 ]; then
-      echo "[INFO] KOSPI DB 빌드 완료: $KOSPI_DB"
-    else
-      echo "[WARN] KOSPI DB 빌드 실패. 로그 확인: $BUILD_LOG"
-    fi
-  fi
-else
-  echo "[INFO] KOSPI DB 이미 존재: $KOSPI_DB"
-fi
-
-# ── 이미 실행 중인지 확인 ──
-if [ -f "$PID_FILE" ]; then
-  OLD_PID=$(cat "$PID_FILE")
-  if kill -0 "$OLD_PID" 2>/dev/null; then
-    echo "[WARN] 서버가 이미 실행 중입니다. (PID: $OLD_PID)"
-    echo "[INFO] 종료하려면: ./stop.sh"
+do_start() {
+  if is_running; then
+    echo "[WARN] 이미 실행 중 (PID: $(cat "$PID_FILE"))"
     exit 0
-  else
-    rm -f "$PID_FILE"
   fi
-fi
 
-# ── 백그라운드 서버 시작 (--host 0.0.0.0 으로 외부 접속 허용) ──
-echo ""
-echo "[INFO] 개발 서버를 백그라운드로 시작합니다..."
-echo "[INFO] 서버 로그: $SERVER_LOG"
+  # 포트 충돌 정리
+  if lsof -i :$PORT -t >/dev/null 2>&1; then
+    echo "[INFO] 포트 $PORT 사용 중인 프로세스 종료..."
+    lsof -i :$PORT -t | xargs kill 2>/dev/null
+    sleep 2
+  fi
 
-nohup npm run dev -- --host 0.0.0.0 > "$SERVER_LOG" 2>&1 &
-SERVER_PID=$!
-echo "$SERVER_PID" > "$PID_FILE"
+  cd "$PROJECT_DIR"
 
-echo "[INFO] 서버 시작됨 (PID: $SERVER_PID)"
-echo "[INFO] 로컬:   http://localhost:5173"
-echo "[INFO] 외부:   http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo '<서버IP>'):5173"
-echo "[INFO] 종료:   ./stop.sh"
-echo ""
-echo "[INFO] 실시간 로그 확인: tail -f $SERVER_LOG"
+  # node_modules 확인
+  [ ! -d "node_modules" ] && echo "[INFO] npm install..." && npm install
+
+  # sql-wasm.wasm 복사
+  WASM_DST="$PROJECT_DIR/public/sql-wasm.wasm"
+  WASM_SRC="$PROJECT_DIR/node_modules/sql.js/dist/sql-wasm.wasm"
+  [ ! -f "$WASM_DST" ] && [ -f "$WASM_SRC" ] && cp "$WASM_SRC" "$WASM_DST"
+
+  # 서버 시작 (외부 접속 허용)
+  echo "[INFO] 서버 시작 중..."
+  nohup npx vite --host 0.0.0.0 --port $PORT > "$SERVER_LOG" 2>&1 &
+  echo $! > "$PID_FILE"
+  sleep 3
+
+  if is_running; then
+    IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    echo "✅ 서버 시작 완료"
+    echo "   로컬:  http://localhost:$PORT"
+    echo "   외부:  http://${IP:-<서버IP>}:$PORT"
+    echo "   PID:   $(cat "$PID_FILE")"
+    echo "   로그:  tail -f $SERVER_LOG"
+  else
+    echo "❌ 서버 시작 실패. 로그: $SERVER_LOG"
+    rm -f "$PID_FILE"
+    exit 1
+  fi
+}
+
+do_stop() {
+  if is_running; then
+    kill "$(cat "$PID_FILE")"
+    rm -f "$PID_FILE"
+    echo "✅ 서버 종료"
+  else
+    echo "실행 중인 서버 없음"
+    rm -f "$PID_FILE" 2>/dev/null
+  fi
+}
+
+case "${1:-start}" in
+  start)   do_start ;;
+  stop)    do_stop ;;
+  restart) do_stop; sleep 2; do_start ;;
+  status)
+    if is_running; then
+      echo "✅ 실행 중 (PID: $(cat "$PID_FILE"), 포트: $PORT)"
+    else
+      echo "❌ 중지됨"
+    fi
+    ;;
+  log) tail -f "$SERVER_LOG" ;;
+  *) echo "사용법: $0 {start|stop|restart|status|log}" ;;
+esac
