@@ -204,10 +204,10 @@ function getEndingScenarios(config: GameConfig): EndingScenario[] {
       title: '파산',
       description: '자산이 바닥났습니다. 시장은 냉혹합니다.',
       condition: (player, time, cfg) => {
-        // v7: 시작 12개월은 보호기간 (첫 해는 튜토리얼, Flow Theory 안전 학습)
+        // v7.3: Normal/Easy에서는 파산 비활성화 (Hard만 파산 가능)
+        if (cfg.initialCash >= 100_000_000) return false // Normal(2억)/Easy(2.5억) 보호
         const monthsPlayed = (time.year - cfg.startYear) * 12 + time.month
         if (monthsPlayed < 12) return false
-        // v7: 총 자산이 초기 자본의 2% 미만이면 파산 (5%→2% 완화)
         return player.totalAssetValue < cfg.initialCash * 0.02
       },
     },
