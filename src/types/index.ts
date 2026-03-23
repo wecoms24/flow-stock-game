@@ -324,7 +324,7 @@ export const EMPLOYEE_ROLE_CONFIG: Record<
   },
   analyst: {
     title: '애널리스트',
-    baseSalary: 1_200_000,
+    baseSalary: 800_000, // v7.1: 120만→80만
     maxStamina: 80,
     bonus: {
       driftBoost: 0.005,
@@ -335,7 +335,7 @@ export const EMPLOYEE_ROLE_CONFIG: Record<
   },
   trader: {
     title: '트레이더',
-    baseSalary: 2_000_000,
+    baseSalary: 1_500_000, // v7.1: 200만→150만
     maxStamina: 70,
     bonus: { driftBoost: 0, volatilityReduction: 0, tradingDiscount: 0.1, staminaRecovery: 8 },
   },

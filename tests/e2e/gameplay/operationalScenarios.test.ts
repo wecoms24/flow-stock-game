@@ -422,8 +422,9 @@ describe('실제 운영 시나리오 E2E', () => {
         { name: 'Test Corp', style: 'aggressive', logo: '🔥' })
 
       const s = useGameStore.getState()
-      // normal 기본 70M * 0.8 = 56M
-      expect(s.player.cash).toBeLessThanOrEqual(70_000_000)
+      // aggressive: -20% → 기본 initialCash보다 적어야 함
+      const normalCash = useGameStore.getState().config.initialCash / 0.8 // 역산
+      expect(s.player.cash).toBeLessThanOrEqual(normalCash)
     })
 
     it('stable 스타일: +10% 초기 자금', () => {
