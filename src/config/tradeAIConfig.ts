@@ -21,8 +21,8 @@ export const TRADE_AI_CONFIG = {
   NO_MANAGER_MISTAKE_RATE: 0.30,
   /** Trader 부재 시 수수료 배율 */
   NO_TRADER_FEE_MULTIPLIER: 2.0,
-  /** 인접 배치 시 속도 보너스 (30%) */
-  ADJACENCY_SPEED_BONUS: 0.30,
+  /** 인접 배치 시 속도 보너스 (v8: 30%→50% 시너지 강화) */
+  ADJACENCY_SPEED_BONUS: 0.50,
   /** Analyst Insight 발동 확률 (5%) */
   INSIGHT_CHANCE: 0.05,
   /** Insight 발동 시 Confidence 보너스 */

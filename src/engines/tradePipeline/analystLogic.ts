@@ -191,7 +191,11 @@ export function generateProposal(
   // - 예: cash 500M, confidence 85 → 10M 투자 (단일 종목 적정 비율)
   // - 예: cash 100M, confidence 85 → 2M 투자 (적정 수준)
   const confidenceRatio = Math.min(1, Math.max(0, (analysis.confidence - 70) / 30))
-  let cashRatio = 0.03 + confidenceRatio * 0.05 // v7.4: 3.0% ~ 8.0% (직원 수익성 > 급여 보장)
+  let cashRatio = 0.03 + confidenceRatio * 0.05 // v7.4: 3.0% ~ 8.0%
+
+  // v8: 직원 레벨 보너스 — 레벨당 +3% 투자 규모 증가
+  const levelBonus = 1 + ((analyst?.level ?? 1) - 1) * 0.03
+  cashRatio *= levelBonus
 
   // ✨ Corporate Skill: riskReductionBonus → 투자 비율 축소 (리스크 감소)
   if (corporateEffects && corporateEffects.riskReductionBonus > 0) {

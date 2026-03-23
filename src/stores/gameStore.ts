@@ -2549,6 +2549,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     }
 
+    // v8: 분기 배당 수입 (3/6/9/12월)
+    if ([3, 6, 9, 12].includes(state.time.month)) {
+      const latestDiv = get()
+      let totalDividend = 0
+      for (const [id, pos] of Object.entries(latestDiv.player.portfolio || {})) {
+        if (!pos.shares) continue
+        const company = latestDiv.companies.find(c => c.id === id)
+        if (!company || company.status === 'acquired') continue
+        const annualYield = Math.max(company.drift || 0.03, 0.02) * 0.5 // drift의 50%, 최소 1%
+        const quarterly = Math.round(pos.shares * company.price * annualYield / 4)
+        totalDividend += quarterly
+      }
+      if (totalDividend > 0) {
+        set((s) => ({ player: { ...s.player, cash: s.player.cash + totalDividend } }))
+        get().addNews({
+          id: `news-dividend-${monthNum}`,
+          timestamp: { ...get().time },
+          headline: `분기 배당금 ${(totalDividend / 10000).toFixed(0)}만원 입금!`,
+          body: `보유 주식에서 배당금 ${totalDividend.toLocaleString()}원이 입금되었습니다.`,
+          isBreaking: false, sentiment: 'positive', relatedCompanies: [], impactSummary: '배당 수령',
+        })
+      }
+    }
+
     // v7.3: 자동 구조조정 — 현금 < 월급 1개월분이면 주식 매도 + 직원 해고
     {
       const latestS = get()
