@@ -2528,6 +2528,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
       })
     }
 
+    // v7.4: 구제금융 — 자산이 초기 자본의 30% 이하이면 분기마다 10% 지원
+    {
+      const latestForBailout = get()
+      const totalAssets = latestForBailout.player.totalAssetValue ?? latestForBailout.player.cash
+      const initial = latestForBailout.config?.initialCash ?? 200_000_000
+      if (totalAssets < initial * 0.3 && monthNum % 3 === 0 && monthNum > 3) {
+        const bailout = Math.round(initial * 0.1) // 초기자본의 10%
+        set((s) => ({ player: { ...s.player, cash: s.player.cash + bailout } }))
+        latestForBailout.addNews({
+          id: `news-bailout-${monthNum}`,
+          timestamp: { ...latestForBailout.time },
+          headline: '긴급 구제금융 지원!',
+          body: `정부 긴급경제안정기금에서 ${(bailout / 10000).toFixed(0)}만원이 지원되었습니다. 투자 전략을 재정비하세요.`,
+          isBreaking: true,
+          sentiment: 'positive',
+          relatedCompanies: [],
+          impactSummary: '구제금융',
+        })
+      }
+    }
+
     // v7.3: 자동 구조조정 — 현금 < 월급 1개월분이면 주식 매도 + 직원 해고
     {
       const latestS = get()
