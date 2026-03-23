@@ -197,15 +197,15 @@ export const CHAIN_EVENT_TEMPLATES: EventTemplate[] = [
 export const HISTORICAL_EVENTS: HistoricalEvent[] = [
   // ═══ 1995 ═══
   { year: 1995, month: 1, title: '멕시코 페소 위기 여파', description: '멕시코 통화 위기가 신흥국 시장 전반에 불안을 확산시킵니다.', type: 'global', impact: { driftModifier: -0.04, volatilityModifier: 0.15, severity: 'medium' }, duration: 100, weight: 3 }, // v6.1: -0.08→-0.04 초기 폭락 완화
-  { year: 1995, month: 3, title: '엔고 현상, 수출주 타격', description: '엔화 강세로 한국 수출 기업 경쟁력이 악화됩니다.', type: 'global', impact: { driftModifier: -0.02, volatilityModifier: 0.1, severity: 'low' }, duration: 80, weight: 5, affectedSectors: ['industrial', 'consumer'] },
+  { year: 1995, month: 3, title: '엔고 현상, 수출주 타격', description: '엔화 강세로 한국 수출 기업 경쟁력이 악화됩니다.', type: 'global', impact: { driftModifier: -0.01, volatilityModifier: 0.1, severity: 'low' }, duration: 80, weight: 5, affectedSectors: ['industrial', 'consumer'] }, // v7.2: -0.02→-0.01
   { year: 1995, month: 5, title: '인터넷 상용화 시작', description: '국내 인터넷 서비스가 본격 시작되며 IT 기대감이 형성됩니다.', type: 'sector', impact: { driftModifier: 0.04, volatilityModifier: 0.1, severity: 'medium' }, duration: 120, weight: 3, affectedSectors: ['tech', 'telecom'] },
-  { year: 1995, month: 7, title: '삼풍백화점 붕괴 참사', description: '대형 참사로 건설·부동산주가 큰 타격을 받습니다.', type: 'company', impact: { driftModifier: -0.04, volatilityModifier: 0.2, severity: 'high' }, duration: 80, weight: 2, affectedSectors: ['realestate', 'industrial'] },
+  { year: 1995, month: 7, title: '삼풍백화점 붕괴 참사', description: '대형 참사로 건설·부동산주가 큰 타격을 받습니다.', type: 'company', impact: { driftModifier: -0.02, volatilityModifier: 0.15, severity: 'high' }, duration: 80, weight: 2, affectedSectors: ['realestate', 'industrial'] }, // v7.2: -0.04→-0.02
   { year: 1995, month: 9, title: 'Windows 95 출시 열풍', description: 'PC 보급 확대로 IT 산업 성장 기대감이 높아집니다.', type: 'sector', impact: { driftModifier: 0.05, volatilityModifier: 0.08, severity: 'medium' }, duration: 100, weight: 3, affectedSectors: ['tech'] },
   { year: 1995, month: 11, title: '금융실명제 안착', description: '금융실명제가 정착되며 시장 투명성이 높아집니다.', type: 'policy', impact: { driftModifier: 0.02, volatilityModifier: -0.05, severity: 'low' }, duration: 90, weight: 5, affectedSectors: ['finance'] },
 
   // ═══ 1996 ═══
   { year: 1996, month: 1, title: 'OECD 가입 기대감', description: '한국의 OECD 가입이 가시화되며 외국인 투자 기대감이 높아집니다.', type: 'policy', impact: { driftModifier: 0.04, volatilityModifier: 0.08, severity: 'medium' }, duration: 150, weight: 3 },
-  { year: 1996, month: 4, title: '반도체 가격 급락', description: 'D램 가격이 반토막 나며 반도체 업종이 크게 하락합니다.', type: 'sector', impact: { driftModifier: -0.06, volatilityModifier: 0.25, severity: 'high' }, duration: 120, weight: 2, affectedSectors: ['tech', 'materials'] },
+  { year: 1996, month: 4, title: '반도체 가격 급락', description: 'D램 가격이 반토막 나며 반도체 업종이 크게 하락합니다.', type: 'sector', impact: { driftModifier: -0.03, volatilityModifier: 0.2, severity: 'high' }, duration: 120, weight: 2, affectedSectors: ['tech', 'materials'] }, // v7.2: -0.06→-0.03
   { year: 1996, month: 6, title: '한보그룹 부실 징조', description: '한보그룹의 차입 경영이 문제시되기 시작합니다.', type: 'company', impact: { driftModifier: -0.02, volatilityModifier: 0.12, severity: 'medium' }, duration: 80, weight: 3, affectedSectors: ['finance', 'industrial'] },
   { year: 1996, month: 8, title: '닷컴 붐 초기', description: '인터넷 관련 벤처 붐이 시작되며 IT주 급등합니다.', type: 'boom', impact: { driftModifier: 0.06, volatilityModifier: 0.15, severity: 'medium' }, duration: 140, weight: 3, affectedSectors: ['tech'] },
   { year: 1996, month: 10, title: '자동차 수출 호조', description: '현대·기아차 수출이 사상 최대를 기록합니다.', type: 'sector', impact: { driftModifier: 0.03, volatilityModifier: 0.05, severity: 'low' }, duration: 80, weight: 5, affectedSectors: ['industrial'] },

@@ -10,7 +10,7 @@ export const DIFFICULTY_TABLE: Record<Difficulty, DifficultyConfig> = {
   easy: {
     startYear: 1995,
     endYear: 2025,
-    initialCash: 200_000_000, // v7.1: 1.5억→2억 (충분한 여유 자본)
+    initialCash: 250_000_000, // v7.2: 2억→2.5억 (Easy > Normal 유지)
     maxCompanies: 100,
     eventChance: 0.005, // 0.5% per tick → fewer surprises
     volatilityMultiplier: 0.7, // 30% less volatile
@@ -20,11 +20,11 @@ export const DIFFICULTY_TABLE: Record<Difficulty, DifficultyConfig> = {
   normal: {
     startYear: 1995,
     endYear: 2025,
-    initialCash: 100_000_000, // v7.1: 7천만→1억 (30년 생존 가능 자본)
+    initialCash: 200_000_000, // v7.2: 1억→2억 (30년 완주 + 위기 생존)
     maxCompanies: 100,
     eventChance: 0.01,
-    volatilityMultiplier: 1.0,
-    employeeSalaryMultiplier: 0.8, // v7.1: 1.0→0.8 (급여 20% 추가 할인)
+    volatilityMultiplier: 0.8, // v7.2: 1.0→0.8 (초기 손실 완화)
+    employeeSalaryMultiplier: 0.8,
     staminaDrainMultiplier: 1.0,
   },
   hard: {
