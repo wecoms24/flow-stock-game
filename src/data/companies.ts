@@ -75,6 +75,12 @@ function makeCompany(
   const headcount = calculateHeadcountBySector(sector, marketCap)
   const layoffRate = 0.2 + Math.random() * 0.4 // 20-60%
 
+  // v7.2: GBM drift 보정 — drift ≥ σ²/2 + 0.03 보장 (장기 상승 보장)
+  // GBM에서 E[S(t)] = S(0) * exp((drift - σ²/2) * t) 이므로
+  // drift < σ²/2 이면 기대값이 감소 → 게임 불가능
+  const minDrift = (volatility * volatility) / 2 + 0.03
+  const adjustedDrift = Math.max(drift, minDrift)
+
   return {
     id,
     name,
@@ -86,7 +92,7 @@ function makeCompany(
     sessionOpenPrice: price, // Initial session open price
     priceHistory: [price],
     volatility,
-    drift,
+    drift: adjustedDrift,
     marketCap,
     description,
     eventSensitivity: SECTOR_SENSITIVITY[sector],
