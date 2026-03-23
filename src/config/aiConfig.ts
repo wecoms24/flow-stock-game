@@ -224,7 +224,7 @@ export type AIDifficulty = keyof typeof DIFFICULTY_MULTIPLIERS
 
 export const AUM_CONFIG = {
   /** Default AUM multiplier per difficulty (increases by 5x) */
-  DEFAULT_MULTIPLIERS: { easy: 2, normal: 5, hard: 10 } as Record<string, number>,
+  DEFAULT_MULTIPLIERS: { easy: 1, normal: 1, hard: 3 } as Record<string, number>, // v7.3: 동등 자본 → 1등 가능
   /** Slider range */
   MIN_MULTIPLIER: 1,
   MAX_MULTIPLIER: 100,
