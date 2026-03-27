@@ -14,9 +14,11 @@ Retro Stock OS is a stock market trading game with a Windows 95-inspired UI, bui
 - **Charts**: Chart.js + react-chartjs-2
 - **Animation**: Motion (Framer Motion successor) + canvas-confetti
 - **Audio**: Howler.js + Web Audio API oscillators (8-bit sounds)
-- **Price Engine**: Web Worker with Geometric Brownian Motion (GBM) simulation
+- **Price Engine**: Web Worker with Geometric Brownian Motion (GBM) simulation + optional KIS real-time data
+- **Real-time Data**: KIS (Korea Investment & Securities) WebSocket API for live KOSPI prices
 - **Persistence**: SQLite WASM (`@subframe7536/sqlite-wasm`) primary, Dexie (IndexedDB) fallback
 - **WASM Support**: `vite-plugin-wasm` + `vite-plugin-top-level-await`, COOP/COEP headers required
+- **Deployment**: Docker + nginx (see `Dockerfile`, `nginx.conf`, `start.sh`/`stop.sh`)
 
 ## Development Commands
 
@@ -166,6 +168,10 @@ Worker initialization happens in `App.tsx` useEffect. Speed changes trigger inte
 | `spyEngine.ts` | Competitor spy missions (basic/advanced/deep) + intel generation | Every 10 hours |
 | `negotiationEngine.ts` | Salary negotiation demand calc + rhythm game note generation | On negotiation trigger |
 | `acquisitionManagementEngine.ts` | Post-M&A integration progress, dividends, random events | Monthly + quarterly |
+| `chapterEngine.ts` | 5-chapter campaign progression (1995-2025) with objectives | On year/milestone change |
+| `endgameRecapEngine.ts` | 30-year game ending analysis + investment style assessment | Game end |
+| `decisionAnalysisEngine.ts` | Player trading pattern analysis across historical crises | Game end |
+| `employeeMilestoneEngine.ts` | Employee achievement milestones (growth/tenure/performance) | Monthly + on events |
 
 ### Market Systems
 
@@ -199,7 +205,7 @@ Price history for technical analysis is maintained per-company (max 50 data poin
 
 ### Employee RPG System
 
-**Traits** (`src/data/traits.ts`): 10 personality traits with rarity tiers (common 70% / uncommon 20% / rare 10%). Each trait modifies buff multipliers (stamina recovery, stress generation, skill growth).
+**Traits** (`src/data/traits.ts`): 17 personality traits (10 base + 7 unlockable) with rarity tiers (common 70% / uncommon 20% / rare 10%). Each trait modifies buff multipliers (stamina recovery, stress generation, skill growth). Trait synergies (`src/data/traitSynergies.ts`) provide bonuses for two-trait combinations.
 
 **Office Grid** (`src/types/office.ts`): 10x10 grid where employees sit at desks. Furniture placement provides area-of-effect buffs calculated via Manhattan distance.
 
@@ -375,6 +381,92 @@ Badges per category increased from 1 to 3, with pipeline integration:
 - **Pipeline tracking**: `TradeProposal.appliedBadgeEffects` records which effects were applied
 - **UI**: ProposalListWindow shows badge tags, EmployeeDetailWindow shows numerical effect summary
 
+### Chapter System (`src/engines/chapterEngine.ts`, `src/data/chapters.ts`)
+
+5-chapter campaign structure spanning 30 years:
+- **Chapter 1**: Startup Era (1995-1999) — survive IMF crisis
+- **Chapter 2**: Dotcom Era (2000-2004)
+- **Chapter 3-5**: Growth through modern era (2005-2025)
+
+Each chapter has objectives with percentage-based progress tracking and unlocked features per chapter. Types in `src/types/chapter.ts`.
+
+### Endgame Recap System (`src/engines/endgameRecapEngine.ts`, `src/engines/decisionAnalysisEngine.ts`)
+
+Comprehensive 30-year ending analysis:
+- **Investment style** classification (aggressive/balanced/conservative/dividend)
+- **Crisis analysis**: Player behavior during IMF (1997-98), Dotcom (2000-01), 2008 crisis, COVID (2020)
+- **Star employee testimonials** with performance metrics
+- **Competitor head-to-head** results
+- **Sector concentration** analysis
+- **Bankruptcy coaching** narrative generation
+
+Types in `src/types/endgame.ts`.
+
+### Meta Progression & Prestige System
+
+**Meta Progression** (`src/systems/metaProgressionSystem.ts`, `src/data/metaAchievements.ts`):
+- Persistent localStorage-based progression across playthroughs
+- Meta achievements (e.g., "billionaire_club", "crisis_survivor")
+- New Game+ bonuses tied to achievement unlocks
+
+**Prestige/NG+** (`src/systems/prestigeSystem.ts`):
+- Prestige level 0-10 per campaign completion
+- Starting cash multiplier: +5% per level (max 50%)
+- Carryover 1 Corporate Skill per NG+ cycle
+- Separate localStorage from main game save
+
+Types in `src/types/prestige.ts`.
+
+### Celebration System (`src/systems/celebrationSystem.ts`)
+
+Unified 3-level celebration hierarchy:
+- **Level 1 (Toast)**: 4s, bottom-right notification
+- **Level 2 (Banner)**: 6s, top banner with sound
+- **Level 3 (Ceremony)**: Modal with confetti, manual dismiss
+
+Integrated with trade feedback, employee milestones, achievement unlocks. Types in `src/types/celebration.ts`. UI components in `src/components/effects/`.
+
+### KIS Real-time Data Service (`src/services/`)
+
+Optional integration with Korea Investment & Securities WebSocket API for live KOSPI prices:
+
+| Service | Purpose |
+|---------|---------|
+| `kisAuthService.ts` | OAuth2 approval key caching (12h TTL) |
+| `kisWebSocketService.ts` | H0STCNT0 real-time stock tick subscription |
+| `kisPriceAggregator.ts` | 1-second batch buffering → gameStore updates |
+| `kisSubscriptionManager.ts` | Priority-based max 40 subscriptions with 5s throttle |
+| `kisPriceRepository.ts` | localStorage price history storage |
+| `historicalDataService.ts` | sql.js-based historical KOSPI data |
+
+- **Config**: `src/config/kisConfig.ts` — WebSocket URLs, field mapping
+- **Hybrid mode** (`src/config/hybridModeConfig.ts`): Blends real KOSPI data with GBM simulation. Crisis periods use strong correction (0.8), normal times use loose correction (0.15)
+- **Types**: `src/types/realtime.ts`
+- **KOSPI data**: `src/data/kospiCompanies.ts` — 100 real KOSPI companies across 10 sectors
+
+### Employee Milestone System (`src/engines/employeeMilestoneEngine.ts`)
+
+Categories: growth, tenure, performance, contribution. Rewards include satisfaction bonus, stress reduction, XP bonus. Integrates with employee bio life events. Data in `src/data/employeeMilestones.ts`.
+
+### Trait Synergies & Dynamic Unlocks
+
+**Trait Synergies** (`src/data/traitSynergies.ts`): Two-trait combination effects — signal accuracy, skill growth, stress reduction, slippage reduction, etc.
+
+**Dynamic Trait Unlocks** (`src/data/traitUnlocks.ts`): Traits unlock post-hire based on conditions (e.g., `workaholic` at level 20+ with 0 burnouts, `contrarian_mind` after 3+ crisis survivals). Max 3 traits per employee.
+
+### Personalization System (`src/systems/personalization/`, `src/types/personalization.ts`)
+
+Analyzes player behavior to adapt game experience:
+- Risk tolerance (from recent trades)
+- Play pace (from speed setting changes)
+- Attention/detail focus (from window diversity)
+- Learning stage (beginner/intermediate/advanced)
+- Adapts: approval bias, default UI tabs, taunt filtering
+
+### Cash Flow Tracking (`src/engines/cashFlowTracker.ts`, `src/types/cashFlow.ts`)
+
+Detailed financial ledger with categories: `TRADE_BUY`, `TRADE_SELL`, `TRADE_FEE`, `SALARY`, `HIRE_BONUS`, `HR_CARE`, `OFFICE_*`, `SKILL_RESET`, `MNA_*`, `TAX`. Monthly summaries with asset snapshots. Realized trade P&L tracking. Meta tracking (company, ticker, employee, shares).
+
 ### Config Layer (`src/config/`)
 
 | Config | Purpose |
@@ -393,6 +485,9 @@ Badges per category increased from 1 to 3, with pipeline integration:
 | `spyConfig.ts` | Spy mission tiers, costs, durations, fail/lawsuit rates, cooldowns |
 | `negotiationConfig.ts` | Salary negotiation triggers, rhythm game params, score thresholds |
 | `acquisitionConfig.ts` | Post-M&A integration rates, dividend yields, event definitions |
+| `kisConfig.ts` | KIS WebSocket URLs, H0STCNT0 field mapping, subscription limits |
+| `hybridModeConfig.ts` | Real/GBM price blending, crisis correction strength |
+| `tradeFeedbackConfig.ts` | Trade celebration thresholds (20% big profit, 5% small), cooldowns |
 
 ### Data Layer (`src/data/`)
 
@@ -416,6 +511,15 @@ Badges per category increased from 1 to 3, with pipeline integration:
 - `personalGoals.ts`: Employee personal goal templates by age/role
 - `skillPaths.ts`: Trading/Analysis path branching definitions (Lv5/10/20/30)
 - `officeBackgrounds.ts`: Office theme evolution by level (garage/startup/corporate/tower)
+- `chapters.ts`: 5-chapter campaign structure with objectives and unlocked features
+- `kospiCompanies.ts`: 100 real KOSPI companies across 10 sectors (auto-generated via `scripts/build_kospi_db.py`)
+- `traitSynergies.ts`: Two-trait combination effect definitions
+- `traitUnlocks.ts`: Dynamic trait unlock conditions (level, burnout count, crisis survival)
+- `marketForecasts.ts`: Market forecast templates
+- `metaAchievements.ts`: Meta-achievement definitions for cross-playthrough progression
+- `employeeMilestones.ts`: Employee milestone definitions (growth/tenure/performance/contribution)
+- `employeeTestimonials.ts`: Employee testimonial templates for endgame recap
+- `employeeEmoji.ts`: Employee emoji mappings for visual display
 
 ### Systems Layer (`src/systems/`)
 
@@ -430,6 +534,34 @@ Badges per category increased from 1 to 3, with pipeline integration:
 - `particleSystem.ts`: Particle effect system
 - `ambientRenderer.ts` / `emotionRenderer.ts`: Visual rendering systems
 - `spriteAnimator.ts` / `spritePlaceholder.ts`: Sprite animation and placeholder
+- `pixelArtSprites.ts`: Canvas 2D pixel art rendering (32x40 employees, 32x32 furniture, 2x scale)
+- `metaProgressionSystem.ts`: Cross-playthrough meta achievements (localStorage)
+- `prestigeSystem.ts`: New Game+ prestige levels (0-10, +5% starting cash per level)
+- `celebrationSystem.ts`: Unified 3-level celebration system (toast/banner/ceremony)
+- `personalization/profile.ts`: Player behavior analysis for adaptive game experience
+
+### SQLite Layer (`src/systems/sqlite/`)
+
+- `database.ts`: SQLite WASM database initialization and connection
+- `index.ts`: Public API exports
+- `migration.ts`: Schema migrations (v1-v14+)
+- `queries.ts`: CRUD operations for all game entities
+- `transformers.ts`: DB row ↔ game state object conversion
+- `types.ts`: Database-specific type definitions
+
+### Services Layer (`src/services/`)
+
+KIS (Korea Investment & Securities) real-time data integration:
+- `kisAuthService.ts`: OAuth2 approval key management with 12h TTL caching
+- `kisWebSocketService.ts`: H0STCNT0 real-time stock tick subscription
+- `kisPriceAggregator.ts`: 1-second batch price buffering → store updates
+- `kisSubscriptionManager.ts`: Priority-based subscription management (max 40)
+- `kisPriceRepository.ts`: localStorage-based price history persistence
+- `historicalDataService.ts`: sql.js-based historical KOSPI data queries
+
+### Workers (`src/workers/`)
+
+- `priceEngine.worker.ts`: Web Worker running GBM price simulation with event modifiers, sentiment integration, order flow tracking, and optional hybrid mode (real KOSPI + GBM blend)
 
 ### Utilities (`src/utils/`)
 
@@ -439,6 +571,10 @@ Badges per category increased from 1 to 3, with pipeline integration:
 - `performanceMonitor.ts`: FPS and rendering performance monitoring (dev mode only)
 - `skillFormatter.ts`: Korean-language labels for passive modifier targets
 - `tutorialStorage.ts`: localStorage persistence for TutorialState
+- `formatMoney.ts`: Centralized Korean currency formatting (조/억/만 units)
+- `randomSystems.ts`: ShuffleBag (distribution-fair weighted random) + PerlinNoise1D (smooth variation)
+- `saveExport.ts`: JSON save export/import with validation
+- `motionVariants.ts`: Shared Framer Motion transitions and window animation variants
 
 ### Custom Hooks (`src/hooks/`)
 
@@ -446,6 +582,8 @@ Badges per category increased from 1 to 3, with pipeline integration:
 - `useNumberCounter.ts`: RAF-based number counting animation (from/to/duration/easing)
 - `useParticleEffect.ts`: React wrapper for `particleSystem.emitParticles()`
 - `useRankChangeNotification.ts`: Listens to DOM events for rank changes
+- `useReducedMotion.ts`: Respects OS `prefers-reduced-motion` + localStorage override
+- `useScreenShake.ts`: Screen shake effects (light/medium/heavy) with global event bus
 
 ### Window System
 
@@ -517,7 +655,7 @@ SQLite WASM (`@subframe7536/sqlite-wasm`) is the default storage backend. Indexe
 21. **HR stress threshold**: HR automation triggers at `stress > 80` (daily check). Training runs every 30 days
 22. **Acquired company filtering**: Worker, trading, and all UI must filter `companies.filter(c => c.status !== 'acquired')`. Forgetting this causes ghost price updates
 23. **Event aftereffects (여진)**: Expiring events spawn aftereffect events at 10% drift / 15% volatility for 50 hours. Already-aftereffect events don't spawn more
-24. **formatMoney duplication**: `formatMoney` is defined inline in multiple portfolio components (CashFlowTab, PnLTab, PortfolioWindow) — not centralized. Changes must be made in all locations
+24. **formatMoney**: Now centralized in `src/utils/formatMoney.ts` with Korean units (조/억/만). Import from there — do NOT define inline in components
 25. **Burnout stress isolation**: During burnout (`burnoutTicks > 0`), external stress sources (market/position/team) are blocked — only behavior effect (-0.01) applies for gradual recovery
 26. **Spy mission cooldown**: 720h per target. `canStartMission()` checks concurrent limit (2), cooldown, and in-progress duplicates
 27. **Negotiation transient state**: `activeNegotiation` is NOT saved to DB — it resets to null on load. Rhythm game is session-only
@@ -525,6 +663,40 @@ SQLite WASM (`@subframe7536/sqlite-wasm`) is the default storage backend. Indexe
 29. **Post-M&A state creation**: Both `executeAcquisition` (AI M&A) and `playerAcquireCompany` (player M&A) must call `createAcquiredCompanyState()` to track integration
 30. **Employee burnoutTicks persistence**: Stored in SQLite `employees` table (v14 migration). Must be included in INSERT/SELECT in `transformers.ts`
 31. **MNA_DIVIDEND cashflow**: Post-M&A dividends use `recordCashFlow('MNA_DIVIDEND')` — category must exist in `CashFlowCategory` union and `aggregateMonthly()`
+32. **Chapter progression**: Chapter engine checks year/milestone conditions — chapter transitions trigger UI modals and feature unlocks
+33. **Meta progression isolation**: Meta achievements persist in localStorage separately from game saves — never mix with Zustand state
+34. **Prestige carryover limit**: Only 1 Corporate Skill carries over per NG+ cycle — `prestigeSystem` enforces this
+35. **KIS subscription limit**: Max 40 concurrent WebSocket subscriptions — `kisSubscriptionManager` handles priority rotation
+36. **Hybrid mode price correction**: Crisis periods (IMF, 2008, etc.) use `crisisCorrectionStrength: 0.8` — normal times use `0.15`. Misconfiguring causes price divergence
+37. **Trait unlock max**: Max 3 traits per employee — `traitUnlocks.ts` conditions checked but silently skipped if limit reached
+38. **Celebration suppression**: Trade feedback celebrations suppressed at game speed 4x+ to avoid spam (configured in `tradeFeedbackConfig.ts`)
+39. **Reduced motion**: Always check `useReducedMotion()` before triggering screen shakes or heavy animations — respects OS accessibility settings
+
+### Effect Components (`src/components/effects/`)
+
+Visual feedback and celebration UI:
+- `CRTOverlay.tsx`: CRT monitor scanline effect
+- `CelebrationToast.tsx`: Level 1 celebration toast notification
+- `EmployeeMilestoneToast.tsx`: Employee milestone notification
+- `FloatingText.tsx`: Damage/healing floating numbers
+- `LevelUpOverlay.tsx`: Employee level-up ceremony modal
+- `MarketClosedDialog.tsx`: After-hours notification
+- `NumberCounter.tsx`: Animated number transitions
+- `RankChangeNotification.tsx`: Rank update alert
+- `StockParticles.tsx`: Particle effects on trades
+- `TradeAnimationSequence.tsx`: Trade execution card flip animation
+
+### Tutorial System (`src/components/tutorial/`)
+
+- `ChapterModal.tsx`: Chapter introduction modals
+- `OfficeTutorial.tsx`: Office system walkthrough
+- `TutorialSpotlight.tsx`: Highlight key UI elements
+
+Tutorial state persisted via `src/utils/tutorialStorage.ts` (localStorage).
+
+### Demo (`src/components/demo/`)
+
+- `Week1Demo.tsx`: First-week guided gameplay tutorial
 
 ## Performance Considerations
 
@@ -535,3 +707,22 @@ SQLite WASM (`@subframe7536/sqlite-wasm`) is the default storage backend. Indexe
 - **Price history cap**: Max 50 data points per company for technical indicators
 - **Chatter cooldowns**: Per-employee minimum interval + per-template cooldown prevents spam
 - **Institutional sector rotation**: Only 1 sector processed per hour (hour % 10) to avoid processing all 100 institutions at once
+- **Reduced motion**: Skip heavy animations when `useReducedMotion()` returns true
+- **Celebration throttling**: Suppressed at 4x+ speed to prevent toast spam
+
+## Test Structure
+
+```
+tests/
+├── unit/           # Fast isolated tests (systems/, trading/, data/, utils/)
+├── integration/    # Cross-system tests (engines/, store/, workers/)
+├── e2e/            # End-to-end (playwright/, gameplay/, regression/)
+├── simulation/     # Game simulation stress tests (2-30min)
+├── performance/    # Performance benchmarks
+├── __mocks__/      # Mock definitions
+├── helpers/        # Test utilities
+└── setup.ts        # Test configuration
+```
+
+- **Playwright**: Configured in `playwright.config.ts` for E2E browser testing
+- **Coverage**: `npm run test:coverage` for coverage reports
